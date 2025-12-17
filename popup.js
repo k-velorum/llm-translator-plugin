@@ -156,10 +156,21 @@ function updateModelInfo(provider, modelData) {
   };
 
   if (provider === 'openrouter') {
+    const usdPer1MFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 });
+    const pricePerTokenToPer1M = (value) => {
+      if (value === undefined || value === null || value === '') return null;
+      const perToken = Number(value);
+      if (!Number.isFinite(perToken)) return null;
+      const per1M = perToken * 1_000_000;
+      return usdPer1MFormatter.format(per1M);
+    };
+
     addLine(`モデル: ${modelData.name}`);
     if (modelData.context_length) addLine(`コンテキスト長: ${modelData.context_length}`);
-    if (modelData.pricing && modelData.pricing.prompt) addLine(`入力料金: $${modelData.pricing.prompt} / 1M tokens`);
-    if (modelData.pricing && modelData.pricing.completion) addLine(`出力料金: $${modelData.pricing.completion} / 1M tokens`);
+    const promptPer1M = pricePerTokenToPer1M(modelData.pricing?.prompt);
+    const completionPer1M = pricePerTokenToPer1M(modelData.pricing?.completion);
+    if (promptPer1M !== null) addLine(`入力料金: $${promptPer1M} / 1M tokens`);
+    if (completionPer1M !== null) addLine(`出力料金: $${completionPer1M} / 1M tokens`);
   } else if (provider === 'gemini') {
     addLine(`モデル: ${modelData.name}`);
     if (modelData.context_length) addLine(`入力上限: ${modelData.context_length} tokens`);
