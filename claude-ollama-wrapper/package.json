@@ -1,0 +1,11 @@
+{
+  "name": "claude-ollama-wrapper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ollama-compatible API that delegates to Claude Code",
+  "main": "server.js",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

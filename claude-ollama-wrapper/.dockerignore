@@ -1,0 +1,7 @@
+# Secrets
+claude.settings.json
+
+# Common
+node_modules
+npm-debug.log
+.DS_Store

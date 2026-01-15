@@ -1,0 +1,19 @@
+services:
+  claude-ollama:
+    build:
+      context: ./claude-ollama-wrapper
+    container_name: claude-ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    environment:
+      # Read the mounted settings file. You can also set env vars directly here if needed.
+      CLAUDE_SETTINGS_PATH: /root/.claude/settings.json
+      # Keep requests bounded.
+      REQUEST_TIMEOUT_MS: "300000"
+      MAX_PROMPT_CHARS: "200000"
+      # Allow requests from the extension without Ollama-specific env vars.
+      ALLOWED_ORIGINS: "*"
+    volumes:
+      # Put your Claude Code settings (API key, base URL, etc.) here.
+      # This file must be gitignored.
+      - ./claude-ollama-wrapper/claude.settings.json:/root/.claude/settings.json:ro

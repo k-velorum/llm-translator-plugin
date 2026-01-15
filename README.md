@@ -41,6 +41,7 @@ Google Chrome用の拡張機能で、選択したテキストをLLM（大規模�
    - OpenRouter: [OpenRouter](https://openrouter.ai/) でAPIキー取得
    - Google Gemini: [Google AI Studio](https://aistudio.google.com/) でAPIキー取得
    - Ollama: [Ollama](https://ollama.ai/) をインストール・起動（既定: http://localhost:11434）
+   - Ollama互換(Claude Codeラッパー): `docker-compose up --build` で `http://localhost:11434` に起動（実体はClaude Code）
    - LM Studio: [LM Studio](https://lmstudio.ai/) をインストール・起動（既定: http://localhost:1234）
 4. モデルを選択して「設定を保存」
 
@@ -117,6 +118,9 @@ Google Chrome用の拡張機能で、選択したテキストをLLM（大規模�
   - 例（macOS/Linux）: `OLLAMA_ORIGINS=* ollama serve`
   - 例（Windows PowerShell）: `$env:OLLAMA_ORIGINS="*"; ollama serve`
   - 特定の拡張IDのみ許可する場合は `chrome-extension://<拡張ID>` を指定
+- Ollama互換(Claude Codeラッパー)を使う場合:
+  - 403(CORS)対策はラッパー側で付与するため、基本的に `OLLAMA_ORIGINS` 設定は不要です
+  - `claude-ollama-wrapper/claude.settings.json` を用意し、`docker-compose up --build` で起動します
 
 ## 免責事項
 

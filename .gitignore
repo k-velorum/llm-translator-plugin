@@ -1,2 +1,7 @@
 # Serena cache
 .serena/cache/
+
+# Local secrets / Claude Code settings
+settings.json
+.claude/
+claude-ollama-wrapper/claude.settings.json
