@@ -24,6 +24,8 @@ export const DEFAULT_SETTINGS = {
   pageTranslationMaxItemsPerChunk: 50,
   pageTranslationChunksPerPass: 6,
   pageTranslationDelayMs: 400,
+  // ページ全体翻訳: 同時リクエスト数（並列）
+  pageTranslationConcurrency: 4,
   // Anthropic / プロキシ機能は削除済み
 };
 

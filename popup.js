@@ -423,6 +423,7 @@ function getElements() {
     pageTranslationMaxItemsInput: document.getElementById('page-translation-max-items'),
     pageTranslationChunksPerPassInput: document.getElementById('page-translation-chunks-per-pass'),
     pageTranslationDelayMsInput: document.getElementById('page-translation-delay-ms'),
+    pageTranslationConcurrencyInput: document.getElementById('page-translation-concurrency'),
     pageTranslationSeparatorInput: document.getElementById('page-translation-separator'),
     // テスト用要素
     testApiProviderSelect: document.getElementById('test-api-provider'),
@@ -587,6 +588,7 @@ function saveFeatureSettings({ twitterFeatureCheckbox, youtubeFeatureCheckbox, f
     pageTranslationMaxItemsPerChunk: num(els.pageTranslationMaxItemsInput, 50, 5, 500),
     pageTranslationChunksPerPass: num(els.pageTranslationChunksPerPassInput, 6, 1, 100),
     pageTranslationDelayMs: num(els.pageTranslationDelayMsInput, 400, 0, 60000),
+    pageTranslationConcurrency: num(els.pageTranslationConcurrencyInput, 4, 1, 20),
     pageTranslationSeparator: ((els.pageTranslationSeparatorInput?.value || '[[[SEP]]]').trim() || '[[[SEP]]]')
   };
   // 空ならデフォルトを保存（空文字を避ける）
@@ -705,6 +707,7 @@ function loadSettings({
         if (els.pageTranslationMaxItemsInput) els.pageTranslationMaxItemsInput.value = (settings.pageTranslationMaxItemsPerChunk ?? 50);
         if (els.pageTranslationChunksPerPassInput) els.pageTranslationChunksPerPassInput.value = (settings.pageTranslationChunksPerPass ?? 6);
         if (els.pageTranslationDelayMsInput) els.pageTranslationDelayMsInput.value = (settings.pageTranslationDelayMs ?? 400);
+        if (els.pageTranslationConcurrencyInput) els.pageTranslationConcurrencyInput.value = (settings.pageTranslationConcurrency ?? 4);
         if (els.pageTranslationSeparatorInput) els.pageTranslationSeparatorInput.value = (settings.pageTranslationSeparator ?? '[[[SEP]]]');
       } catch (e) {
         console.warn('詳細設定の復元に失敗:', e);

@@ -7,6 +7,7 @@ const PAGE_TRANSLATION_MAX_CHARS = 3500;
 const PAGE_TRANSLATION_MAX_ITEMS_PER_CHUNK = 50;
 const PAGE_TRANSLATION_CHUNKS_PER_PASS = 6;
 const PAGE_TRANSLATION_DELAY_MS = 400;
+const PAGE_TRANSLATION_CONCURRENCY = 4;
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -99,24 +100,54 @@ function deletePageTranslationSession(tabId, snapshotId) {
 async function processPageTranslationPass(session, chunksPerPass) {
   const { tabId, snapshotId, settings, chunks } = session;
   const delayMs = typeof session.params?.delayMs === 'number' ? session.params.delayMs : PAGE_TRANSLATION_DELAY_MS;
+  const concurrency = clampInt(session.params?.concurrency, 1, 20, PAGE_TRANSLATION_CONCURRENCY);
+
   let processed = 0;
+
+  // 1パス内で、最大 concurrency 個のチャンクを並列翻訳→順序どおりに適用
   while (!session.canceled && session.nextIndex < chunks.length && processed < chunksPerPass) {
-    const chunk = chunks[session.nextIndex];
-    const parts = await translateJoinedOrSplit(chunk, settings, session.params);
-    try {
-      await chrome.tabs.sendMessage(tabId, {
-        action: 'applyPageTranslationChunk',
-        snapshotId,
-        offset: session.offset,
-        translations: parts
-      });
-    } catch (e) {
-      console.warn('applyPageTranslationChunk 送信に失敗しました:', e);
+    const remainingThisPass = chunksPerPass - processed;
+    const batchCount = Math.min(concurrency, remainingThisPass, chunks.length - session.nextIndex);
+
+    // このバッチで処理するチャンクを確定（順序維持）
+    const batch = [];
+    let baseOffset = session.offset;
+    for (let i = 0; i < batchCount; i++) {
+      const idx = session.nextIndex + i;
+      const chunk = chunks[idx];
+      batch.push({ idx, chunk, offset: baseOffset });
+      baseOffset += chunk.length;
     }
-    session.offset += chunk.length;
-    session.nextIndex += 1;
-    processed += 1;
-    await sleep(delayMs);
+
+    // 翻訳は並列
+    const results = await Promise.all(
+      batch.map(async (b) => {
+        const parts = await translateJoinedOrSplit(b.chunk, settings, session.params);
+        return { ...b, parts };
+      })
+    );
+
+    // 適用は順序どおり（DOM書き換えの整合性のため）
+    for (const r of results) {
+      if (session.canceled) break;
+      try {
+        await chrome.tabs.sendMessage(tabId, {
+          action: 'applyPageTranslationChunk',
+          snapshotId,
+          offset: r.offset,
+          translations: r.parts
+        });
+      } catch (e) {
+        console.warn('applyPageTranslationChunk 送信に失敗しました:', e);
+      }
+      // セッション進捗を進める
+      session.offset += r.chunk.length;
+      session.nextIndex += 1;
+      processed += 1;
+
+      // 適用間のディレイ（設定に従う）
+      if (delayMs > 0) await sleep(delayMs);
+    }
   }
 
   // 完了したらセッションを破棄
@@ -317,6 +348,7 @@ async function handleContextMenuClick(info, tab) {
       const maxItems = clampInt(settings.pageTranslationMaxItemsPerChunk, 5, 500, PAGE_TRANSLATION_MAX_ITEMS_PER_CHUNK);
       const chunksPerPass = clampInt(settings.pageTranslationChunksPerPass, 1, 100, PAGE_TRANSLATION_CHUNKS_PER_PASS);
       const delayMs = clampInt(settings.pageTranslationDelayMs, 0, 60000, PAGE_TRANSLATION_DELAY_MS);
+      const concurrency = clampInt(settings.pageTranslationConcurrency, 1, 20, PAGE_TRANSLATION_CONCURRENCY);
 
       // 長文になりすぎるのを避け、小チャンクに分けて逐次適用
       const chunks = chunkByMaxCharsAndItems(pageTexts, maxChars, maxItems, sep);
@@ -331,7 +363,7 @@ async function handleContextMenuClick(info, tab) {
         offset: 0,
         totalItems,
         canceled: false,
-        params: { sep, maxChars, maxItemsPerChunk: maxItems, chunksPerPass, delayMs }
+        params: { sep, maxChars, maxItemsPerChunk: maxItems, chunksPerPass, delayMs, concurrency }
       };
       registerPageTranslationSession(session);
       // 開始時点で0%・総チャンク数を表示
