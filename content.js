@@ -389,7 +389,10 @@ function showPageTranslationControls(snapshotId, remainingChunks, processedItems
       btn.textContent = '実行中…';
       try {
         await new Promise((resolve, reject) => {
+          // background がハングしてもUIが永遠に戻らないのを防ぐ
+          const t = setTimeout(() => reject(new Error('continuePageTranslation timeout')), 200000);
           chrome.runtime.sendMessage({ action: 'continuePageTranslation', snapshotId }, (res) => {
+            clearTimeout(t);
             if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
             if (!res || res.ok !== true) return reject(new Error(res?.error || 'unknown error'));
             resolve();

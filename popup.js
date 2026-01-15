@@ -63,8 +63,12 @@ function init() {
   createVerificationUI(elements);
   loadSettings(elements);
   bindEventHandlers(elements);
+  bindLogHandlers(elements);
   initSelect2(elements);
   loadModels(elements);
+
+  // 初期表示
+  refreshLogs(elements);
 }
 
 // Select2の初期化
@@ -431,6 +435,10 @@ function getElements() {
     testButton: document.getElementById('test-button'),
     testStatus: document.getElementById('test-status'),
     testResult: document.getElementById('test-result'),
+    // ログタブ要素
+    logView: document.getElementById('log-view'),
+    logClearButton: document.getElementById('log-clear-button'),
+    logStatus: document.getElementById('log-status'),
     // タブ用要素
     tabs: document.querySelectorAll('.tab'),
     tabContents: document.querySelectorAll('.tab-content')
@@ -871,4 +879,80 @@ function showStatus(element, message, isSuccess) {
   if (isSuccess) {
     setTimeout(() => element.classList.add('hidden'), 3000);
   }
+}
+
+function storageLocalGet(key) {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(key, (data) => resolve(data || {}));
+    } catch (_) {
+      resolve({});
+    }
+  });
+}
+
+function storageLocalSet(obj) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.storage.local.set(obj, () => {
+        if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+        resolve();
+      });
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+async function refreshLogs({ logView }) {
+  if (!logView) return;
+  const key = 'pageTranslationLogs';
+  const data = await storageLocalGet(key);
+  const arr = Array.isArray(data[key]) ? data[key] : [];
+
+  if (!arr.length) {
+    logView.textContent = 'ログはまだありません。';
+    return;
+  }
+
+  const lines = arr
+    .slice()
+    .reverse()
+    .map((e) => {
+      const ts = new Date(e.ts || Date.now()).toLocaleString();
+      const lvl = (e.level || 'info').toUpperCase();
+      const meta = [e.provider, e.model].filter(Boolean).join(' ');
+      const msg = e.message ? ` - ${e.message}` : '';
+      const details = [];
+      if (typeof e.chunkIndex === 'number') details.push(`chunk=${e.chunkIndex}`);
+      if (typeof e.items === 'number') details.push(`items=${e.items}`);
+      if (typeof e.len === 'number') details.push(`len=${e.len}`);
+      if (typeof e.ms === 'number') details.push(`ms=${e.ms}`);
+      if (typeof e.timeoutMs === 'number') details.push(`timeoutMs=${e.timeoutMs}`);
+      if (typeof e.processedItems === 'number' && typeof e.totalItems === 'number') details.push(`progress=${e.processedItems}/${e.totalItems}`);
+      const detailsStr = details.length ? ` (${details.join(', ')})` : '';
+      return `[${ts}] [${lvl}] ${e.event || e.type || 'log'}${meta ? ' ' + meta : ''}${detailsStr}${msg}`;
+    });
+
+  logView.textContent = lines.join('\n');
+}
+
+function bindLogHandlers({ logClearButton, logStatus, logView }) {
+  if (logClearButton) {
+    logClearButton.addEventListener('click', async () => {
+      try {
+        await storageLocalSet({ pageTranslationLogs: [] });
+        if (logView) logView.textContent = 'ログをクリアしました。';
+        if (logStatus) showStatus(logStatus, 'ログをクリアしました', true);
+      } catch (e) {
+        console.error('ログクリア失敗:', e);
+        if (logStatus) showStatus(logStatus, `ログクリア失敗: ${e.message || e}`, false);
+      }
+    });
+  }
+
+  // ログタブが開かれたらリフレッシュ
+  document.querySelectorAll('.tab[data-tab="log"]').forEach((tab) => {
+    tab.addEventListener('click', () => refreshLogs({ logView }));
+  });
 }

@@ -235,6 +235,7 @@
     <div class="tab active" data-tab="settings">設定</div>
     <div class="tab" data-tab="features">機能</div>
     <div class="tab" data-tab="test">テスト</div>
+    <div class="tab" data-tab="log">ログ</div>
   </div>
   
   <div id="settings-tab" class="tab-content active">
@@ -416,6 +417,18 @@
     <div id="test-result" class="test-result hidden"></div>
   </div>
   
+  <div id="log-tab" class="tab-content">
+    <div class="api-section">
+      <div class="api-heading" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <span>ページ翻訳ログ</span>
+        <button id="log-clear-button" type="button" style="width:auto;background:#f0f0f0;color:#333;padding:6px 10px;border:1px solid #ccc;">クリア</button>
+      </div>
+      <div id="log-status" class="status hidden"></div>
+      <div id="log-view" class="test-result" style="max-height: 240px;"></div>
+      <div style="font-size:12px;color:#666;margin-top:8px;">直近200件まで表示します（内容は要約のみ）。</div>
+    </div>
+  </div>
+
     <!-- jQuery と Select2 (ローカル) -->
   <script src="lib/jquery.min.js"></script>
   <script src="lib/select2.min.js"></script>

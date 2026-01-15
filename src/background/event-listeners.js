@@ -1,13 +1,76 @@
 import { loadSettings, initializeDefaultSettings } from './settings.js';
 import { translateText, translateBatchStructured, formatErrorDetails } from './api.js';
 
-// 既定値（settings に無い場合のフォールバック）
+// =============================
+// ページ全体翻訳: ログ（popup の「ログ」タブで表示）
+// =============================
+const PAGE_TRANSLATION_LOG_KEY = 'pageTranslationLogs';
+const PAGE_TRANSLATION_LOG_MAX = 200;
+
+function storageLocalGet(key) {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(key, (data) => resolve(data || {}));
+    } catch (_) {
+      resolve({});
+    }
+  });
+}
+
+function storageLocalSet(obj) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.storage.local.set(obj, () => {
+        if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+        resolve();
+      });
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+async function appendPageTranslationLog(entry) {
+  try {
+    const item = { ts: Date.now(), ...entry };
+    const data = await storageLocalGet(PAGE_TRANSLATION_LOG_KEY);
+    const arr = Array.isArray(data[PAGE_TRANSLATION_LOG_KEY]) ? data[PAGE_TRANSLATION_LOG_KEY] : [];
+    arr.push(item);
+    while (arr.length > PAGE_TRANSLATION_LOG_MAX) arr.shift();
+    await storageLocalSet({ [PAGE_TRANSLATION_LOG_KEY]: arr });
+  } catch (e) {
+    // ログ失敗は翻訳処理を止めない
+    console.debug('appendPageTranslationLog failed:', e);
+  }
+}
+
+function getProviderMeta(settings) {
+  const provider = settings?.apiProvider || 'unknown';
+  if (provider === 'openrouter') return { provider: 'openrouter', model: settings.openrouterModel || '' };
+  if (provider === 'gemini') return { provider: 'gemini', model: settings.geminiModel || '' };
+  if (provider === 'ollama') return { provider: 'ollama', model: settings.ollamaModel || '' };
+  if (provider === 'lmstudio') return { provider: 'lmstudio', model: settings.lmstudioModel || '' };
+  return { provider, model: '' };
+}
+
+// =============================
+// ページ全体翻訳: 既定値（settings に無い場合のフォールバック）
+// =============================
 const PAGE_TRANSLATION_SEPARATOR = '[[[SEP]]]';
 const PAGE_TRANSLATION_MAX_CHARS = 3500;
 const PAGE_TRANSLATION_MAX_ITEMS_PER_CHUNK = 50;
 const PAGE_TRANSLATION_CHUNKS_PER_PASS = 6;
 const PAGE_TRANSLATION_DELAY_MS = 400;
 const PAGE_TRANSLATION_CONCURRENCY = 4;
+
+// タイムアウト（簡易）
+const PAGE_TRANSLATION_TIMEOUT_SHORT_MS = 120000;
+const PAGE_TRANSLATION_TIMEOUT_LONG_MS = 180000;
+const PAGE_TRANSLATION_TIMEOUT_LONG_THRESHOLD_CHARS = 6000;
+
+function getTimeoutMsForPromptLen(len) {
+  return len > PAGE_TRANSLATION_TIMEOUT_LONG_THRESHOLD_CHARS ? PAGE_TRANSLATION_TIMEOUT_LONG_MS : PAGE_TRANSLATION_TIMEOUT_SHORT_MS;
+}
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -34,50 +97,121 @@ function chunkByMaxCharsAndItems(items, maxChars, maxItems, sep) {
   return chunks;
 }
 
-async function translateJoinedOrSplit(chunk, settings, params, depth = 0) {
+async function translateJoinedOrSplit(chunk, settings, params, depth = 0, requestOptions = {}) {
   // まず Gemini の場合は構造化バッチに挑戦（区切り不一致を根本回避）
   if (settings.apiProvider === 'gemini') {
     try {
-      const arr = await translateBatchStructured(chunk, settings);
+      const arr = await translateBatchStructured(chunk, settings, requestOptions);
       if (Array.isArray(arr) && arr.length === chunk.length) return arr;
     } catch (e) {
       console.warn('構造化バッチ翻訳が失敗したため連結方式にフォールバックします:', e?.message || e);
     }
   }
 
-  // まずは連結翻訳を試す
   const sep = params?.sep || PAGE_TRANSLATION_SEPARATOR;
   const delayMs = typeof params?.delayMs === 'number' ? params.delayMs : PAGE_TRANSLATION_DELAY_MS;
+  const maxChars = typeof params?.maxChars === 'number' ? params.maxChars : PAGE_TRANSLATION_MAX_CHARS;
+
+  // ログ（要約のみ）
+  if (depth === 0) {
+    try {
+      await appendPageTranslationLog({
+        level: 'info',
+        type: 'page-translation',
+        event: 'chunk_start',
+        ...getProviderMeta(settings),
+        items: chunk.length,
+        len: chunk.join(sep).length
+      });
+    } catch (_) {}
+  }
+
+  // 1要素で巨大なノードは、まず分割して翻訳する
+  if (depth === 0 && chunk.length === 1 && typeof chunk[0] === 'string' && chunk[0].length > maxChars) {
+    const s = chunk[0];
+
+    await appendPageTranslationLog({
+      level: 'warn',
+      type: 'page-translation',
+      event: 'oversized_single_node',
+      ...getProviderMeta(settings),
+      len: s.length,
+      maxChars
+    });
+
+    const signal = requestOptions.signal;
+    const translatePiece = async (piece) => {
+      const timeoutMs = getTimeoutMsForPromptLen(piece.length);
+      return translateText(piece, settings, { timeoutMs, signal });
+    };
+
+    // 段落で割れるなら段落単位で
+    const paragraphs = s.split(/\n{2,}/).filter(x => x.trim().length);
+    if (paragraphs.length > 1) {
+      const out = [];
+      for (const p of paragraphs) {
+        out.push(await translatePiece(p));
+        await sleep(delayMs);
+      }
+      return [out.join('\n\n')];
+    }
+
+    // それでも割れない場合は、maxChars 近辺でスライス
+    const slices = [];
+    for (let i = 0; i < s.length; i += maxChars) slices.push(s.slice(i, i + maxChars));
+    const out = [];
+    for (const p of slices) {
+      out.push(await translatePiece(p));
+      await sleep(delayMs);
+    }
+    return [out.join('')];
+  }
+
+  // 通常: 連結→翻訳→split
   const joined = chunk.join(sep);
-  let translated = await translateText(joined, settings);
-  let parts = translated.split(sep);
+  const startedAt = Date.now();
+  const translated = await translateText(joined, settings, requestOptions);
+
+  if (depth === 0) {
+    await appendPageTranslationLog({
+      level: 'info',
+      type: 'page-translation',
+      event: 'chunk_translated',
+      ...getProviderMeta(settings),
+      items: chunk.length,
+      len: joined.length,
+      ms: Date.now() - startedAt,
+      timeoutMs: requestOptions.timeoutMs
+    });
+  }
+
+  const parts = translated.split(sep);
   if (parts.length === chunk.length) return parts;
 
   console.warn(`区切り数不一致のためサブ分割を試行: expected=${chunk.length} actual=${parts.length} depth=${depth}`);
-  // 深さ制限 or 要素1なら個別翻訳
+
+  // 深さ制限 or 要素1なら個別翻訳（B: 失敗したら止めるので、ここでは握りつぶさない）
   if (depth >= 3 || chunk.length <= 1) {
     const perItem = [];
     for (const s of chunk) {
-      try {
-        const t = await translateText(s, settings);
-        perItem.push(t);
-        await sleep(delayMs);
-      } catch (e) {
-        console.error('個別翻訳フォールバック中のエラー:', e);
-        perItem.push(s);
-      }
+      const t = await translateText(s, settings, requestOptions);
+      perItem.push(t);
+      await sleep(delayMs);
     }
     return perItem;
   }
+
   // チャンクを2分割して再帰
   const mid = Math.floor(chunk.length / 2);
-  const left = await translateJoinedOrSplit(chunk.slice(0, mid), settings, params, depth + 1);
+  const left = await translateJoinedOrSplit(chunk.slice(0, mid), settings, params, depth + 1, requestOptions);
   await sleep(delayMs);
-  const right = await translateJoinedOrSplit(chunk.slice(mid), settings, params, depth + 1);
+  const right = await translateJoinedOrSplit(chunk.slice(mid), settings, params, depth + 1, requestOptions);
   return [...left, ...right];
 }
 
+// =============================
 // ページ翻訳セッション管理
+// =============================
 const pageTranslationSessions = new Map(); // key: `${tabId}:${snapshotId}` -> session
 
 function makeSessionKey(tabId, snapshotId) {
@@ -101,15 +235,15 @@ async function processPageTranslationPass(session, chunksPerPass) {
   const { tabId, snapshotId, settings, chunks } = session;
   const delayMs = typeof session.params?.delayMs === 'number' ? session.params.delayMs : PAGE_TRANSLATION_DELAY_MS;
   const concurrency = clampInt(session.params?.concurrency, 1, 20, PAGE_TRANSLATION_CONCURRENCY);
+  const sep = session.params?.sep || PAGE_TRANSLATION_SEPARATOR;
 
+  // 失敗後の再開時に同じチャンクを再実行できるよう、nextIndex/offset は適用成功後にのみ進める
   let processed = 0;
 
-  // 1パス内で、最大 concurrency 個のチャンクを並列翻訳→順序どおりに適用
   while (!session.canceled && session.nextIndex < chunks.length && processed < chunksPerPass) {
     const remainingThisPass = chunksPerPass - processed;
     const batchCount = Math.min(concurrency, remainingThisPass, chunks.length - session.nextIndex);
 
-    // このバッチで処理するチャンクを確定（順序維持）
     const batch = [];
     let baseOffset = session.offset;
     for (let i = 0; i < batchCount; i++) {
@@ -119,17 +253,59 @@ async function processPageTranslationPass(session, chunksPerPass) {
       baseOffset += chunk.length;
     }
 
-    // 翻訳は並列
+    const signal = session.abortController?.signal;
+
+    // 翻訳は並列（失敗はok=falseで回収）
     const results = await Promise.all(
       batch.map(async (b) => {
-        const parts = await translateJoinedOrSplit(b.chunk, settings, session.params);
-        return { ...b, parts };
+        const promptLen = b.chunk.join(sep).length;
+        const timeoutMs = getTimeoutMsForPromptLen(promptLen);
+        try {
+          const parts = await translateJoinedOrSplit(
+            b.chunk,
+            settings,
+            session.params,
+            0,
+            { timeoutMs, signal }
+          );
+          return { ...b, ok: true, parts, timeoutMs, promptLen };
+        } catch (e) {
+          return { ...b, ok: false, error: e, timeoutMs, promptLen };
+        }
       })
     );
 
-    // 適用は順序どおり（DOM書き換えの整合性のため）
+    // 適用は順序どおり
     for (const r of results) {
       if (session.canceled) break;
+
+      if (!r.ok) {
+        // キャンセル由来の Abort はエラー扱いしない
+        if (session.canceled || r.error?.name === 'AbortError') return;
+
+        const msg = r.error?.message || String(r.error);
+        session.lastError = msg;
+        session.failedAt = r.idx;
+
+        await appendPageTranslationLog({
+          level: 'error',
+          type: 'page-translation',
+          event: 'chunk_failed',
+          ...getProviderMeta(settings),
+          tabId,
+          snapshotId,
+          chunkIndex: r.idx,
+          offset: r.offset,
+          items: r.chunk.length,
+          len: r.promptLen,
+          timeoutMs: r.timeoutMs,
+          message: msg
+        });
+
+        // B: 失敗したら止める（sessionは維持。UIは呼び出し元で戻す）
+        return;
+      }
+
       try {
         await chrome.tabs.sendMessage(tabId, {
           action: 'applyPageTranslationChunk',
@@ -140,12 +316,37 @@ async function processPageTranslationPass(session, chunksPerPass) {
       } catch (e) {
         console.warn('applyPageTranslationChunk 送信に失敗しました:', e);
       }
-      // セッション進捗を進める
+
       session.offset += r.chunk.length;
       session.nextIndex += 1;
       processed += 1;
 
-      // 適用間のディレイ（設定に従う）
+      // 進捗UIを更新（長時間の“固まって見える”を軽減）
+      try {
+        await chrome.tabs.sendMessage(tabId, {
+          action: 'showPageTranslationControls',
+          snapshotId,
+          remainingChunks: chunks.length - session.nextIndex,
+          processedItems: session.offset,
+          totalItems: session.totalItems,
+          totalChunks: chunks.length,
+          canContinue: false
+        });
+      } catch (_) {}
+
+      await appendPageTranslationLog({
+        level: 'info',
+        type: 'page-translation',
+        event: 'chunk_applied',
+        ...getProviderMeta(settings),
+        tabId,
+        snapshotId,
+        chunkIndex: r.idx,
+        processedItems: session.offset,
+        totalItems: session.totalItems,
+        timeoutMs: r.timeoutMs
+      });
+
       if (delayMs > 0) await sleep(delayMs);
     }
   }
@@ -153,6 +354,16 @@ async function processPageTranslationPass(session, chunksPerPass) {
   // 完了したらセッションを破棄
   if (!session.canceled && session.nextIndex >= chunks.length) {
     deletePageTranslationSession(tabId, snapshotId);
+    await appendPageTranslationLog({
+      level: 'info',
+      type: 'page-translation',
+      event: 'complete',
+      ...getProviderMeta(settings),
+      tabId,
+      snapshotId,
+      totalItems: session.totalItems,
+      totalChunks: chunks.length
+    });
   }
 }
 
@@ -293,39 +504,38 @@ async function setupContextMenu() {
 
     // 新しいメニューを作成 (Promiseでラップ)
     await new Promise((resolve, reject) => {
-        chrome.contextMenus.create({
-          id: menuId,
-          title: 'LLM翻訳',
-          contexts: ['selection']
-        }, () => {
-            if (chrome.runtime.lastError) {
-                // エラーメッセージを具体的に表示
-                const errorMessage = chrome.runtime.lastError.message || '詳細不明のエラー';
-                console.error('コンテキストメニュー作成エラー:', errorMessage);
-                reject(new Error(errorMessage)); // Errorオブジェクトでrejectする
-            } else {
-                resolve();
-            }
-        });
+      chrome.contextMenus.create({
+        id: menuId,
+        title: 'LLM翻訳',
+        contexts: ['selection']
+      }, () => {
+        if (chrome.runtime.lastError) {
+          // エラーメッセージを具体的に表示
+          const errorMessage = chrome.runtime.lastError.message || '詳細不明のエラー';
+          console.error('コンテキストメニュー作成エラー:', errorMessage);
+          reject(new Error(errorMessage)); // Errorオブジェクトでrejectする
+        } else {
+          resolve();
+        }
+      });
     });
 
     // ページ全体翻訳メニューを作成
     await new Promise((resolve, reject) => {
-        chrome.contextMenus.create({
-          id: 'translate-page',
-          title: 'LLMページ全体翻訳',
-          contexts: ['page']
-        }, () => {
-            if (chrome.runtime.lastError) {
-                const errorMessage = chrome.runtime.lastError.message || '詳細不明のエラー';
-                console.error('ページ全体翻訳メニュー作成エラー:', errorMessage);
-                reject(new Error(errorMessage));
-            } else {
-                resolve();
-            }
-        });
+      chrome.contextMenus.create({
+        id: 'translate-page',
+        title: 'LLMページ全体翻訳',
+        contexts: ['page']
+      }, () => {
+        if (chrome.runtime.lastError) {
+          const errorMessage = chrome.runtime.lastError.message || '詳細不明のエラー';
+          console.error('ページ全体翻訳メニュー作成エラー:', errorMessage);
+          reject(new Error(errorMessage));
+        } else {
+          resolve();
+        }
+      });
     });
-
   } catch (error) {
     // create で reject された場合やその他の予期せぬエラー
     console.error('コンテキストメニュー設定中に予期せぬエラー:', error);
@@ -338,7 +548,7 @@ async function handleContextMenuClick(info, tab) {
     console.log('ページ全体翻訳リクエストを受信');
     try {
       const response = await chrome.tabs.sendMessage(tab.id, { action: 'getPageTexts' });
-      let pageTexts = response.texts || [];
+      const pageTexts = response.texts || [];
       const snapshotId = response.snapshotId;
       const settings = await loadSettings();
 
@@ -350,7 +560,6 @@ async function handleContextMenuClick(info, tab) {
       const delayMs = clampInt(settings.pageTranslationDelayMs, 0, 60000, PAGE_TRANSLATION_DELAY_MS);
       const concurrency = clampInt(settings.pageTranslationConcurrency, 1, 20, PAGE_TRANSLATION_CONCURRENCY);
 
-      // 長文になりすぎるのを避け、小チャンクに分けて逐次適用
       const chunks = chunkByMaxCharsAndItems(pageTexts, maxChars, maxItems, sep);
 
       const totalItems = pageTexts.length;
@@ -363,9 +572,26 @@ async function handleContextMenuClick(info, tab) {
         offset: 0,
         totalItems,
         canceled: false,
+        lastError: null,
+        failedAt: null,
+        abortController: new AbortController(),
         params: { sep, maxChars, maxItemsPerChunk: maxItems, chunksPerPass, delayMs, concurrency }
       };
+
       registerPageTranslationSession(session);
+
+      await appendPageTranslationLog({
+        level: 'info',
+        type: 'page-translation',
+        event: 'start',
+        ...getProviderMeta(settings),
+        tabId: tab.id,
+        snapshotId,
+        totalItems: session.totalItems,
+        totalChunks: session.chunks.length,
+        params: { maxChars, maxItemsPerChunk: maxItems, chunksPerPass, delayMs, concurrency }
+      });
+
       // 開始時点で0%・総チャンク数を表示
       try {
         await chrome.tabs.sendMessage(tab.id, {
@@ -380,7 +606,24 @@ async function handleContextMenuClick(info, tab) {
       } catch (e) {
         console.warn('初期コントロール表示に失敗:', e);
       }
-      await processPageTranslationPass(session, session.params.chunksPerPass);
+
+      try {
+        await processPageTranslationPass(session, session.params.chunksPerPass);
+      } catch (e) {
+        const msg = e?.message || String(e);
+        session.lastError = msg;
+        await appendPageTranslationLog({
+          level: 'error',
+          type: 'page-translation',
+          event: 'pass_failed',
+          ...getProviderMeta(settings),
+          tabId: tab.id,
+          snapshotId,
+          message: msg
+        });
+      }
+
+      // 失敗/中断でもUIは必ず戻す
       if (!session.canceled && session.nextIndex < session.chunks.length) {
         await chrome.tabs.sendMessage(tab.id, {
           action: 'showPageTranslationControls',
@@ -394,11 +637,33 @@ async function handleContextMenuClick(info, tab) {
       } else {
         await chrome.tabs.sendMessage(tab.id, { action: 'hidePageTranslationControls', snapshotId });
       }
+
+      if (session.lastError) {
+        await appendPageTranslationLog({
+          level: 'warn',
+          type: 'page-translation',
+          event: 'stopped_with_error',
+          ...getProviderMeta(settings),
+          tabId: tab.id,
+          snapshotId,
+          message: session.lastError
+        });
+      }
+
     } catch (error) {
       console.error('ページ全体翻訳エラー:', error);
+      await appendPageTranslationLog({
+        level: 'error',
+        type: 'page-translation',
+        event: 'fatal',
+        ...getProviderMeta(await loadSettings().catch(() => ({}))),
+        tabId: tab?.id,
+        message: error?.message || String(error)
+      });
     }
     return;
   }
+
   if (info.menuItemId === 'translate-with-llm' && info.selectionText) {
     const selectedText = info.selectionText;
     console.log('コンテキストメニューから翻訳:', selectedText);
@@ -436,11 +701,8 @@ async function handleCommand(command) {
         });
       });
 
-
       if (!response || !response.selectedText) {
         console.log('選択されたテキストがありません (ショートカット)');
-        // 必要であればユーザーに通知 (例: 短い通知を表示)
-        // chrome.notifications.create(...) など
         return;
       }
 
@@ -448,16 +710,14 @@ async function handleCommand(command) {
       console.log('選択テキスト (ショートカット):', selectedText);
       await translateAndNotify(tab.id, selectedText);
     } catch (error) {
-       if (error.message && error.message.includes('Could not establish connection')) {
-         console.warn('コンテンツスクリプトとの接続確立失敗 (ショートカット):', error.message);
-         // ページがリロードされた直後などに発生しうる。ユーザーに再試行を促す通知などが考えられる。
-       } else {
-         console.error('ショートカット処理中に予期せぬエラー:', error);
-       }
+      if (error.message && error.message.includes('Could not establish connection')) {
+        console.warn('コンテンツスクリプトとの接続確立失敗 (ショートカット):', error.message);
+      } else {
+        console.error('ショートカット処理中に予期せぬエラー:', error);
+      }
     }
   }
 }
-
 
 // イベントリスナーの登録
 export function registerEventListeners() {
@@ -469,17 +729,16 @@ export function registerEventListeners() {
   });
 
   // コンテキストメニュークリック
-  // 既にリスナーが登録されている場合、重複登録を避ける (ただし通常 onInstalled で十分)
   if (!chrome.contextMenus.onClicked.hasListener(handleContextMenuClick)) {
-      chrome.contextMenus.onClicked.addListener(handleContextMenuClick);
+    chrome.contextMenus.onClicked.addListener(handleContextMenuClick);
   }
 
   // キーボードショートカット
   if (!chrome.commands.onCommand.hasListener(handleCommand)) {
-      chrome.commands.onCommand.addListener(handleCommand);
+    chrome.commands.onCommand.addListener(handleCommand);
   }
 
-  // ページ翻訳: 続きを実行
+  // ページ翻訳: 続きを実行 / キャンセル
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message && message.action === 'continuePageTranslation') {
       (async () => {
@@ -489,7 +748,23 @@ export function registerEventListeners() {
           const { snapshotId } = message;
           const session = getPageTranslationSession(tabId, snapshotId);
           if (!session) return sendResponse && sendResponse({ ok: false, error: 'session not found' });
-          await processPageTranslationPass(session, session.params?.chunksPerPass || PAGE_TRANSLATION_CHUNKS_PER_PASS);
+
+          try {
+            await processPageTranslationPass(session, session.params?.chunksPerPass || PAGE_TRANSLATION_CHUNKS_PER_PASS);
+          } catch (e) {
+            const msg = e?.message || String(e);
+            session.lastError = msg;
+            await appendPageTranslationLog({
+              level: 'error',
+              type: 'page-translation',
+              event: 'pass_failed',
+              ...getProviderMeta(session.settings),
+              tabId,
+              snapshotId,
+              message: msg
+            });
+          }
+
           if (!session.canceled && session.nextIndex < session.chunks.length) {
             await chrome.tabs.sendMessage(tabId, {
               action: 'showPageTranslationControls',
@@ -503,6 +778,19 @@ export function registerEventListeners() {
           } else {
             await chrome.tabs.sendMessage(tabId, { action: 'hidePageTranslationControls', snapshotId });
           }
+
+          if (session.lastError) {
+            await appendPageTranslationLog({
+              level: 'warn',
+              type: 'page-translation',
+              event: 'stopped_with_error',
+              ...getProviderMeta(session.settings),
+              tabId,
+              snapshotId,
+              message: session.lastError
+            });
+          }
+
           sendResponse && sendResponse({ ok: true });
         } catch (e) {
           console.error('continuePageTranslation エラー:', e);
@@ -510,18 +798,30 @@ export function registerEventListeners() {
         }
       })();
       return true; // 非同期応答
-    } else if (message && message.action === 'cancelPageTranslation') {
+    }
+
+    if (message && message.action === 'cancelPageTranslation') {
       (async () => {
         try {
           const tabId = sender?.tab?.id || (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
           if (!tabId) return sendResponse && sendResponse({ ok: false, error: 'tab not found' });
           const { snapshotId } = message;
           const session = getPageTranslationSession(tabId, snapshotId);
-          if (!session) {
-            return sendResponse && sendResponse({ ok: true }); // すでに終わっている/存在しない
-          }
+          if (!session) return sendResponse && sendResponse({ ok: true });
+
           session.canceled = true;
+          try { session.abortController?.abort(); } catch (_) {}
           deletePageTranslationSession(tabId, snapshotId);
+
+          await appendPageTranslationLog({
+            level: 'info',
+            type: 'page-translation',
+            event: 'canceled',
+            ...getProviderMeta(session.settings),
+            tabId,
+            snapshotId
+          });
+
           await chrome.tabs.sendMessage(tabId, { action: 'hidePageTranslationControls', snapshotId });
           sendResponse && sendResponse({ ok: true });
         } catch (e) {
@@ -531,6 +831,7 @@ export function registerEventListeners() {
       })();
       return true;
     }
+
     return false;
   });
 

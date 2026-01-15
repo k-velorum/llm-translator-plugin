@@ -56,14 +56,44 @@ ${error.stack ? '\nスタックトレース:\n' + error.stack : ''}
 }
 
 // APIリクエスト共通処理
-export async function makeApiRequest(url, options, errorMessage, logLevel = 'error') {
+export async function makeApiRequest(url, options = {}, errorMessage, logLevel = 'error') {
   const logger = (console[logLevel] || console.error).bind(console);
 
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const maxRetries = 3;
+
+  const timeoutMs = Number.isFinite(options?.timeoutMs) ? options.timeoutMs : null;
+  const externalSignal = options?.signal;
+
+  // fetch() へ渡すオプション（timeoutMs は独自）
+  const baseOptions = { ...(options || {}) };
+  delete baseOptions.timeoutMs;
+  delete baseOptions.signal;
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let timeoutId = null;
+    let timedOut = false;
+
+    const controller = new AbortController();
+    const onExternalAbort = () => controller.abort();
+
     try {
-      const response = await fetch(url, options);
+      if (externalSignal) {
+        if (externalSignal.aborted) {
+          controller.abort();
+        } else {
+          externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+        }
+      }
+
+      if (timeoutMs && timeoutMs > 0) {
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs);
+      }
+
+      const response = await fetch(url, { ...baseOptions, signal: controller.signal });
 
       if (!response.ok) {
         // Ollama の CORS で 403 が出やすいため、分かりやすいヒントを付与
@@ -109,6 +139,19 @@ export async function makeApiRequest(url, options, errorMessage, logLevel = 'err
       const data = await response.json();
       return data;
     } catch (error) {
+      // タイムアウトは即失敗（リトライしない）
+      if (timedOut) {
+        const timeoutError = new Error(`API Error: request timed out after ${timeoutMs}ms`);
+        timeoutError.name = 'TimeoutError';
+        logger(`${errorMessage}:`, timeoutError);
+        throw timeoutError;
+      }
+
+      // 明示的なキャンセル（Abort）は上位で扱う
+      if (error && error.name === 'AbortError') {
+        throw error;
+      }
+
       // ネットワーク失敗は指数バックオフでリトライ
       const isNetworkError = (error instanceof TypeError && error.message === 'Failed to fetch');
       if (isNetworkError && attempt < maxRetries) {
@@ -119,12 +162,17 @@ export async function makeApiRequest(url, options, errorMessage, logLevel = 'err
       }
       logger(`${errorMessage}:`, error);
       throw error;
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (externalSignal) {
+        try { externalSignal.removeEventListener('abort', onExternalAbort); } catch (_) {}
+      }
     }
   }
 }
 
 // OpenRouter APIでの翻訳
-async function translateWithOpenRouter(text, settings) {
+async function translateWithOpenRouter(text, settings, requestOptions = {}) {
   if (!settings.openrouterApiKey) {
     throw new Error('OpenRouter APIキーが設定されていません');
   }
@@ -150,7 +198,9 @@ async function translateWithOpenRouter(text, settings) {
           body: JSON.stringify({
             model: settings.openrouterModel,
             messages: messages
-          })
+          }),
+          timeoutMs: requestOptions.timeoutMs ?? 180000,
+          signal: requestOptions.signal
         },
         'OpenRouter API リクエスト中にエラーが発生'
       );
@@ -163,7 +213,7 @@ async function translateWithOpenRouter(text, settings) {
 }
 
 // Gemini APIでの翻訳
-async function translateWithGemini(text, settings) {
+async function translateWithGemini(text, settings, requestOptions = {}) {
   if (!settings.geminiApiKey) {
     throw new Error('Gemini APIキーが設定されていません');
   }
@@ -185,7 +235,9 @@ async function translateWithGemini(text, settings) {
             }
           ],
           generationConfig: { temperature: 0.2 }
-        })
+        }),
+        timeoutMs: requestOptions.timeoutMs ?? 180000,
+        signal: requestOptions.signal
       },
       'Gemini API リクエスト中にエラーが発生'
     );
@@ -202,7 +254,7 @@ async function translateWithGemini(text, settings) {
 // Anthropic は削除済み
 
 // Ollama (local server) での翻訳
-async function translateWithOllama(text, settings) {
+async function translateWithOllama(text, settings, requestOptions = {}) {
   const server = (settings.ollamaServer || 'http://localhost:11434').replace(/\/$/, '');
   if (!settings.ollamaModel) {
     throw new Error('Ollamaのモデルが選択されていません');
@@ -220,7 +272,9 @@ async function translateWithOllama(text, settings) {
           model: settings.ollamaModel,
           prompt,
           stream: false
-        })
+        }),
+        timeoutMs: requestOptions.timeoutMs ?? 180000,
+        signal: requestOptions.signal
       },
       'Ollama API リクエスト中にエラーが発生'
     );
@@ -232,7 +286,7 @@ async function translateWithOllama(text, settings) {
 }
 
 // LM Studio (OpenAI互換) での翻訳
-async function translateWithLmStudio(text, settings) {
+async function translateWithLmStudio(text, settings, requestOptions = {}) {
   const server = (settings.lmstudioServer || 'http://localhost:1234').replace(/\/$/, '');
   if (!settings.lmstudioModel) {
     throw new Error('LM Studio のモデルが選択されていません');
@@ -257,7 +311,7 @@ async function translateWithLmStudio(text, settings) {
   try {
     const data = await makeApiRequest(
       apiUrl,
-      { method: 'POST', headers, body },
+      { method: 'POST', headers, body, timeoutMs: requestOptions.timeoutMs ?? 180000, signal: requestOptions.signal },
       'LM Studio API リクエスト中にエラーが発生'
     );
     return (data.choices?.[0]?.message?.content || '').trim();
@@ -267,21 +321,21 @@ async function translateWithLmStudio(text, settings) {
 }
 
 // テキスト翻訳関数
-export async function translateText(text, settings) {
+export async function translateText(text, settings, requestOptions = {}) {
   if (settings.apiProvider === 'openrouter') {
-    return await translateWithOpenRouter(text, settings);
+    return await translateWithOpenRouter(text, settings, requestOptions);
   } else if (settings.apiProvider === 'ollama') {
-    return await translateWithOllama(text, settings);
+    return await translateWithOllama(text, settings, requestOptions);
   } else if (settings.apiProvider === 'lmstudio') {
-    return await translateWithLmStudio(text, settings);
+    return await translateWithLmStudio(text, settings, requestOptions);
   } else {
-    return await translateWithGemini(text, settings);
+    return await translateWithGemini(text, settings, requestOptions);
   }
 }
 
 // 構造化バッチ翻訳（Gemini専用）。
 // 入力: texts: string[] -> 出力: translations: string[]（同じ長さ、足りない分は原文で埋める）
-export async function translateBatchStructured(texts, settings) {
+export async function translateBatchStructured(texts, settings, requestOptions = {}) {
   if (settings.apiProvider !== 'gemini') {
     throw new Error('structured batch translation is only implemented for Gemini provider for now');
   }
@@ -317,7 +371,13 @@ export async function translateBatchStructured(texts, settings) {
 
   const data = await makeApiRequest(
     apiUrl,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      timeoutMs: requestOptions.timeoutMs ?? 180000,
+      signal: requestOptions.signal
+    },
     'Gemini API (structured batch) リクエスト中にエラーが発生'
   );
 

@@ -63,7 +63,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
   // ツイート翻訳リクエストの処理
   if (message.action === 'translateTweet') {
       loadSettings()
-      .then(settings => translateText(message.text, settings))
+      .then(settings => translateText(message.text, settings, { timeoutMs: 180000 }))
       .then(translatedText => {
               sendResponse({ translatedText: translatedText });
       })
@@ -82,7 +82,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
       .then(currentSettings => {
         // popupからの設定で上書きする（APIキーやモデルなど）
         const testSettings = { ...currentSettings, ...message.settings };
-        return translateText(message.text, testSettings);
+        return translateText(message.text, testSettings, { timeoutMs: 180000 });
       })
       .then(result => {
               sendResponse({ result: result });
