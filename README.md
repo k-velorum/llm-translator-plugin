@@ -41,7 +41,10 @@ Google Chrome用の拡張機能で、選択したテキストをLLM（大規模�
    - OpenRouter: [OpenRouter](https://openrouter.ai/) でAPIキー取得
    - Google Gemini: [Google AI Studio](https://aistudio.google.com/) でAPIキー取得
    - Ollama: [Ollama](https://ollama.ai/) をインストール・起動（既定: http://localhost:11434）
-   - Ollama互換(Claude Codeラッパー): `docker-compose up --build` で `http://localhost:11434` に起動（実体はClaude Code）
+   - Ollama互換ラッパー: `docker-compose up --build` で `http://localhost:11434` に起動
+     - ⚠️ **API（従量課金型）での利用を想定**。サブスクリプションプラン（Pro/Team等）は非対応です
+     - ⚠️ **外部公開禁止**: このエンドポイントを外部に公開すると利用規約違反の可能性があります
+     - 詳細は [claude-ollama-wrapper/README.md](claude-ollama-wrapper/README.md) を参照
    - LM Studio: [LM Studio](https://lmstudio.ai/) をインストール・起動（既定: http://localhost:1234）
 4. モデルを選択して「設定を保存」
 
