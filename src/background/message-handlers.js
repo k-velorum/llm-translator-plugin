@@ -1,5 +1,6 @@
 import { loadSettings } from './settings.js';
 import { translateText, makeApiRequest } from './api.js';
+import { appendLog, getProviderMeta } from './logging.js';
 
 // APIキー検証とモデル一覧取得の共通処理
 async function handleApiRequest(action, apiKey, endpoint, headers, successCallback, errorCallback, settings) {
@@ -63,14 +64,24 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
   // ツイート翻訳リクエストの処理
   if (message.action === 'translateTweet') {
       loadSettings()
-      .then(settings => translateText(message.text, settings, { timeoutMs: 180000 }))
-      .then(translatedText => {
-              sendResponse({ translatedText: translatedText });
-      })
-      .catch(error => {
-        console.error('ツイート翻訳エラー:', error);
-        // エラーオブジェクト全体を送るのではなく、必要な情報だけ送る
-        sendResponse({ error: { message: error.message, details: error.stack || '' } });
+      .then(settings => {
+        return translateText(message.text, settings, { timeoutMs: 180000 })
+          .then(translatedText => {
+            sendResponse({ translatedText: translatedText });
+          })
+          .catch(error => {
+            console.error('ツイート翻訳エラー:', error);
+            appendLog({
+              level: 'error',
+              type: 'translate',
+              event: 'tweet_failed',
+              ...getProviderMeta(settings),
+              tabId: sender?.tab?.id,
+              message: error?.message || String(error)
+            });
+            // エラーオブジェクト全体を送るのではなく、必要な情報だけ送る
+            sendResponse({ error: { message: error.message, details: error.stack || '' } });
+          });
       });
     return true; // 非同期レスポンスを示すためにtrueを返す
   }
@@ -82,14 +93,22 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
       .then(currentSettings => {
         // popupからの設定で上書きする（APIキーやモデルなど）
         const testSettings = { ...currentSettings, ...message.settings };
-        return translateText(message.text, testSettings, { timeoutMs: 180000 });
-      })
-      .then(result => {
-              sendResponse({ result: result });
-      })
-      .catch(error => {
-        console.error('テスト翻訳エラー:', error);
-        sendResponse({ error: { message: error.message, details: error.stack || '' } });
+        return translateText(message.text, testSettings, { timeoutMs: 180000 })
+          .then(result => {
+            sendResponse({ result: result });
+          })
+          .catch(error => {
+            console.error('テスト翻訳エラー:', error);
+            appendLog({
+              level: 'error',
+              type: 'translate',
+              event: 'test_failed',
+              ...getProviderMeta(testSettings),
+              tabId: sender?.tab?.id,
+              message: error?.message || String(error)
+            });
+            sendResponse({ error: { message: error.message, details: error.stack || '' } });
+          });
       });
     return true;
   }

@@ -244,6 +244,7 @@
       <select id="api-provider">
         <option value="openrouter">OpenRouter API</option>
         <option value="gemini">Google Gemini API</option>
+        <option value="zai">Z-AI</option>
         <option value="ollama">Ollama (Local Server)</option>
         <option value="lmstudio">LM Studio (Local Server)</option>
       </select>
@@ -282,6 +283,24 @@
           <option value="">モデルを読み込み中...</option>
         </select>
         <div id="gemini-model-info" class="model-info"></div>
+      </div>
+    </div>
+
+    <!-- Z-AI 設定 -->
+    <div id="zai-section" class="api-section hidden">
+      <div class="api-heading">Z-AI 設定</div>
+
+      <div class="form-group">
+        <label for="zai-api-key">Z-AI APIキー</label>
+        <input type="text" id="zai-api-key" placeholder="your-api-key" />
+      </div>
+
+      <div class="form-group">
+        <label for="zai-model">モデル</label>
+        <select id="zai-model" class="model-select">
+          <option value="">モデルを読み込み中...</option>
+        </select>
+        <div id="zai-model-info" class="model-info"></div>
       </div>
     </div>
 
@@ -400,6 +419,7 @@
       <select id="test-api-provider">
         <option value="openrouter">OpenRouter API</option>
         <option value="gemini">Google Gemini API</option>
+        <option value="zai">Z-AI</option>
         <option value="ollama">Ollama (Local Server)</option>
         <option value="lmstudio">LM Studio (Local Server)</option>
       </select>
@@ -420,7 +440,7 @@
   <div id="log-tab" class="tab-content">
     <div class="api-section">
       <div class="api-heading" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-        <span>ページ翻訳ログ</span>
+        <span>翻訳ログ</span>
         <button id="log-clear-button" type="button" style="width:auto;background:#f0f0f0;color:#333;padding:6px 10px;border:1px solid #ccc;">クリア</button>
       </div>
       <div id="log-status" class="status hidden"></div>

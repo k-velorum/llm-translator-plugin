@@ -87,6 +87,43 @@ const ErrorUtils = {
   }
 };
 
+function canUseExtensionRuntime() {
+  try {
+    return !!(chrome?.runtime?.id && chrome?.runtime?.sendMessage);
+  } catch (_) {
+    return false;
+  }
+}
+
+function safeSendMessage(payload, callback) {
+  if (!canUseExtensionRuntime()) {
+    if (typeof callback === 'function') {
+      try { callback({ error: { message: 'Extension context invalidated' } }); } catch (_) {}
+    }
+    return false;
+  }
+  try {
+    chrome.runtime.sendMessage(payload, (response) => {
+      if (chrome.runtime?.lastError) {
+        const message = chrome.runtime.lastError.message || 'sendMessage failed';
+        console.warn('sendMessage failed:', chrome.runtime.lastError);
+        if (typeof callback === 'function') {
+          callback({ error: { message } });
+        }
+        return;
+      }
+      if (typeof callback === 'function') callback(response);
+    });
+    return true;
+  } catch (e) {
+    console.warn('sendMessage failed:', e);
+    if (typeof callback === 'function') {
+      callback({ error: { message: e?.message || 'sendMessage failed' } });
+    }
+    return false;
+  }
+}
+
 // スタイル定義
 const styles = {
   popup: {
@@ -391,12 +428,16 @@ function showPageTranslationControls(snapshotId, remainingChunks, processedItems
         await new Promise((resolve, reject) => {
           // background がハングしてもUIが永遠に戻らないのを防ぐ
           const t = setTimeout(() => reject(new Error('continuePageTranslation timeout')), 200000);
-          chrome.runtime.sendMessage({ action: 'continuePageTranslation', snapshotId }, (res) => {
+          const sent = safeSendMessage({ action: 'continuePageTranslation', snapshotId }, (res) => {
             clearTimeout(t);
-            if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+            if (res?.error) return reject(new Error(res.error.message || res.error || 'unknown error'));
             if (!res || res.ok !== true) return reject(new Error(res?.error || 'unknown error'));
             resolve();
           });
+          if (!sent) {
+            clearTimeout(t);
+            return reject(new Error('Extension context invalidated'));
+          }
         });
       } catch (e) {
         console.error('continuePageTranslation 送信失敗:', e);
@@ -419,10 +460,11 @@ function showPageTranslationControls(snapshotId, remainingChunks, processedItems
       stopBtn.disabled = true;
       try {
         await new Promise((resolve, reject) => {
-          chrome.runtime.sendMessage({ action: 'cancelPageTranslation', snapshotId }, (res) => {
-            if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+          const sent = safeSendMessage({ action: 'cancelPageTranslation', snapshotId }, (res) => {
+            if (res?.error) return reject(new Error(res.error.message || res.error || 'unknown error'));
             resolve();
           });
+          if (!sent) return reject(new Error('Extension context invalidated'));
         });
       } catch (e) {
         console.error('cancelPageTranslation 送信失敗:', e);
@@ -605,18 +647,20 @@ function addButtonToTweet(tweetElement) {
     let pending = tweetTextElements.length;
     tweetTextElements.forEach(el => {
       const text = el.textContent;
-      chrome.runtime.sendMessage(
-        { action: 'translateTweet', text },
-        (response) => {
-          showTweetTranslation(tweetElement, el, response.error ? `翻訳エラー: ${response.error.message || '不明なエラー'}` : response.translatedText);
-          pending -= 1;
-          if (pending === 0) {
-            translateButton.style.color = 'rgb(83, 100, 113)';
-            translateIcon.style.display = 'block';
-            spinner.style.display = 'none';
-          }
+      safeSendMessage({ action: 'translateTweet', text }, (response) => {
+        const err = response?.error;
+        const message = err?.message || (typeof err === 'string' ? err : null);
+        const translatedText = message
+          ? `翻訳エラー: ${message}`
+          : (response?.translatedText ?? '翻訳エラー: 拡張機能との通信に失敗しました');
+        showTweetTranslation(tweetElement, el, translatedText);
+        pending -= 1;
+        if (pending === 0) {
+          translateButton.style.color = 'rgb(83, 100, 113)';
+          translateIcon.style.display = 'block';
+          spinner.style.display = 'none';
         }
-      );
+      });
     });
   });
 
@@ -769,10 +813,12 @@ function addButtonToYouTubeComment(contentTextEl) {
     spinner.style.display = 'inline-block';
 
     const text = contentTextEl.textContent || '';
-    chrome.runtime.sendMessage({ action: 'translateTweet', text }, (response) => {
-      const translatedText = response?.error
-        ? `翻訳エラー: ${response.error.message || '不明なエラー'}`
-        : response?.translatedText || '';
+    safeSendMessage({ action: 'translateTweet', text }, (response) => {
+      const err = response?.error;
+      const message = err?.message || (typeof err === 'string' ? err : null);
+      const translatedText = message
+        ? `翻訳エラー: ${message}`
+        : (response?.translatedText ?? '翻訳エラー: 拡張機能との通信に失敗しました');
       showYouTubeCommentTranslation(contentTextEl, translatedText);
       btn.style.color = 'rgb(83, 100, 113)';
       translateIcon.style.display = 'inline-block';

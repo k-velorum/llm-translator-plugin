@@ -44,6 +44,7 @@ const PopupUtils = {
     const validationRules = {
       openrouter: { key: 'openrouterApiKey', message: 'OpenRouter APIキーを入力してください' },
       gemini: { key: 'geminiApiKey', message: 'Gemini APIキーを入力してください' },
+      zai: { key: 'zaiApiKey', message: 'Z-AI APIキーを入力してください' },
       // Ollama はAPIキー不要
     };
     
@@ -80,7 +81,7 @@ function initSelect2(elements) {
     });
     
     // モデル選択時の処理
-    $('#openrouter-model, #gemini-model, #ollama-model, #lmstudio-model').on('select2:select', function(e) {
+    $('#openrouter-model, #gemini-model, #zai-model, #ollama-model, #lmstudio-model').on('select2:select', function(e) {
       const provider = this.id.split('-')[0]; // openrouter または gemini
       const modelId = e.params.data.id;
       const modelData = $(this).find(`option[value="${modelId}"]`).data('model');
@@ -178,19 +179,27 @@ function updateModelInfo(provider, modelData) {
   } else if (provider === 'gemini') {
     addLine(`モデル: ${modelData.name}`);
     if (modelData.context_length) addLine(`入力上限: ${modelData.context_length} tokens`);
-  } else if (provider === 'ollama' || provider === 'lmstudio') {
+  } else if (provider === 'ollama' || provider === 'lmstudio' || provider === 'zai') {
     addLine(`モデル: ${modelData.name || modelData.id}`);
   }
 }
 
 // モデル一覧の読み込み
 function loadModels(elements) {
-  ['openrouter', 'gemini', 'ollama', 'lmstudio'].forEach(p => loadProviderModels(p, elements));
+  ['openrouter', 'gemini', 'zai', 'ollama', 'lmstudio'].forEach(p => loadProviderModels(p, elements));
 }
 
 // 特定プロバイダーのモデル一覧を読み込む
 function loadProviderModels(provider, elements) {
   const modelSelect = elements[`${provider}ModelSelect`];
+
+  if (provider === 'zai') {
+    chrome.storage.sync.get(['zaiModel'], (settings) => {
+      setDefaultModels(provider, modelSelect);
+      PopupUtils.restoreModelSelection(provider, modelSelect, settings.zaiModel);
+    });
+    return;
+  }
 
   if (provider === 'ollama') {
     chrome.storage.sync.get(['ollamaServer', 'ollamaModel'], async (settings) => {
@@ -354,6 +363,18 @@ function setDefaultModels(provider, selectElement) {
       { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku' },
       { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet' }
     ],
+    zai: [
+      { id: 'glm-4.7', name: 'glm-4.7' },
+      { id: 'glm-4.7-flash', name: 'glm-4.7-flash' },
+      { id: 'glm-4.7-flashx', name: 'glm-4.7-flashx' },
+      { id: 'glm-4.6', name: 'glm-4.6' },
+      { id: 'glm-4.5', name: 'glm-4.5' },
+      { id: 'glm-4.5-air', name: 'glm-4.5-air' },
+      { id: 'glm-4.5-x', name: 'glm-4.5-x' },
+      { id: 'glm-4.5-airx', name: 'glm-4.5-airx' },
+      { id: 'glm-4.5-flash', name: 'glm-4.5-flash' },
+      { id: 'glm-4-32b-0414-128k', name: 'glm-4-32b-0414-128k' }
+    ],
 
   };
   
@@ -372,15 +393,15 @@ function setDefaultModels(provider, selectElement) {
     selectElement.appendChild(emptyOption);
 
     defaultModels[provider].forEach(model => {
-    const option = document.createElement('option');
-    option.value = model.id;
-    option.textContent = model.name;
-    
-    // モデルデータをdata属性に保存
-    $(option).data('model', model);
-    
-    selectElement.appendChild(option);
-  });
+      const option = document.createElement('option');
+      option.value = model.id;
+      option.textContent = model.name;
+      
+      // モデルデータをdata属性に保存
+      $(option).data('model', model);
+      
+      selectElement.appendChild(option);
+    });
   }
   
   // 前回選択していたモデルがあれば選択状態を復元
@@ -400,12 +421,15 @@ function getElements() {
     apiProviderSelect: document.getElementById('api-provider'),
     openrouterSection: document.getElementById('openrouter-section'),
     geminiSection: document.getElementById('gemini-section'),
+    zaiSection: document.getElementById('zai-section'),
     ollamaSection: document.getElementById('ollama-section'),
     lmstudioSection: document.getElementById('lmstudio-section'),
     openrouterApiKeyInput: document.getElementById('openrouter-api-key'),
     openrouterModelSelect: document.getElementById('openrouter-model'),
     geminiApiKeyInput: document.getElementById('gemini-api-key'),
     geminiModelSelect: document.getElementById('gemini-model'),
+    zaiApiKeyInput: document.getElementById('zai-api-key'),
+    zaiModelSelect: document.getElementById('zai-model'),
     ollamaServerInput: document.getElementById('ollama-server'),
     ollamaModelSelect: document.getElementById('ollama-model'),
     lmstudioServerInput: document.getElementById('lmstudio-server'),
@@ -458,9 +482,9 @@ function initTabs({ tabs, tabContents }) {
   });
 }
 
-function setupApiProviderToggle({ apiProviderSelect, openrouterSection, geminiSection, ollamaSection, lmstudioSection }) {
+function setupApiProviderToggle({ apiProviderSelect, openrouterSection, geminiSection, zaiSection, ollamaSection, lmstudioSection }) {
   apiProviderSelect.addEventListener('change', () => {
-    const sections = { openrouter: openrouterSection, gemini: geminiSection, ollama: ollamaSection, lmstudio: lmstudioSection };
+    const sections = { openrouter: openrouterSection, gemini: geminiSection, zai: zaiSection, ollama: ollamaSection, lmstudio: lmstudioSection };
     
     // すべてのセクションを非表示にする
     Object.values(sections).forEach(section => section.classList.add('hidden'));
@@ -667,8 +691,11 @@ function loadSettings({
   openrouterModelSelect, 
   geminiApiKeyInput, 
   geminiModelSelect, 
+  zaiApiKeyInput,
+  zaiModelSelect,
   openrouterSection, 
   geminiSection,
+  zaiSection,
   ollamaSection,
   ollamaServerInput,
   ollamaModelSelect,
@@ -687,6 +714,8 @@ function loadSettings({
       openrouterModelSelect.value = settings.openrouterModel;
       geminiApiKeyInput.value = settings.geminiApiKey;
       geminiModelSelect.value = settings.geminiModel;
+      zaiApiKeyInput.value = settings.zaiApiKey;
+      zaiModelSelect.value = settings.zaiModel;
       ollamaServerInput.value = settings.ollamaServer || 'http://localhost:11434';
       ollamaModelSelect.value = settings.ollamaModel || '';
       lmstudioServerInput.value = settings.lmstudioServer || 'http://localhost:1234';
@@ -725,6 +754,7 @@ function loadSettings({
       const sections = {
         openrouter: openrouterSection,
         gemini: geminiSection,
+        zai: zaiSection,
         ollama: ollamaSection,
         lmstudio: lmstudioSection
       };
@@ -737,6 +767,7 @@ function loadSettings({
       
       // モデルの選択状態を復元
       PopupUtils.restoreModelSelection('openrouter', openrouterModelSelect, settings.openrouterModel);
+      PopupUtils.restoreModelSelection('zai', zaiModelSelect, settings.zaiModel);
       PopupUtils.restoreModelSelection('ollama', ollamaModelSelect, settings.ollamaModel);
       PopupUtils.restoreModelSelection('lmstudio', lmstudioModelSelect, settings.lmstudioModel);
     }
@@ -744,13 +775,15 @@ function loadSettings({
 }
 
 // 設定の保存
-function saveSettings({ apiProviderSelect, openrouterApiKeyInput, openrouterModelSelect, geminiApiKeyInput, geminiModelSelect, ollamaServerInput, ollamaModelSelect, lmstudioServerInput, lmstudioApiKeyInput, lmstudioModelSelect, statusMessage, twitterFeatureCheckbox, youtubeFeatureCheckbox }) {
+function saveSettings({ apiProviderSelect, openrouterApiKeyInput, openrouterModelSelect, geminiApiKeyInput, geminiModelSelect, zaiApiKeyInput, zaiModelSelect, ollamaServerInput, ollamaModelSelect, lmstudioServerInput, lmstudioApiKeyInput, lmstudioModelSelect, statusMessage, twitterFeatureCheckbox, youtubeFeatureCheckbox }) {
   const settings = {
     apiProvider: apiProviderSelect.value,
     openrouterApiKey: openrouterApiKeyInput.value.trim(),
     openrouterModel: openrouterModelSelect.value,
     geminiApiKey: geminiApiKeyInput.value.trim(),
     geminiModel: geminiModelSelect.value,
+    zaiApiKey: zaiApiKeyInput.value.trim(),
+    zaiModel: zaiModelSelect.value,
     ollamaServer: ollamaServerInput.value.trim() || 'http://localhost:11434',
     ollamaModel: ollamaModelSelect.value,
     lmstudioServer: lmstudioServerInput.value.trim() || 'http://localhost:1234',
@@ -808,6 +841,22 @@ function testApi(elements) {
           apiProvider: 'gemini',
           geminiApiKey: settings.geminiApiKey,
           geminiModel: settings.geminiModel
+        };
+      } else if (apiProvider === 'zai') {
+        if (!settings.zaiApiKey) {
+          showStatus(testStatus, 'Z-AI APIキーが設定されていません', false);
+          testButton.disabled = false;
+          return;
+        }
+        if (!settings.zaiModel) {
+          showStatus(testStatus, 'Z-AI のモデルが設定されていません', false);
+          testButton.disabled = false;
+          return;
+        }
+        providerSettings = {
+          apiProvider: 'zai',
+          zaiApiKey: settings.zaiApiKey,
+          zaiModel: settings.zaiModel
         };
       } else if (apiProvider === 'ollama') {
         if (!settings.ollamaModel) {

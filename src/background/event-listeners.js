@@ -1,57 +1,10 @@
 import { loadSettings, initializeDefaultSettings } from './settings.js';
 import { translateText, translateBatchStructured, formatErrorDetails } from './api.js';
+import { appendLog, getProviderMeta } from './logging.js';
 
 // =============================
 // ページ全体翻訳: ログ（popup の「ログ」タブで表示）
 // =============================
-const PAGE_TRANSLATION_LOG_KEY = 'pageTranslationLogs';
-const PAGE_TRANSLATION_LOG_MAX = 200;
-
-function storageLocalGet(key) {
-  return new Promise((resolve) => {
-    try {
-      chrome.storage.local.get(key, (data) => resolve(data || {}));
-    } catch (_) {
-      resolve({});
-    }
-  });
-}
-
-function storageLocalSet(obj) {
-  return new Promise((resolve, reject) => {
-    try {
-      chrome.storage.local.set(obj, () => {
-        if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
-        resolve();
-      });
-    } catch (e) {
-      reject(e);
-    }
-  });
-}
-
-async function appendPageTranslationLog(entry) {
-  try {
-    const item = { ts: Date.now(), ...entry };
-    const data = await storageLocalGet(PAGE_TRANSLATION_LOG_KEY);
-    const arr = Array.isArray(data[PAGE_TRANSLATION_LOG_KEY]) ? data[PAGE_TRANSLATION_LOG_KEY] : [];
-    arr.push(item);
-    while (arr.length > PAGE_TRANSLATION_LOG_MAX) arr.shift();
-    await storageLocalSet({ [PAGE_TRANSLATION_LOG_KEY]: arr });
-  } catch (e) {
-    // ログ失敗は翻訳処理を止めない
-    console.debug('appendPageTranslationLog failed:', e);
-  }
-}
-
-function getProviderMeta(settings) {
-  const provider = settings?.apiProvider || 'unknown';
-  if (provider === 'openrouter') return { provider: 'openrouter', model: settings.openrouterModel || '' };
-  if (provider === 'gemini') return { provider: 'gemini', model: settings.geminiModel || '' };
-  if (provider === 'ollama') return { provider: 'ollama', model: settings.ollamaModel || '' };
-  if (provider === 'lmstudio') return { provider: 'lmstudio', model: settings.lmstudioModel || '' };
-  return { provider, model: '' };
-}
 
 // =============================
 // ページ全体翻訳: 既定値（settings に無い場合のフォールバック）
@@ -115,7 +68,7 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
   // ログ（要約のみ）
   if (depth === 0) {
     try {
-      await appendPageTranslationLog({
+      await appendLog({
         level: 'info',
         type: 'page-translation',
         event: 'chunk_start',
@@ -130,7 +83,7 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
   if (depth === 0 && chunk.length === 1 && typeof chunk[0] === 'string' && chunk[0].length > maxChars) {
     const s = chunk[0];
 
-    await appendPageTranslationLog({
+    await appendLog({
       level: 'warn',
       type: 'page-translation',
       event: 'oversized_single_node',
@@ -173,7 +126,7 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
   const translated = await translateText(joined, settings, requestOptions);
 
   if (depth === 0) {
-    await appendPageTranslationLog({
+    await appendLog({
       level: 'info',
       type: 'page-translation',
       event: 'chunk_translated',
@@ -287,7 +240,7 @@ async function processPageTranslationPass(session, chunksPerPass) {
         session.lastError = msg;
         session.failedAt = r.idx;
 
-        await appendPageTranslationLog({
+        await appendLog({
           level: 'error',
           type: 'page-translation',
           event: 'chunk_failed',
@@ -334,7 +287,7 @@ async function processPageTranslationPass(session, chunksPerPass) {
         });
       } catch (_) {}
 
-      await appendPageTranslationLog({
+      await appendLog({
         level: 'info',
         type: 'page-translation',
         event: 'chunk_applied',
@@ -354,7 +307,7 @@ async function processPageTranslationPass(session, chunksPerPass) {
   // 完了したらセッションを破棄
   if (!session.canceled && session.nextIndex >= chunks.length) {
     deletePageTranslationSession(tabId, snapshotId);
-    await appendPageTranslationLog({
+    await appendLog({
       level: 'info',
       type: 'page-translation',
       event: 'complete',
@@ -374,6 +327,14 @@ async function translateAndNotify(tabId, text) {
     translatedText = await translateText(text, settings);
   } catch (error) {
     console.error('翻訳処理中のエラー:', error);
+    await appendLog({
+      level: 'error',
+      type: 'translate',
+      event: 'selection_failed',
+      ...getProviderMeta(settings),
+      tabId,
+      message: error?.message || String(error)
+    });
     translatedText = formatErrorDetails(error, settings);
   }
 
@@ -580,7 +541,7 @@ async function handleContextMenuClick(info, tab) {
 
       registerPageTranslationSession(session);
 
-      await appendPageTranslationLog({
+      await appendLog({
         level: 'info',
         type: 'page-translation',
         event: 'start',
@@ -612,7 +573,7 @@ async function handleContextMenuClick(info, tab) {
       } catch (e) {
         const msg = e?.message || String(e);
         session.lastError = msg;
-        await appendPageTranslationLog({
+        await appendLog({
           level: 'error',
           type: 'page-translation',
           event: 'pass_failed',
@@ -639,7 +600,7 @@ async function handleContextMenuClick(info, tab) {
       }
 
       if (session.lastError) {
-        await appendPageTranslationLog({
+        await appendLog({
           level: 'warn',
           type: 'page-translation',
           event: 'stopped_with_error',
@@ -652,7 +613,7 @@ async function handleContextMenuClick(info, tab) {
 
     } catch (error) {
       console.error('ページ全体翻訳エラー:', error);
-      await appendPageTranslationLog({
+      await appendLog({
         level: 'error',
         type: 'page-translation',
         event: 'fatal',
@@ -754,7 +715,7 @@ export function registerEventListeners() {
           } catch (e) {
             const msg = e?.message || String(e);
             session.lastError = msg;
-            await appendPageTranslationLog({
+            await appendLog({
               level: 'error',
               type: 'page-translation',
               event: 'pass_failed',
@@ -780,7 +741,7 @@ export function registerEventListeners() {
           }
 
           if (session.lastError) {
-            await appendPageTranslationLog({
+            await appendLog({
               level: 'warn',
               type: 'page-translation',
               event: 'stopped_with_error',
@@ -813,7 +774,7 @@ export function registerEventListeners() {
           try { session.abortController?.abort(); } catch (_) {}
           deletePageTranslationSession(tabId, snapshotId);
 
-          await appendPageTranslationLog({
+          await appendLog({
             level: 'info',
             type: 'page-translation',
             event: 'canceled',

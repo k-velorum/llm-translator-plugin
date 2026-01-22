@@ -5,6 +5,8 @@ export const DEFAULT_SETTINGS = {
   openrouterModel: 'openai/gpt-4o-mini',
   geminiApiKey: '',
   geminiModel: 'gemini-flash-2.0',
+  zaiApiKey: '',
+  zaiModel: 'glm-4.7',
   // 翻訳用システムプロンプト（ユーザー編集可能）
   translationSystemPrompt:
     '指示された文章を日本語に翻訳してください。翻訳結果のみを出力してください。特殊区切りトークン [[[SEP]]] が含まれる場合、それらは絶対に削除・翻訳・変更せず、そのまま出力に保持してください。トークンの数と順序も厳密に維持してください。',

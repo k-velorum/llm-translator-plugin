@@ -30,6 +30,10 @@ export function formatErrorDetails(error, settings) {
     apiProvider = 'Google Gemini';
     modelName = settings.geminiModel;
     maskedApiKey = maskApiKey(settings.geminiApiKey);
+  } else if (settings.apiProvider === 'zai') {
+    apiProvider = 'Z-AI';
+    modelName = settings.zaiModel;
+    maskedApiKey = maskApiKey(settings.zaiApiKey);
   } else if (settings.apiProvider === 'ollama') {
     apiProvider = `Ollama (${settings.ollamaServer || 'http://localhost:11434'})`;
     modelName = settings.ollamaModel || '未選択';
@@ -251,6 +255,44 @@ async function translateWithGemini(text, settings, requestOptions = {}) {
   }
 }
 
+// Z-AI (OpenAI互換) での翻訳
+async function translateWithZai(text, settings, requestOptions = {}) {
+  if (!settings.zaiApiKey) {
+    throw new Error('Z-AI APIキーが設定されていません');
+  }
+  if (!settings.zaiModel) {
+    throw new Error('Z-AIのモデルが選択されていません');
+  }
+
+  const apiUrl = 'https://api.z.ai/api/paas/v4/chat/completions';
+  const messages = [
+    { role: 'system', content: getSystemPrompt(settings) },
+    { role: 'user', content: text }
+  ];
+
+  const data = await makeApiRequest(
+    apiUrl,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${settings.zaiApiKey}`
+      },
+      body: JSON.stringify({
+        model: settings.zaiModel,
+        messages,
+        temperature: 0.2,
+        stream: false
+      }),
+      timeoutMs: requestOptions.timeoutMs ?? 180000,
+      signal: requestOptions.signal
+    },
+    'Z-AI API リクエスト中にエラーが発生'
+  );
+
+  return (data.choices?.[0]?.message?.content || '').trim();
+}
+
 // Anthropic は削除済み
 
 // Ollama (local server) での翻訳
@@ -324,6 +366,8 @@ async function translateWithLmStudio(text, settings, requestOptions = {}) {
 export async function translateText(text, settings, requestOptions = {}) {
   if (settings.apiProvider === 'openrouter') {
     return await translateWithOpenRouter(text, settings, requestOptions);
+  } else if (settings.apiProvider === 'zai') {
+    return await translateWithZai(text, settings, requestOptions);
   } else if (settings.apiProvider === 'ollama') {
     return await translateWithOllama(text, settings, requestOptions);
   } else if (settings.apiProvider === 'lmstudio') {
