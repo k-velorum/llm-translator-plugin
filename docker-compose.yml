@@ -3,6 +3,7 @@ services:
     build:
       context: ./claude-ollama-wrapper
     container_name: claude-ollama
+    restart: always
     ports:
       - "127.0.0.1:11434:11434"
     environment:
