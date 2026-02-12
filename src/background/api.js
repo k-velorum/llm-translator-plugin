@@ -276,7 +276,8 @@ async function translateWithZai(text, settings, requestOptions = {}) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.zaiApiKey}`
+        'Authorization': `Bearer ${settings.zaiApiKey}`,
+        'Accept-Language': 'en-US,en'
       },
       body: JSON.stringify({
         model: settings.zaiModel,
