@@ -109,6 +109,7 @@ Google Chrome用の拡張機能で、選択したテキストをLLM（大規模�
 - Manifest V3に準拠したChrome拡張機能
 - OpenRouter API、Google Gemini API、Cerebras API、Z-AI、Ollama、LM Studioに対応
 - ES Modules対応のバックグラウンドスクリプト
+- バックグラウンド処理は責務別に分割（`event-listeners.js` / `page-translation-service.js` / `selection-translation.js` / `message-handlers.js` / `api.js` / `settings.js`）
 - jQuery 3.7.1 + Select2 4.0.13を使用したUI
 
 ## 既知の制限/注意点

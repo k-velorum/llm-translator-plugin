@@ -25,7 +25,9 @@
     *   **`api.js`**: LLM API (OpenRouter, Gemini, Ollama, LM Studio) へのリクエスト送信、レスポンス処理、エラーフォーマットを担当します。
     *   **`message-handlers.js`**: `content.js` や `popup.js` からのメッセージ (`chrome.runtime.onMessage`) を受け取り、対応する処理（翻訳実行、APIテスト、キー検証、モデル取得など）を呼び出します。
     *   **`settings.js`**: 設定 (`chrome.storage.sync`) の読み込みとデフォルト設定の初期化を担当します。
-    *   **`event-listeners.js`**: Chrome拡張機能のイベント (`onInstalled`, `contextMenus.onClicked`, `commands.onCommand`) のリスナー登録と、イベント発生時の処理を担当します。
+    *   **`page-translation-service.js`**: ページ全体翻訳のセッション管理、チャンク翻訳、continue/cancel のランタイムメッセージ処理を担当します。
+    *   **`selection-translation.js`**: 選択テキスト翻訳の実行と、表示フォールバック（content script → script injection → new tab）を担当します。
+    *   **`event-listeners.js`**: Chrome拡張イベントの登録と各サービスへのルーティングを担当します。
 *   **`content.js`**: ウェブページ上で動作するスクリプト。
     *   ユーザーがテキストを選択した際に、バックグラウンドスクリプトからの要求 (`getSelectedText`) に応じて選択テキストを送信。
     *   バックグラウンドスクリプトから受け取った翻訳結果 (`showTranslation`) をポップアップで表示。ポップアップにはコピーボタンも含まれる。
@@ -59,16 +61,37 @@
 
 #### 3.1.2. `src/background/event-listeners.js`
 
-*   Chrome拡張機能の主要なイベントリスナーを登録し、それぞれのハンドラ関数を定義します。
+*   Chrome拡張機能の主要なイベントリスナーを登録し、各処理を専用モジュールへ委譲します。
 *   **`registerEventListeners`**: このモジュールのメイン関数。以下のリスナーを登録します。
     *   `chrome.runtime.onInstalled`: 拡張機能のインストール時または更新時に実行されます。`initializeDefaultSettings` (設定初期化) と `setupContextMenu` (コンテキストメニュー作成) を呼び出します。
-    *   `chrome.contextMenus.onClicked`: コンテキストメニュー (`LLM翻訳`, `LLMページ全体翻訳`) がクリックされた際の処理 (`handleContextMenuClick`) を実行します。選択テキストまたはページ全体翻訳を識別し、それぞれの処理を行います。
-    *   `chrome.commands.onCommand`: キーボードショートカット (`translate-selection`) が押された際の処理 (`handleCommand`) を実行します。アクティブタブの `content.js` から選択テキストを取得し、翻訳を実行して結果を `content.js` に送信します。
-*   **`setupContextMenu`**: コンテキストメニューを作成します。選択テキスト用(`LLM翻訳`)とページ全体翻訳用(`LLMページ全体翻訳`)の2つを生成し、既存のメニューがあれば削除してから再作成します。
-*   **`handleContextMenuClick`**: コンテキストメニュークリック時の非同期処理。`menuItemId`を判別し、選択テキスト翻訳またはページ全体翻訳の処理を実行します。
-*   **`handleCommand`**: キーボードショートカット実行時の非同期処理。
+    *   `chrome.contextMenus.onClicked`: コンテキストメニュー (`LLM翻訳`, `LLMページ全体翻訳`) がクリックされた際、選択翻訳は `selection-translation.js`、ページ全体翻訳は `page-translation-service.js` に委譲します。
+    *   `chrome.commands.onCommand`: キーボードショートカット (`translate-selection`) で選択テキストを取得し、`selection-translation.js` に委譲します。
+    *   `chrome.runtime.onMessage`: `continuePageTranslation` / `cancelPageTranslation` を `page-translation-service.js` に委譲します。
+*   この分割により、外部仕様（message action / menu ID / ログ event 名 / 設定キー）は維持しつつ、`event-listeners.js` はイベント登録とルーティングに専念します。
 
-#### 3.1.3. `src/background/message-handlers.js`
+#### 3.1.3. `src/background/page-translation-service.js`
+
+*   ページ全体翻訳の本体処理を担当します。
+*   `startPageTranslation(tabId)`:
+    *   `getPageTexts` でページテキストを取得し、設定値（`pageTranslation*`）でチャンク化してセッションを開始します。
+    *   チャンク翻訳と UI 進捗更新（`showPageTranslationControls` / `hidePageTranslationControls`）を管理します。
+*   `handlePageTranslationRuntimeMessage(message, sender, sendResponse)`:
+    *   `continuePageTranslation` / `cancelPageTranslation` を処理します。
+    *   `sender.tab.id` 不在時は active/currentWindow タブへフォールバックし、従来挙動を維持します。
+*   ログ event（`start`, `chunk_*`, `pass_failed`, `stopped_with_error`, `complete`, `canceled`, `fatal`）は既存と同一です。
+
+#### 3.1.4. `src/background/selection-translation.js`
+
+*   選択翻訳の本体処理を担当します。
+*   `translateAndNotify(tabId, text)`:
+    *   翻訳実行と `selection_failed` ログ記録を行います。
+    *   結果表示は以下の順でフォールバックします。
+        *   content script へ `showTranslation`
+        *   `chrome.scripting.executeScript` で簡易ポップアップ注入
+        *   data URL の新規タブ表示
+*   フォールバック順序・表示 action は従来仕様を維持します。
+
+#### 3.1.5. `src/background/message-handlers.js`
 
 *   `content.js` や `popup.js` から `chrome.runtime.sendMessage` で送信されたメッセージを処理します。
 *   **`handleBackgroundMessage`**: メインのメッセージハンドラ関数。メッセージの `action` プロパティに基づいて処理を分岐します。非同期処理を行う場合は `true` を返す必要があります。
@@ -78,7 +101,7 @@
     *   `get[Provider]Models`: `popup.js` からのモデル一覧取得リクエスト。`handleModelListRequest` を呼び出してモデル一覧を取得します。
 *   **`handleApiRequest`, `handleProxyRequest`, `handleDirectRequest`, `handleModelListRequest`**: APIキー検証やモデル一覧取得のためのヘルパー関数。設定 (`useProxyServer`) に応じて中間サーバー経由または直接APIアクセスを使い分けます。
 
-#### 3.1.4. `src/background/api.js`
+#### 3.1.6. `src/background/api.js`
 
 *   LLM APIとの通信に関するコアロジックを実装します。
 *   **`DEFAULT_SETTINGS`**: APIキーやモデル名などのデフォルト設定値をエクスポートします。
@@ -91,7 +114,7 @@
 *   **`makeApiRequest`**: `fetch` APIを使用してAPIリクエストを実行する共通の非同期関数。レスポンスステータスを確認し、エラーレスポンスの場合は詳細なエラー情報を抽出して例外をスローします。
 *   **`formatErrorDetails`**: APIエラー発生時に、ユーザーフレンドリーなエラーメッセージ（APIプロバイダー、モデル名、マスクされたAPIキー、エラー詳細を含む）を生成します。
 
-#### 3.1.5. `src/background/settings.js`
+#### 3.1.7. `src/background/settings.js`
 
 *   拡張機能の設定管理を担当します。
 *   **`loadSettings`**: `chrome.storage.sync` から設定を非同期に読み込みます。`DEFAULT_SETTINGS` を利用して、未設定の項目にはデフォルト値を適用します。
