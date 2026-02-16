@@ -30,6 +30,10 @@ export function formatErrorDetails(error, settings) {
     apiProvider = 'Google Gemini';
     modelName = settings.geminiModel;
     maskedApiKey = maskApiKey(settings.geminiApiKey);
+  } else if (settings.apiProvider === 'cerebras') {
+    apiProvider = 'Cerebras';
+    modelName = settings.cerebrasModel;
+    maskedApiKey = maskApiKey(settings.cerebrasApiKey);
   } else if (settings.apiProvider === 'zai') {
     apiProvider = 'Z-AI';
     modelName = settings.zaiModel;
@@ -255,6 +259,44 @@ async function translateWithGemini(text, settings, requestOptions = {}) {
   }
 }
 
+// Cerebras API (OpenAI互換) での翻訳
+async function translateWithCerebras(text, settings, requestOptions = {}) {
+  if (!settings.cerebrasApiKey) {
+    throw new Error('Cerebras APIキーが設定されていません');
+  }
+  if (!settings.cerebrasModel) {
+    throw new Error('Cerebras のモデルが選択されていません');
+  }
+
+  const apiUrl = 'https://api.cerebras.ai/v1/chat/completions';
+  const messages = [
+    { role: 'system', content: getSystemPrompt(settings) },
+    { role: 'user', content: text }
+  ];
+
+  const data = await makeApiRequest(
+    apiUrl,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${settings.cerebrasApiKey}`
+      },
+      body: JSON.stringify({
+        model: settings.cerebrasModel,
+        messages,
+        temperature: 0.2,
+        stream: false
+      }),
+      timeoutMs: requestOptions.timeoutMs ?? 180000,
+      signal: requestOptions.signal
+    },
+    'Cerebras API リクエスト中にエラーが発生'
+  );
+
+  return (data.choices?.[0]?.message?.content || '').trim();
+}
+
 // Z-AI (OpenAI互換) での翻訳
 async function translateWithZai(text, settings, requestOptions = {}) {
   if (!settings.zaiApiKey) {
@@ -367,6 +409,8 @@ async function translateWithLmStudio(text, settings, requestOptions = {}) {
 export async function translateText(text, settings, requestOptions = {}) {
   if (settings.apiProvider === 'openrouter') {
     return await translateWithOpenRouter(text, settings, requestOptions);
+  } else if (settings.apiProvider === 'cerebras') {
+    return await translateWithCerebras(text, settings, requestOptions);
   } else if (settings.apiProvider === 'zai') {
     return await translateWithZai(text, settings, requestOptions);
   } else if (settings.apiProvider === 'ollama') {

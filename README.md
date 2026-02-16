@@ -1,6 +1,6 @@
 # LLM翻訳プラグイン
 
-Google Chrome用の拡張機能で、選択したテキストをLLM（大規模言語モデル）を使用して翻訳します。OpenRouter、Google Gemini API、Z-AI、Ollama、LM Studioを利用して翻訳機能を提供します。
+Google Chrome用の拡張機能で、選択したテキストをLLM（大規模言語モデル）を使用して翻訳します。OpenRouter、Google Gemini API、Cerebras API、Z-AI、Ollama、LM Studioを利用して翻訳機能を提供します。
 
 ## 機能
 
@@ -10,7 +10,7 @@ Google Chrome用の拡張機能で、選択したテキストをLLM（大規模�
 - プラットフォーム連携: Twitter(X) ツイート、YouTube コメントの翻訳ボタン
 
 追加機能
-- 複数プロバイダー対応: OpenRouter / Google Gemini / Z-AI / Ollama / LM Studio（モデル選択・APIキー設定）
+- 複数プロバイダー対応: OpenRouter / Google Gemini / Cerebras / Z-AI / Ollama / LM Studio（モデル選択・APIキー設定）
 - 詳細設定: ページ翻訳のチャンク/ディレイ/区切りトークンを調整
 - システムプロンプト編集: 翻訳方針を機能タブから変更
 - テストタブ: 短文で疎通確認
@@ -36,10 +36,11 @@ Google Chrome用の拡張機能で、選択したテキストをLLM（大規模�
 ### API設定
 
 1. 拡張アイコンをクリックして設定を開きます
-2. 使用するAPIプロバイダー（OpenRouter / Google Gemini / Z-AI / Ollama / LM Studio）を選択
+2. 使用するAPIプロバイダー（OpenRouter / Google Gemini / Cerebras / Z-AI / Ollama / LM Studio）を選択
 3. プロバイダーごとの設定を入力:
    - OpenRouter: [OpenRouter](https://openrouter.ai/) でAPIキー取得
    - Google Gemini: [Google AI Studio](https://aistudio.google.com/) でAPIキー取得
+   - Cerebras: [Cerebras Inference](https://inference-docs.cerebras.ai/introduction) を参照してAPIキーを取得
    - Z-AI: Z-AI の API Keys ページでAPIキー取得
    - Ollama: [Ollama](https://ollama.ai/) をインストール・起動（既定: http://localhost:11434）
    - Ollama互換ラッパー: `docker-compose up --build` で `http://localhost:11434` に起動
@@ -106,7 +107,7 @@ Google Chrome用の拡張機能で、選択したテキストをLLM（大規模�
 ## 開発者向け情報
 
 - Manifest V3に準拠したChrome拡張機能
-- OpenRouter API、Google Gemini API、Z-AI、Ollama、LM Studioに対応
+- OpenRouter API、Google Gemini API、Cerebras API、Z-AI、Ollama、LM Studioに対応
 - ES Modules対応のバックグラウンドスクリプト
 - jQuery 3.7.1 + Select2 4.0.13を使用したUI
 

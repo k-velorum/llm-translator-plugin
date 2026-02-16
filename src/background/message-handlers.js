@@ -158,6 +158,50 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
 
   // Anthropic は削除済み
 
+  // Cerebras APIキー検証
+  if (message.action === 'verifyCerebrasApiKey') {
+    const apiKey = message.apiKey;
+    if (!apiKey) {
+      sendResponse({ error: { message: 'Cerebras APIキーが未指定です' } });
+      return true;
+    }
+    const endpoint = 'https://api.cerebras.ai/v1/models';
+    makeApiRequest(
+      endpoint,
+      { method: 'GET', headers: { 'Authorization': `Bearer ${apiKey}` } },
+      'Cerebras APIキー検証中にエラーが発生'
+    )
+      .then(() => sendResponse({ result: { success: true } }))
+      .catch((error) => sendResponse({ error: { message: error.message, details: error.stack || '' } }));
+    return true;
+  }
+
+  // Cerebras モデル一覧取得
+  if (message.action === 'getCerebrasModels') {
+    loadSettings().then((settings) => {
+      const apiKey = message.apiKey || settings.cerebrasApiKey;
+      const endpoint = apiKey
+        ? 'https://api.cerebras.ai/v1/models'
+        : 'https://api.cerebras.ai/public/v1/models?format=openrouter';
+      const headers = apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {};
+      makeApiRequest(endpoint, { method: 'GET', headers }, 'Cerebras モデル一覧取得中にエラーが発生')
+        .then((result) => {
+          const arr = Array.isArray(result?.data)
+            ? result.data
+            : (Array.isArray(result?.models) ? result.models : []);
+          const models = arr.map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            context_length: m.context_length,
+            pricing: m.pricing
+          }));
+          sendResponse({ models });
+        })
+        .catch((error) => sendResponse({ error: { message: error.message, details: error.stack || '' } }));
+    });
+    return true;
+  }
+
   // Gemini APIキー検証
   if (message.action === 'verifyGeminiApiKey') {
     const apiKey = message.apiKey;

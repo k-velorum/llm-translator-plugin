@@ -42,6 +42,7 @@ export function getProviderMeta(settings) {
   const provider = settings?.apiProvider || 'unknown';
   if (provider === 'openrouter') return { provider: 'openrouter', model: settings.openrouterModel || '' };
   if (provider === 'gemini') return { provider: 'gemini', model: settings.geminiModel || '' };
+  if (provider === 'cerebras') return { provider: 'cerebras', model: settings.cerebrasModel || '' };
   if (provider === 'zai') return { provider: 'zai', model: settings.zaiModel || '' };
   if (provider === 'ollama') return { provider: 'ollama', model: settings.ollamaModel || '' };
   if (provider === 'lmstudio') return { provider: 'lmstudio', model: settings.lmstudioModel || '' };

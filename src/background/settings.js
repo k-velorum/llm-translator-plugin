@@ -5,6 +5,8 @@ export const DEFAULT_SETTINGS = {
   openrouterModel: 'openai/gpt-4o-mini',
   geminiApiKey: '',
   geminiModel: 'gemini-flash-2.0',
+  cerebrasApiKey: '',
+  cerebrasModel: 'llama3.1-8b',
   zaiApiKey: '',
   zaiModel: 'glm-4.7',
   // 翻訳用システムプロンプト（ユーザー編集可能）
