@@ -11,6 +11,14 @@ async function injectFallbackPopup(tabId, translatedText) {
     target: { tabId },
     func: (text) => {
       try {
+        const POPUP_MARGIN = 8;
+        const POPUP_GAP = 10;
+        const POPUP_MAX_WIDTH = 420;
+        const clamp = (value, min, max) => {
+          if (max < min) return min;
+          return Math.min(Math.max(value, min), max);
+        };
+
         const old = document.querySelector('.llm-translation-popup-fallback');
         if (old && old.parentNode) old.parentNode.removeChild(old);
 
@@ -34,8 +42,10 @@ async function injectFallbackPopup(tabId, translatedText) {
           overflowY: 'auto',
           fontSize: '14px',
           color: '#333',
-          left: `${window.scrollX + (rect.left || 24)}px`,
-          top: `${window.scrollY + (rect.bottom ? rect.bottom + 10 : 24)}px`
+          boxSizing: 'border-box',
+          left: `${window.scrollX + POPUP_MARGIN}px`,
+          top: `${window.scrollY + POPUP_MARGIN}px`,
+          visibility: 'hidden'
         });
 
         const header = document.createElement('div');
@@ -80,6 +90,35 @@ async function injectFallbackPopup(tabId, translatedText) {
         popup.appendChild(body);
         popup.appendChild(row);
         document.body.appendChild(popup);
+
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        const maxWidth = Math.min(POPUP_MAX_WIDTH, Math.max(0, viewportWidth - (POPUP_MARGIN * 2)));
+        const maxHeight = Math.max(120, viewportHeight - (POPUP_MARGIN * 2));
+        popup.style.maxWidth = `${maxWidth}px`;
+        popup.style.maxHeight = `${maxHeight}px`;
+        popup.style.overflowY = 'auto';
+
+        const popupRect = popup.getBoundingClientRect();
+        const anchorLeft = Number.isFinite(rect.left) ? rect.left : POPUP_MARGIN;
+        const anchorTop = Number.isFinite(rect.top) ? rect.top : POPUP_MARGIN;
+        const anchorBottom = Number.isFinite(rect.bottom) ? rect.bottom : anchorTop;
+        const preferredBelowTop = anchorBottom + POPUP_GAP;
+        const preferredAboveTop = anchorTop - POPUP_GAP - popupRect.height;
+
+        let top;
+        if (preferredBelowTop + popupRect.height <= viewportHeight - POPUP_MARGIN) {
+          top = preferredBelowTop;
+        } else if (preferredAboveTop >= POPUP_MARGIN) {
+          top = preferredAboveTop;
+        } else {
+          top = clamp(preferredBelowTop, POPUP_MARGIN, viewportHeight - popupRect.height - POPUP_MARGIN);
+        }
+
+        const left = clamp(anchorLeft, POPUP_MARGIN, viewportWidth - popupRect.width - POPUP_MARGIN);
+        popup.style.left = `${window.scrollX + left}px`;
+        popup.style.top = `${window.scrollY + top}px`;
+        popup.style.visibility = 'visible';
 
         const onDocClick = (ev) => {
           if (!popup.contains(ev.target)) {

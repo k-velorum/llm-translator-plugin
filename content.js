@@ -6,6 +6,9 @@ let featureSettings = {
   enableTwitterTranslation: true,
   enableYoutubeTranslation: true
 };
+const POPUP_MARGIN = 8;
+const POPUP_GAP = 10;
+const POPUP_MAX_WIDTH = 420;
 
 function loadFeatureSettings(callback) {
   try {
@@ -139,7 +142,8 @@ const styles = {
     overflowY: 'auto',
     fontSize: '14px',
     fontFamily: 'Arial, sans-serif',
-    color: '#333'
+    color: '#333',
+    boxSizing: 'border-box'
   },
   header: {
     display: 'flex',
@@ -204,6 +208,44 @@ function applyStyles(element, styleObj) {
   Object.keys(styleObj).forEach(key => {
     element.style[key] = styleObj[key];
   });
+}
+
+function clamp(value, min, max) {
+  if (max < min) return min;
+  return Math.min(Math.max(value, min), max);
+}
+
+function positionPopupInViewport(popup, anchorRect) {
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const maxWidth = Math.min(POPUP_MAX_WIDTH, Math.max(0, viewportWidth - (POPUP_MARGIN * 2)));
+  const maxHeight = Math.max(120, viewportHeight - (POPUP_MARGIN * 2));
+
+  popup.style.maxWidth = `${maxWidth}px`;
+  popup.style.maxHeight = `${maxHeight}px`;
+  popup.style.overflowY = 'auto';
+  popup.style.visibility = 'hidden';
+
+  const popupRect = popup.getBoundingClientRect();
+  const anchorLeft = Number.isFinite(anchorRect?.left) ? anchorRect.left : POPUP_MARGIN;
+  const anchorTop = Number.isFinite(anchorRect?.top) ? anchorRect.top : POPUP_MARGIN;
+  const anchorBottom = Number.isFinite(anchorRect?.bottom) ? anchorRect.bottom : anchorTop;
+  const preferredBelowTop = anchorBottom + POPUP_GAP;
+  const preferredAboveTop = anchorTop - POPUP_GAP - popupRect.height;
+
+  let top;
+  if (preferredBelowTop + popupRect.height <= viewportHeight - POPUP_MARGIN) {
+    top = preferredBelowTop;
+  } else if (preferredAboveTop >= POPUP_MARGIN) {
+    top = preferredAboveTop;
+  } else {
+    top = clamp(preferredBelowTop, POPUP_MARGIN, viewportHeight - popupRect.height - POPUP_MARGIN);
+  }
+
+  const left = clamp(anchorLeft, POPUP_MARGIN, viewportWidth - popupRect.width - POPUP_MARGIN);
+  popup.style.left = `${window.scrollX + left}px`;
+  popup.style.top = `${window.scrollY + top}px`;
+  popup.style.visibility = 'visible';
 }
 
 // ポップアップを削除する関数
@@ -305,8 +347,6 @@ function showTranslationPopup(translatedText) {
   translationPopup = document.createElement('div');
   translationPopup.className = 'llm-translation-popup';
   applyStyles(translationPopup, styles.popup);
-  translationPopup.style.left = `${window.scrollX + rect.left}px`;
-  translationPopup.style.top = `${window.scrollY + rect.bottom + 10}px`;
   
   // ヘッダー部分
   const header = document.createElement('div');
@@ -363,6 +403,7 @@ function showTranslationPopup(translatedText) {
   translationPopup.appendChild(copyBtn);
   
   document.body.appendChild(translationPopup);
+  positionPopupInViewport(translationPopup, rect);
   
   // クリック以外の場所をクリックしたらポップアップを閉じる
   document.addEventListener('click', closePopupOnClickOutside);
