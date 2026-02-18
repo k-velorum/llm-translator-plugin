@@ -35,25 +35,99 @@ function clampInt(value, min, max, fallback) {
   return fallback;
 }
 
-function chunkByMaxCharsAndItems(items, maxChars, maxItems, sep) {
+function estimateTranslatedLength(text) {
+  const s = (typeof text === 'string' ? text : '').trim();
+  if (!s.length) return 0;
+
+  const len = s.length;
+  const latin = (s.match(/[A-Za-z]/g) || []).length;
+  const cjk = (s.match(/[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/g) || []).length;
+  let ratio = 1.08;
+  if (latin / len > 0.45) ratio = 1.18;
+  else if (cjk / len > 0.45) ratio = 1.02;
+
+  return Math.ceil((len * ratio) + 16);
+}
+
+function splitTextByNaturalBoundaries(text, maxChars) {
+  if (typeof text !== 'string' || text.length <= maxChars) return [text || ''];
+  const out = [];
+  const minPreferred = Math.max(1, Math.floor(maxChars * 0.6));
+
+  const findBoundary = (src, start, end) => {
+    const window = src.slice(start, end);
+    const patterns = [
+      /[\.\!\?。！？]+\s*/g,
+      /\n{2,}/g,
+      /[,，;；:：、]\s*/g,
+      /\s+/g
+    ];
+
+    for (const re of patterns) {
+      re.lastIndex = 0;
+      let best = -1;
+      let m;
+      while ((m = re.exec(window)) !== null) {
+        const pos = m.index + m[0].length;
+        if (pos > best) best = pos;
+      }
+      if (best >= minPreferred) return start + best;
+    }
+    return -1;
+  };
+
+  let i = 0;
+  while (i < text.length) {
+    const end = Math.min(text.length, i + maxChars);
+    if (end >= text.length) {
+      out.push(text.slice(i));
+      break;
+    }
+
+    const boundary = findBoundary(text, i, end);
+    if (boundary > i) {
+      out.push(text.slice(i, boundary));
+      i = boundary;
+      continue;
+    }
+
+    out.push(text.slice(i, end));
+    i = end;
+  }
+
+  return out.filter((s) => s.length > 0);
+}
+
+function chunkByEstimatedOutputAndItems(items, maxChars, maxItems, sep, useStructuredOutput = false) {
   const chunks = [];
   let current = [];
-  let currentLen = 0;
+  let currentInputLen = 0;
+  let currentEstimatedOutputLen = 0;
   const sepLen = sep.length;
+  const responseBudget = useStructuredOutput ? Math.max(2000, Math.floor(maxChars * 2.2)) : maxChars;
+  const perItemOverhead = useStructuredOutput ? 32 : 0;
+  const effectiveMaxItems = useStructuredOutput
+    ? Math.min(500, Math.max(maxItems, maxItems * 4))
+    : maxItems;
 
   for (const s of items) {
     const sLen = s.length;
-    const projected = currentLen + (current.length ? sepLen : 0) + sLen;
-    const wouldExceedChars = current.length > 0 && projected > maxChars;
-    const wouldExceedItems = current.length >= maxItems;
+    const estimatedOut = estimateTranslatedLength(s) + perItemOverhead;
+    const projectedInput = currentInputLen + (current.length ? sepLen : 0) + sLen;
+    const projectedEstimatedOutput = currentEstimatedOutputLen + estimatedOut;
+    const wouldExceedInput = current.length > 0 && projectedInput > maxChars;
+    const wouldExceedOutput = current.length > 0 && projectedEstimatedOutput > responseBudget;
+    const wouldExceedItems = current.length >= effectiveMaxItems;
 
-    if (current.length > 0 && (wouldExceedChars || wouldExceedItems)) {
+    if (current.length > 0 && (wouldExceedInput || wouldExceedOutput || wouldExceedItems)) {
       chunks.push(current);
       current = [s];
-      currentLen = sLen;
+      currentInputLen = sLen;
+      currentEstimatedOutputLen = estimatedOut;
     } else {
       current.push(s);
-      currentLen = projected;
+      currentInputLen = projectedInput;
+      currentEstimatedOutputLen = projectedEstimatedOutput;
     }
   }
 
@@ -104,20 +178,22 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
     if (paragraphs.length > 1) {
       const out = [];
       for (const p of paragraphs) {
-        out.push(await translatePiece(p));
-        await sleep(delayMs);
+        const parts = splitTextByNaturalBoundaries(p, maxChars);
+        const translatedParts = [];
+        for (const part of parts) {
+          translatedParts.push(await translatePiece(part));
+          await sleep(delayMs);
+        }
+        out.push(translatedParts.join(''));
       }
       return [out.join('\n\n')];
     }
 
-    const slices = [];
-    for (let i = 0; i < s.length; i += maxChars) {
-      slices.push(s.slice(i, i + maxChars));
-    }
+    const slices = splitTextByNaturalBoundaries(s, maxChars);
 
     const out = [];
-    for (const p of slices) {
-      out.push(await translatePiece(p));
+    for (const part of slices) {
+      out.push(await translatePiece(part));
       await sleep(delayMs);
     }
     return [out.join('')];
@@ -423,7 +499,7 @@ export async function startPageTranslation(tabId) {
     const concurrency = clampInt(settings.pageTranslationConcurrency, 1, 20, PAGE_TRANSLATION_CONCURRENCY);
     const useStructuredOutput = settings.pageTranslationUseStructuredOutput !== false;
 
-    const chunks = chunkByMaxCharsAndItems(pageTexts, maxChars, maxItems, sep);
+    const chunks = chunkByEstimatedOutputAndItems(pageTexts, maxChars, maxItems, sep, useStructuredOutput);
 
     const totalItems = pageTexts.length;
     const session = {
