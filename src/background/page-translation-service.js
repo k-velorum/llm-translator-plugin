@@ -640,6 +640,18 @@ export function handlePageTranslationRuntimeMessage(message, sender, sendRespons
         if (!session) return sendResponse && sendResponse({ ok: false, error: 'session not found' });
 
         try {
+          await showControls(tabId, snapshotId, {
+            remainingChunks: session.chunks.length - session.nextIndex,
+            processedItems: session.offset,
+            totalItems: session.totalItems,
+            totalChunks: session.chunks.length,
+            canContinue: false
+          });
+        } catch (_) {
+          // no-op
+        }
+
+        try {
           await processPageTranslationPass(
             session,
             session.params?.chunksPerPass || PAGE_TRANSLATION_CHUNKS_PER_PASS

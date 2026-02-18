@@ -701,6 +701,7 @@ function showPageTranslationControls(snapshotId, remainingChunks, processedItems
     btn.type = 'button';
     applyStyles(btn, styles.pageControlsContinueBtn);
     btn.onclick = async () => {
+      const originalText = btn.textContent;
       btn.disabled = true;
       btn.textContent = '実行中…';
       try {
@@ -720,9 +721,8 @@ function showPageTranslationControls(snapshotId, remainingChunks, processedItems
         });
       } catch (e) {
         console.error('continuePageTranslation 送信失敗:', e);
-      } finally {
         btn.disabled = false;
-        btn.textContent = '続きを実行';
+        btn.textContent = originalText;
       }
     };
 
