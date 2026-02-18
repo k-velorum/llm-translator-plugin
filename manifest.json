@@ -10,11 +10,10 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://api.openai.com/*",
     "https://openrouter.ai/*",
     "https://generativelanguage.googleapis.com/*",
-    "http://*/*",
-    "https://*/*",
+    "https://api.z.ai/*",
+    "https://api.cerebras.ai/*",
     "https://*.twitter.com/*",
     "https://*.x.com/*"
   ],
@@ -42,7 +41,7 @@
     "128": "icons/icon128.png"
   },
   "content_security_policy": {
-    "extension_pages": "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://openrouter.ai https://generativelanguage.googleapis.com https://api.openai.com https://api.z.ai https://api.cerebras.ai http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:*"
+    "extension_pages": "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://openrouter.ai https://generativelanguage.googleapis.com https://api.z.ai https://api.cerebras.ai http://localhost http://127.0.0.1 https://localhost https://127.0.0.1"
   },
   "web_accessible_resources": [
     {
