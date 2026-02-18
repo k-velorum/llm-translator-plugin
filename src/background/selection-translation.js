@@ -56,7 +56,7 @@ async function injectFallbackPopup(tabId, translatedText) {
         });
 
         const header = document.createElement('div');
-        header.textContent = 'LLM翻訳結果 (fallback)';
+        header.textContent = '翻訳結果';
         Object.assign(header.style, {
           fontWeight: '700',
           fontSize: '11px',

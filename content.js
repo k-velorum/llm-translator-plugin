@@ -373,7 +373,7 @@ function showTranslationPopup(translatedText) {
   translationPopup = document.createElement('div');
   translationPopup.className = 'llm-translation-popup';
   translationPopup.setAttribute('role', 'dialog');
-  translationPopup.setAttribute('aria-label', 'LLM翻訳結果');
+  translationPopup.setAttribute('aria-label', '翻訳結果');
   applyStyles(translationPopup, styles.popup);
   
   // ヘッダー部分
@@ -381,7 +381,7 @@ function showTranslationPopup(translatedText) {
   applyStyles(header, styles.header);
   
   const title = document.createElement('div');
-  title.textContent = 'LLM翻訳結果';
+  title.textContent = '翻訳結果';
   applyStyles(title, styles.title);
   
   const closeBtn = document.createElement('button');
