@@ -14,6 +14,8 @@
     "https://generativelanguage.googleapis.com/*",
     "https://api.z.ai/*",
     "https://api.cerebras.ai/*",
+    "https://youtube.com/*",
+    "https://*.youtube.com/*",
     "https://*.twitter.com/*",
     "https://*.x.com/*"
   ],
