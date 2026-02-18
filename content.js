@@ -738,6 +738,8 @@ function showPageTranslationControls(snapshotId, remainingChunks, processedItems
     btn.type = 'button';
     applyStyles(btn, styles.pageControlsContinueBtn);
     btn.onclick = async () => {
+      const targetSnapshotId = pageTranslationControlsSnapshotId;
+      if (!targetSnapshotId) return;
       const originalText = btn.textContent;
       btn.disabled = true;
       btn.textContent = '実行中…';
@@ -745,7 +747,7 @@ function showPageTranslationControls(snapshotId, remainingChunks, processedItems
         await new Promise((resolve, reject) => {
           // background がハングしてもUIが永遠に戻らないのを防ぐ
           const t = setTimeout(() => reject(new Error('continuePageTranslation timeout')), 200000);
-          const sent = safeSendMessage({ action: 'continuePageTranslation', snapshotId }, (res) => {
+          const sent = safeSendMessage({ action: 'continuePageTranslation', snapshotId: targetSnapshotId }, (res) => {
             clearTimeout(t);
             if (res?.error) return reject(new Error(res.error.message || res.error || 'unknown error'));
             if (!res || res.ok !== true) return reject(new Error(res?.error || 'unknown error'));
@@ -769,10 +771,12 @@ function showPageTranslationControls(snapshotId, remainingChunks, processedItems
     stopBtn.type = 'button';
     applyStyles(stopBtn, styles.pageControlsStopBtn);
     stopBtn.onclick = async () => {
+      const targetSnapshotId = pageTranslationControlsSnapshotId;
+      if (!targetSnapshotId) return;
       stopBtn.disabled = true;
       try {
         await new Promise((resolve, reject) => {
-          const sent = safeSendMessage({ action: 'cancelPageTranslation', snapshotId }, (res) => {
+          const sent = safeSendMessage({ action: 'cancelPageTranslation', snapshotId: targetSnapshotId }, (res) => {
             if (res?.error) return reject(new Error(res.error.message || res.error || 'unknown error'));
             resolve();
           });
