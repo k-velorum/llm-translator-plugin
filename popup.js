@@ -516,22 +516,16 @@ function createVerificationUI(elements) {
 // APIキー検証UI作成の共通関数
 function createProviderVerificationUI(provider, apiKeyInput) {
   const container = document.createElement('div');
-  container.style.marginTop = '10px';
-  container.style.display = 'flex';
-  container.style.justifyContent = 'space-between';
-  container.style.alignItems = 'center';
+  container.className = 'verify-row';
 
   const keyStatus = document.createElement('span');
-  keyStatus.style.fontSize = '12px';
-  keyStatus.style.color = '#666';
+  keyStatus.className = 'verify-status';
   keyStatus.textContent = '';
 
   const verifyButton = document.createElement('button');
   verifyButton.textContent = 'APIキーを検証';
-  verifyButton.style.padding = '5px 10px';
-  verifyButton.style.fontSize = '12px';
-  verifyButton.style.backgroundColor = '#34a853';
-  verifyButton.style.width = 'auto';
+  verifyButton.type = 'button';
+  verifyButton.className = 'verify-button';
 
   verifyButton.addEventListener('click', async () => {
     const apiKey = apiKeyInput.value.trim();
