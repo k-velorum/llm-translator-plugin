@@ -200,6 +200,12 @@ export async function translateAndNotify(tabId, text) {
   let translatedText;
 
   try {
+    await chrome.tabs.sendMessage(tabId, { action: 'showLoading' });
+  } catch (_) {
+    // content script が未接続な場合は、後続の fallback 表示へ進む
+  }
+
+  try {
     translatedText = await translateText(text, settings);
   } catch (error) {
     console.error('翻訳処理中のエラー:', error);

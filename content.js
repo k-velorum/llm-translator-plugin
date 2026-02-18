@@ -50,6 +50,19 @@ try {
 // ページ全体翻訳のノードスナップショット（取得時と適用時の不一致を防ぐ）
 let pageTranslationSnapshot = { id: 0, nodes: [] };
 
+function ensureSelectionLoadingSpinnerStyles() {
+  if (document.getElementById('llm-selection-loading-spinner-style')) return;
+  const styleElement = document.createElement('style');
+  styleElement.id = 'llm-selection-loading-spinner-style';
+  styleElement.textContent = `
+    @keyframes llmSelectionLoadingSpin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  `;
+  document.head.appendChild(styleElement);
+}
+
 // 共通ユーティリティ関数
 const DOMUtils = {
   // テキストノードを取得するTreeWalkerを作成
@@ -283,9 +296,73 @@ function removePopup() {
   }
 }
 
+function showLoadingPopup() {
+  removePopup();
+  ensureSelectionLoadingSpinnerStyles();
+
+  const selection = window.getSelection();
+  if (!selection.rangeCount) return;
+
+  const range = selection.getRangeAt(0);
+  const rect = range.getBoundingClientRect();
+
+  translationPopup = document.createElement('div');
+  translationPopup.className = 'llm-translation-popup';
+  translationPopup.setAttribute('role', 'dialog');
+  translationPopup.setAttribute('aria-label', '翻訳中');
+  applyStyles(translationPopup, styles.popup);
+
+  const header = document.createElement('div');
+  applyStyles(header, styles.header);
+
+  const title = document.createElement('div');
+  title.textContent = '翻訳中';
+  applyStyles(title, styles.title);
+  header.appendChild(title);
+
+  const content = document.createElement('div');
+  applyStyles(content, styles.content);
+  applyStyles(content, styles.normalContent);
+  content.style.display = 'flex';
+  content.style.alignItems = 'center';
+  content.style.gap = '10px';
+  content.style.padding = '16px 14px';
+
+  const spinner = document.createElement('div');
+  spinner.setAttribute('aria-hidden', 'true');
+  spinner.style.width = '18px';
+  spinner.style.height = '18px';
+  spinner.style.border = '2px solid #c8d6ea';
+  spinner.style.borderTopColor = '#2f6fb3';
+  spinner.style.borderRadius = '50%';
+  spinner.style.animation = 'llmSelectionLoadingSpin 1s linear infinite';
+
+  const loadingText = document.createElement('span');
+  loadingText.textContent = '翻訳しています...';
+  loadingText.style.color = '#4b5d78';
+
+  content.appendChild(spinner);
+  content.appendChild(loadingText);
+
+  translationPopup.appendChild(header);
+  translationPopup.appendChild(content);
+
+  document.body.appendChild(translationPopup);
+  positionPopupInViewport(translationPopup, rect);
+  requestAnimationFrame(() => {
+    if (!translationPopup) return;
+    translationPopup.style.opacity = '1';
+    translationPopup.style.transform = 'translateY(0)';
+  });
+  document.addEventListener('click', closePopupOnClickOutside);
+}
+
 // バックグラウンドスクリプトからのメッセージを受信
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'showTranslation') {
+  if (message.action === 'showLoading') {
+    showLoadingPopup();
+    return false;
+  } else if (message.action === 'showTranslation') {
     showTranslationPopup(message.translatedText);
     // sendResponse を呼ばないので false (または undefined) を返す
     return false;
