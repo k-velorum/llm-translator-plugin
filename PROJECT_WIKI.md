@@ -11,7 +11,7 @@
 *   **ページ全体翻訳:** ページを右クリックして「LLMページ全体翻訳」を選ぶと、ページ内のテキストノードを収集し、一括で翻訳してページ上に置き換えて表示します。
 *   **複数LLMプロバイダー対応:** OpenRouter API, Google Gemini API, Ollama, LM Studio のいずれかを選択して利用できます。
 *   **モデル選択:** 各APIプロバイダーが提供するモデルの中から、好みのモデルを選択できます（すべてのプロバイダーで動的にモデル一覧を取得）。
-*   **設定画面:** 拡張機能のアイコンからアクセスできるポップアップ画面で、APIキー、使用モデル、中間サーバー設定などを構成できます。
+*   **設定画面:** 拡張機能のアイコンからアクセスできるポップアップ画面で、APIキーや使用モデルなどを構成できます。
 *   **APIテスト機能:** 設定画面から、選択したAPIプロバイダーとの接続をテストできます。
 *   **ローカルLLMサポート:** Ollama、LM Studioなどのローカルで動作するLLMサーバーとの連携が可能です。
 
@@ -33,16 +33,14 @@
     *   バックグラウンドスクリプトから受け取った翻訳結果 (`showTranslation`) をポップアップで表示。ポップアップにはコピーボタンも含まれる。
     *   Twitter/X.com のページを検出し、各ツイートに翻訳ボタンを動的に追加 (`MutationObserver` を使用)。
     *   ツイート翻訳ボタンがクリックされた際に、ツイートテキストをバックグラウンドスクリプトに送信し、返された翻訳結果をツイートの下に表示。
-*   **`popup.html`**: 拡張機能アイコンクリック時に表示される設定画面のHTML構造。タブ（設定、テスト、詳細設定）、APIプロバイダー選択、APIキー入力欄、モデル選択ドロップダウン（Select2を使用）、テスト用テキストエリア、中間サーバー設定などが含まれる。
+*   **`popup.html`**: 拡張機能アイコンクリック時に表示される設定画面のHTML構造。タブ（設定、テスト、詳細設定）、APIプロバイダー選択、APIキー入力欄、モデル選択ドロップダウン（Select2を使用）、テスト用テキストエリアなどが含まれる。
 *   **`popup.js`**: 設定画面 (`popup.html`) の動作を制御するJavaScript。
     *   設定の読み込みと保存 (`chrome.storage.sync`)。
     *   APIプロバイダーの選択に応じて表示セクションを切り替え。
     *   OpenRouter, Gemini, Ollama, LM Studio のモデル一覧をAPIから動的に取得し、Select2ドロップダウンに表示。
     *   APIキー検証機能。
     *   APIテスト機能（指定したテキストを翻訳）。
-    *   中間サーバー設定の管理と接続テスト。
     *   UIイベント（タブ切り替え、ボタンクリックなど）のハンドリング。
-*   **`docker/`**: （削除済み）以前の中間サーバー機能は削除され、現在はローカルLLM（Ollama、LM Studio）を直接サポートしています。
 *   **`lib/`**: 外部ライブラリ (jQuery, Select2)。
 *   **`icons/`**: 拡張機能で使用されるアイコンファイル。
 
@@ -99,7 +97,7 @@
     *   `testTranslate`: `popup.js` からのAPIテストリクエスト。現在の設定とテスト用の設定をマージし、`translateText` を呼び出して翻訳を実行し、結果を返します。
     *   `verify[Provider]ApiKey`: `popup.js` からのAPIキー検証リクエスト。`handleApiRequest` を呼び出して検証処理を行います。
     *   `get[Provider]Models`: `popup.js` からのモデル一覧取得リクエスト。`handleModelListRequest` を呼び出してモデル一覧を取得します。
-*   **`handleApiRequest`, `handleProxyRequest`, `handleDirectRequest`, `handleModelListRequest`**: APIキー検証やモデル一覧取得のためのヘルパー関数。設定 (`useProxyServer`) に応じて中間サーバー経由または直接APIアクセスを使い分けます。
+*   **`handleApiRequest`, `handleModelListRequest`**: APIキー検証やモデル一覧取得のためのヘルパー関数です。
 
 #### 3.1.6. `src/background/api.js`
 
@@ -152,13 +150,12 @@
 *   **要素取得 (`getElements`)**: ポップアップ内の主要なDOM要素への参照を取得します。
 *   **タブ制御 (`initTabs`)**: 「設定」「テスト」「詳細設定」タブの切り替えロジックを初期化します。
 *   **APIプロバイダー切り替え (`setupApiProviderToggle`)**: APIプロバイダー選択ドロップダウンの変更に応じて、対応する設定セクション（OpenRouter, Gemini, Ollama, LM Studio）の表示/非表示を切り替えます。
-*   **設定管理 (`loadSettings`, `saveSettings`, `saveAdvancedSettings`)**:
+*   **設定管理 (`loadSettings`, `saveSettings`)**:
     *   `loadSettings`: `chrome.storage.sync` から保存されている設定値を読み込み、フォーム要素に反映させます。
     *   `saveSettings`: 「設定」タブのフォーム要素から値を取得し、`chrome.storage.sync` に保存します。
-    *   `saveAdvancedSettings`: 「詳細設定」タブのフォーム要素（中間サーバーURL、利用有無）を保存します。
 *   **モデル選択 (Select2連携) (`initSelect2`, `loadModels`, `fetchModels`, `populateModelSelect`, `setDefaultModels`, `updateModelInfo`, `formatModelOption`)**:
     *   jQueryとSelect2ライブラリを使用して、各プロバイダーのモデル選択ドロップダウンを初期化します。
-    *   `loadModels`: 設定されたAPIキーを使用して、モデル一覧を取得します。OpenRouterはAPIキーなしでも公開モデル一覧を取得できます。ローカルLLM（Ollama、LM Studio）はサーバーが起動している場合にモデル一覧を取得します。`popup.js` はまず直接APIアクセス (`fetchModels`) を試み、CORSエラーなどで失敗した場合にバックグラウンドスクリプト経由 (`fetchModelsViaBackground`) での取得にフォールバックします（中間サーバー利用時も含む）。取得失敗時はデフォルトモデル (`setDefaultModels`) を使用します。
+    *   `loadModels`: 設定されたAPIキーを使用して、モデル一覧を取得します。OpenRouterはAPIキーなしでも公開モデル一覧を取得できます。ローカルLLM（Ollama、LM Studio）はサーバーが起動している場合にモデル一覧を取得します。`popup.js` はまず直接APIアクセス (`fetchModels`) を試み、失敗した場合にバックグラウンドスクリプト経由 (`fetchModelsViaBackground`) での取得にフォールバックします。取得失敗時はデフォルトモデル (`setDefaultModels`) を使用します。
     *   `populateModelSelect`: 取得したモデル一覧でドロップダウンのオプションを動的に生成・更新します。各オプションにはモデルの詳細情報が `data-model` 属性として格納されます。
     *   `updateModelInfo`: モデルが選択された際に、モデル名、コンテキスト長、料金などの詳細情報をドロップダウンの下に表示します。
     *   `formatModelOption`: Select2のドロップダウン表示をカスタマイズします。

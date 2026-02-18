@@ -16,8 +16,6 @@ async function handleApiRequest(action, apiKey, endpoint, headers, successCallba
   }
 }
 
-// 中間サーバー機能は削除
-
 // 直接APIにアクセスする処理
 async function handleDirectRequest(endpoint, headers) {
   return makeApiRequest(
