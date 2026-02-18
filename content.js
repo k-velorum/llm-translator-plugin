@@ -662,7 +662,44 @@ function getPageTranslationControlState(canContinue, remainingChunks) {
   return 'waiting';
 }
 
+function renderPageTranslationStatus(statusElement, state) {
+  if (!statusElement) return;
+  statusElement.textContent = '';
+  applyStyles(statusElement, styles.pageControlsStatus);
+
+  if (state === 'running') {
+    const spinner = document.createElement('span');
+    spinner.setAttribute('aria-hidden', 'true');
+    spinner.style.width = '10px';
+    spinner.style.height = '10px';
+    spinner.style.border = '2px solid rgba(31, 91, 149, 0.3)';
+    spinner.style.borderTopColor = '#1f5b95';
+    spinner.style.borderRadius = '50%';
+    spinner.style.animation = 'llmSelectionLoadingSpin 0.9s linear infinite';
+    spinner.style.marginRight = '6px';
+
+    const label = document.createElement('span');
+    label.textContent = '実行中';
+
+    statusElement.appendChild(spinner);
+    statusElement.appendChild(label);
+    applyStyles(statusElement, styles.pageControlsStatusRunning);
+    return;
+  }
+
+  if (state === 'completed') {
+    statusElement.textContent = '完了';
+    applyStyles(statusElement, styles.pageControlsStatusCompleted);
+    return;
+  }
+
+  statusElement.textContent = '待機中';
+  applyStyles(statusElement, styles.pageControlsStatusWaiting);
+}
+
 function showPageTranslationControls(snapshotId, remainingChunks, processedItems = 0, totalItems = 0, totalChunks = 0, canContinue = true) {
+  ensureSelectionLoadingSpinnerStyles();
+
   // 既存を更新/再作成
   pageTranslationControlsSnapshotId = snapshotId;
   if (!pageTranslationControls) {
@@ -774,12 +811,7 @@ function showPageTranslationControls(snapshotId, remainingChunks, processedItems
   if (state === 'completed') applyStyles(pageTranslationControls, styles.pageControlsWrapCompleted);
 
   if (status) {
-    const stateLabel = state === 'running' ? '実行中' : (state === 'completed' ? '完了' : '待機中');
-    status.textContent = stateLabel;
-    applyStyles(status, styles.pageControlsStatus);
-    if (state === 'running') applyStyles(status, styles.pageControlsStatusRunning);
-    if (state === 'waiting') applyStyles(status, styles.pageControlsStatusWaiting);
-    if (state === 'completed') applyStyles(status, styles.pageControlsStatusCompleted);
+    renderPageTranslationStatus(status, state);
   }
 
   if (info) {
