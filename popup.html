@@ -535,7 +535,7 @@
         <label for="translation-system-prompt">プロンプト（system）</label>
         <textarea id="translation-system-prompt" placeholder="翻訳の方針を記述。空の場合はデフォルトを適用"></textarea>
         <div class="note">
-          注: ページ全体翻訳で使用する区切りトークン（既定: <code>[[[SEP]]]</code>）を変える場合、ここに一致する文言を明記してください。
+          注: 通常翻訳（選択翻訳・構造化出力でのページ翻訳・テスト翻訳）で使用されます。
         </div>
         <div class="inline-row">
           <button id="reset-system-prompt" type="button" class="btn-secondary btn-inline">デフォルトに戻す</button>
@@ -574,6 +574,25 @@
           <label for="page-translation-separator">区切りトークン（高度な設定・変更非推奨、例: [[[SEP]]])</label>
           <input type="text" id="page-translation-separator" placeholder="[[[SEP]]]" />
           <div class="note">注: 変更により訳文の分割が崩れる可能性があります。原文に出現しないユニークな文字列を推奨します。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="api-section" id="separator-prompt-section">
+      <div class="api-heading api-heading-row">
+        <span>セパレータ方式フォールバック用プロンプト</span>
+        <button id="toggle-separator-prompt-settings" type="button" class="btn-secondary btn-inline">開く/閉じる</button>
+      </div>
+      <div id="separator-prompt-body" class="hidden">
+        <div class="form-group">
+          <label for="page-translation-separator-prompt">追記プロンプト</label>
+          <textarea id="page-translation-separator-prompt" placeholder="セパレータ方式のときだけ追加する指示"></textarea>
+          <div class="note">
+            注: 通常の翻訳システムプロンプトの末尾に追記され、セパレータ方式へのフォールバック時のみ使われます。
+          </div>
+          <div class="inline-row">
+            <button id="reset-separator-prompt" type="button" class="btn-secondary btn-inline">デフォルトに戻す</button>
+          </div>
         </div>
       </div>
     </div>

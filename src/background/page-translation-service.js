@@ -1,4 +1,9 @@
-import { loadSettings } from './settings.js';
+import {
+  loadSettings,
+  DEFAULT_SETTINGS,
+  DEFAULT_TRANSLATION_SYSTEM_PROMPT,
+  DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT
+} from './settings.js';
 import { translateText, translateBatchStructured } from './api.js';
 import { appendLog, getProviderMeta } from './logging.js';
 
@@ -36,6 +41,26 @@ function clampInt(value, min, max, fallback) {
     return n;
   }
   return fallback;
+}
+
+function buildSeparatorFallbackPrompt(settings) {
+  const base = (
+    settings?.translationSystemPrompt ||
+    DEFAULT_TRANSLATION_SYSTEM_PROMPT ||
+    DEFAULT_SETTINGS.translationSystemPrompt ||
+    ''
+  ).trim();
+  const extra = (
+    settings?.pageTranslationSeparatorPrompt ||
+    DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT ||
+    DEFAULT_SETTINGS.pageTranslationSeparatorPrompt ||
+    ''
+  ).trim();
+
+  if (!base) return extra;
+  if (!extra) return base;
+  if (base.includes(extra)) return base;
+  return `${base}\n${extra}`;
 }
 
 function estimateTranslatedLength(text) {
@@ -147,6 +172,10 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
   const maxChars = typeof params?.maxChars === 'number' ? params.maxChars : PAGE_TRANSLATION_MAX_CHARS;
   const structuredDisabled = params?.runtime?.structuredDisabled === true;
   const useStructuredOutput = params?.useStructuredOutput !== false && !structuredDisabled;
+  const separatorSystemPrompt = (params?.separatorSystemPrompt || '').trim();
+  const separatorSettings = separatorSystemPrompt
+    ? { ...settings, translationSystemPrompt: separatorSystemPrompt }
+    : settings;
 
   if (depth === 0) {
     try {
@@ -250,7 +279,7 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
 
   const joined = chunk.join(sep);
   const startedAt = Date.now();
-  const translated = await translateText(joined, settings, requestOptions);
+  const translated = await translateText(joined, separatorSettings, requestOptions);
 
   if (depth === 0) {
     await appendLog({
@@ -276,7 +305,7 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
   if (depth >= 3 || chunk.length <= 1) {
     const perItem = [];
     for (const s of chunk) {
-      const t = await translateText(s, settings, requestOptions);
+      const t = await translateText(s, separatorSettings, requestOptions);
       perItem.push(t);
       await sleep(delayMs);
     }
@@ -494,6 +523,7 @@ export async function startPageTranslation(tabId) {
     const settings = await loadSettings();
 
     const sep = (settings.pageTranslationSeparator || PAGE_TRANSLATION_SEPARATOR).toString();
+    const separatorSystemPrompt = buildSeparatorFallbackPrompt(settings);
     const maxChars = clampInt(settings.pageTranslationMaxChars, 500, 32000, PAGE_TRANSLATION_MAX_CHARS);
     const maxItems = clampInt(
       settings.pageTranslationMaxItemsPerChunk,
@@ -528,6 +558,7 @@ export async function startPageTranslation(tabId) {
       abortController: new AbortController(),
       params: {
         sep,
+        separatorSystemPrompt,
         maxChars,
         maxItemsPerChunk: maxItems,
         chunksPerPass,
