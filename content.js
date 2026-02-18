@@ -225,6 +225,115 @@ const styles = {
     fontFamily: 'inherit',
     transition: 'background-color 140ms ease'
   },
+  pageControlsWrap: {
+    position: 'fixed',
+    right: '16px',
+    bottom: '16px',
+    zIndex: '100000',
+    border: '2px solid #ff9800',
+    borderRadius: '12px',
+    boxShadow: '0 14px 30px rgba(16, 24, 40, 0.22), 0 3px 10px rgba(16, 24, 40, 0.15)',
+    padding: '12px 12px 10px',
+    minWidth: '260px',
+    maxWidth: '340px',
+    fontFamily: '"Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", "Meiryo", sans-serif',
+    fontSize: '13px',
+    color: '#1b2431',
+    boxSizing: 'border-box',
+    lineHeight: '1.45',
+    backdropFilter: 'blur(8px)',
+    transition: 'background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease'
+  },
+  pageControlsWrapRunning: {
+    background: '#e9f4ff',
+    borderColor: '#2f6fb3'
+  },
+  pageControlsWrapWaiting: {
+    background: '#fff4e8',
+    borderColor: '#f08a24'
+  },
+  pageControlsWrapCompleted: {
+    background: '#ebf8ef',
+    borderColor: '#2e7d32'
+  },
+  pageControlsHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px'
+  },
+  pageControlsTitle: {
+    fontSize: '11px',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: '#55627a',
+    fontWeight: '700'
+  },
+  pageControlsStatus: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '999px',
+    padding: '2px 8px',
+    fontSize: '11px',
+    fontWeight: '700'
+  },
+  pageControlsStatusRunning: {
+    background: '#d6ebff',
+    color: '#1f5b95'
+  },
+  pageControlsStatusWaiting: {
+    background: '#ffe7cc',
+    color: '#8b4a12'
+  },
+  pageControlsStatusCompleted: {
+    background: '#d7f0df',
+    color: '#22662b'
+  },
+  pageControlsInfo: {
+    fontSize: '12px',
+    color: '#2d3d54',
+    marginBottom: '4px'
+  },
+  pageControlsProgress: {
+    fontSize: '12px',
+    color: '#2d3d54',
+    marginBottom: '10px'
+  },
+  pageControlsRow: {
+    display: 'flex',
+    gap: '8px'
+  },
+  pageControlsContinueBtn: {
+    padding: '6px 11px',
+    borderRadius: '8px',
+    border: '1px solid #2f6fb3',
+    background: '#2f6fb3',
+    color: '#ffffff',
+    fontSize: '12px',
+    fontWeight: '700',
+    cursor: 'pointer',
+    transition: 'opacity 120ms ease, background-color 120ms ease'
+  },
+  pageControlsContinueBtnDisabled: {
+    opacity: '0.6',
+    cursor: 'default'
+  },
+  pageControlsStopBtn: {
+    padding: '6px 11px',
+    borderRadius: '8px',
+    border: '1px solid #b42318',
+    background: '#fff1f1',
+    color: '#b42318',
+    fontSize: '12px',
+    fontWeight: '700',
+    cursor: 'pointer',
+    transition: 'opacity 120ms ease'
+  },
+  pageControlsStopBtnDisabled: {
+    opacity: '0.6',
+    cursor: 'default'
+  },
   tweetTranslation: {
     marginTop: '8px',
     padding: '8px 12px',
@@ -547,45 +656,50 @@ let pageTranslationControlsSnapshotId = null;
 let tweetObserver = null;
 let ytObserver = null;
 
+function getPageTranslationControlState(canContinue, remainingChunks) {
+  if (remainingChunks === 0) return 'completed';
+  if (!canContinue) return 'running';
+  return 'waiting';
+}
+
 function showPageTranslationControls(snapshotId, remainingChunks, processedItems = 0, totalItems = 0, totalChunks = 0, canContinue = true) {
   // 既存を更新/再作成
   pageTranslationControlsSnapshotId = snapshotId;
   if (!pageTranslationControls) {
     const wrap = document.createElement('div');
     wrap.id = 'llm-page-translation-controls';
-    wrap.style.position = 'fixed';
-    wrap.style.right = '16px';
-    wrap.style.bottom = '16px';
-    wrap.style.zIndex = '100000';
-    wrap.style.background = 'white';
-    wrap.style.border = '1px solid #ccc';
-    wrap.style.borderRadius = '8px';
-    wrap.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
-    wrap.style.padding = '10px 12px';
-    wrap.style.fontFamily = 'Arial, sans-serif';
-    wrap.style.fontSize = '13px';
-    wrap.style.color = '#333';
+    applyStyles(wrap, styles.pageControlsWrap);
+
+    const header = document.createElement('div');
+    applyStyles(header, styles.pageControlsHeader);
+
+    const title = document.createElement('div');
+    title.textContent = 'ページ翻訳';
+    applyStyles(title, styles.pageControlsTitle);
+
+    const status = document.createElement('div');
+    status.id = 'llm-page-translation-status';
+    applyStyles(status, styles.pageControlsStatus);
+
+    header.appendChild(title);
+    header.appendChild(status);
 
     const info = document.createElement('div');
     info.id = 'llm-page-translation-info';
-    info.style.marginBottom = '6px';
+    applyStyles(info, styles.pageControlsInfo);
 
     const progress = document.createElement('div');
     progress.id = 'llm-page-translation-progress';
-    progress.style.marginBottom = '8px';
+    applyStyles(progress, styles.pageControlsProgress);
 
     const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.gap = '8px';
+    applyStyles(row, styles.pageControlsRow);
 
     const btn = document.createElement('button');
     btn.id = 'llm-page-translation-continue';
     btn.textContent = '続きを実行';
-    btn.style.padding = '6px 10px';
-    btn.style.border = '1px solid #888';
-    btn.style.borderRadius = '4px';
-    btn.style.background = '#f5f5f5';
-    btn.style.cursor = 'pointer';
+    btn.type = 'button';
+    applyStyles(btn, styles.pageControlsContinueBtn);
     btn.onclick = async () => {
       btn.disabled = true;
       btn.textContent = '実行中…';
@@ -615,12 +729,8 @@ function showPageTranslationControls(snapshotId, remainingChunks, processedItems
     const stopBtn = document.createElement('button');
     stopBtn.id = 'llm-page-translation-stop';
     stopBtn.textContent = '停止';
-    stopBtn.style.padding = '6px 10px';
-    stopBtn.style.border = '1px solid #b00';
-    stopBtn.style.borderRadius = '4px';
-    stopBtn.style.background = '#ffeaea';
-    stopBtn.style.color = '#b00';
-    stopBtn.style.cursor = 'pointer';
+    stopBtn.type = 'button';
+    applyStyles(stopBtn, styles.pageControlsStopBtn);
     stopBtn.onclick = async () => {
       stopBtn.disabled = true;
       try {
@@ -641,6 +751,7 @@ function showPageTranslationControls(snapshotId, remainingChunks, processedItems
     row.appendChild(btn);
     row.appendChild(stopBtn);
 
+    wrap.appendChild(header);
     wrap.appendChild(info);
     wrap.appendChild(progress);
     wrap.appendChild(row);
@@ -651,13 +762,47 @@ function showPageTranslationControls(snapshotId, remainingChunks, processedItems
   // 更新
   const info = pageTranslationControls.querySelector('#llm-page-translation-info');
   const progress = pageTranslationControls.querySelector('#llm-page-translation-progress');
+  const status = pageTranslationControls.querySelector('#llm-page-translation-status');
   const continueBtn = pageTranslationControls.querySelector('#llm-page-translation-continue');
+  const stopBtn = pageTranslationControls.querySelector('#llm-page-translation-stop');
   const percent = totalItems > 0 ? Math.floor((processedItems / totalItems) * 100) : 0;
-  if (info) info.textContent = totalChunks > 0 ? `残りチャンク: ${remainingChunks}/${totalChunks}` : `残りチャンク: ${remainingChunks}`;
-  if (progress) progress.textContent = `進捗: ${percent}% (${processedItems}/${totalItems})`;
+
+  const state = getPageTranslationControlState(canContinue, remainingChunks);
+  applyStyles(pageTranslationControls, styles.pageControlsWrap);
+  if (state === 'running') applyStyles(pageTranslationControls, styles.pageControlsWrapRunning);
+  if (state === 'waiting') applyStyles(pageTranslationControls, styles.pageControlsWrapWaiting);
+  if (state === 'completed') applyStyles(pageTranslationControls, styles.pageControlsWrapCompleted);
+
+  if (status) {
+    const stateLabel = state === 'running' ? '実行中' : (state === 'completed' ? '完了' : '待機中');
+    status.textContent = stateLabel;
+    applyStyles(status, styles.pageControlsStatus);
+    if (state === 'running') applyStyles(status, styles.pageControlsStatusRunning);
+    if (state === 'waiting') applyStyles(status, styles.pageControlsStatusWaiting);
+    if (state === 'completed') applyStyles(status, styles.pageControlsStatusCompleted);
+  }
+
+  if (info) {
+    info.textContent = totalChunks > 0
+      ? `残り: ${remainingChunks}/${totalChunks} チャンク`
+      : `残り: ${remainingChunks} チャンク`;
+  }
+  if (progress) {
+    progress.textContent = totalItems > 0
+      ? `進捗: ${percent}% (${processedItems}/${totalItems}項目)`
+      : `進捗: ${percent}%`;
+  }
   if (continueBtn) {
-    continueBtn.disabled = !canContinue;
-    continueBtn.textContent = canContinue ? '続きを実行' : '実行中…';
+    const isCompleted = remainingChunks === 0;
+    continueBtn.disabled = isCompleted || !canContinue;
+    continueBtn.textContent = isCompleted ? '完了' : '続きを実行';
+    applyStyles(continueBtn, styles.pageControlsContinueBtn);
+    if (continueBtn.disabled) applyStyles(continueBtn, styles.pageControlsContinueBtnDisabled);
+  }
+  if (stopBtn) {
+    stopBtn.disabled = remainingChunks === 0;
+    applyStyles(stopBtn, styles.pageControlsStopBtn);
+    if (stopBtn.disabled) applyStyles(stopBtn, styles.pageControlsStopBtnDisabled);
   }
 }
 
