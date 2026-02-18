@@ -12,6 +12,9 @@ const PAGE_TRANSLATION_CONCURRENCY = 4;
 const PAGE_TRANSLATION_TIMEOUT_SHORT_MS = 120000;
 const PAGE_TRANSLATION_TIMEOUT_LONG_MS = 180000;
 const PAGE_TRANSLATION_TIMEOUT_LONG_THRESHOLD_CHARS = 6000;
+const STRUCTURED_RESPONSE_BUDGET_MULTIPLIER = 2.2;
+const STRUCTURED_ITEMS_MULTIPLIER = 4;
+const STRUCTURED_MAX_ITEMS_CAP = 500;
 
 const pageTranslationSessions = new Map(); // key: `${tabId}:${snapshotId}` -> session
 
@@ -55,7 +58,7 @@ function splitTextByNaturalBoundaries(text, maxChars) {
   const minPreferred = Math.max(1, Math.floor(maxChars * 0.6));
 
   const findBoundary = (src, start, end) => {
-    const window = src.slice(start, end);
+    const segment = src.slice(start, end);
     const patterns = [
       /[\.\!\?。！？]+\s*/g,
       /\n{2,}/g,
@@ -67,7 +70,7 @@ function splitTextByNaturalBoundaries(text, maxChars) {
       re.lastIndex = 0;
       let best = -1;
       let m;
-      while ((m = re.exec(window)) !== null) {
+      while ((m = re.exec(segment)) !== null) {
         const pos = m.index + m[0].length;
         if (pos > best) best = pos;
       }
@@ -104,10 +107,13 @@ function chunkByEstimatedOutputAndItems(items, maxChars, maxItems, sep, useStruc
   let currentInputLen = 0;
   let currentEstimatedOutputLen = 0;
   const sepLen = sep.length;
-  const responseBudget = useStructuredOutput ? Math.max(2000, Math.floor(maxChars * 2.2)) : maxChars;
+  const responseBudget = useStructuredOutput
+    ? Math.max(2000, Math.floor(maxChars * STRUCTURED_RESPONSE_BUDGET_MULTIPLIER))
+    : maxChars;
   const perItemOverhead = useStructuredOutput ? 32 : 0;
+  // structured 出力は区切りトークン不要なので同梱数を増やしてリクエスト数を抑える
   const effectiveMaxItems = useStructuredOutput
-    ? Math.min(500, Math.max(maxItems, maxItems * 4))
+    ? Math.min(STRUCTURED_MAX_ITEMS_CAP, maxItems * STRUCTURED_ITEMS_MULTIPLIER)
     : maxItems;
 
   for (const s of items) {
@@ -139,7 +145,8 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
   const sep = params?.sep || PAGE_TRANSLATION_SEPARATOR;
   const delayMs = typeof params?.delayMs === 'number' ? params.delayMs : PAGE_TRANSLATION_DELAY_MS;
   const maxChars = typeof params?.maxChars === 'number' ? params.maxChars : PAGE_TRANSLATION_MAX_CHARS;
-  const useStructuredOutput = params?.useStructuredOutput !== false;
+  const structuredDisabled = params?.runtime?.structuredDisabled === true;
+  const useStructuredOutput = params?.useStructuredOutput !== false && !structuredDisabled;
 
   if (depth === 0) {
     try {
@@ -219,8 +226,11 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
       });
       return arr;
     } catch (e) {
-      if (params && params.disableStructuredAfterFailure !== false) {
-        params.useStructuredOutput = false;
+      const shouldDisableForSession = !!(params && params.disableStructuredAfterFailure !== false);
+      const structuredDisabledBefore = params?.runtime?.structuredDisabled === true;
+      if (shouldDisableForSession) {
+        if (params && !params.runtime) params.runtime = {};
+        if (params?.runtime) params.runtime.structuredDisabled = true;
       }
       console.warn('構造化バッチ翻訳が失敗したため連結方式にフォールバックします:', e?.message || e);
       await appendLog({
@@ -228,7 +238,9 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
         type: 'page-translation',
         event: 'structured_batch_failed',
         ...getProviderMeta(settings),
-        disableStructuredForSession: params?.useStructuredOutput === false,
+        disableStructuredForSession: shouldDisableForSession,
+        structuredDisabledBefore,
+        structuredDisabledAfter: params?.runtime?.structuredDisabled === true,
         items: chunk.length,
         len: chunk.join(sep).length,
         message: e?.message || String(e)
@@ -522,7 +534,8 @@ export async function startPageTranslation(tabId) {
         delayMs,
         concurrency,
         useStructuredOutput,
-        disableStructuredAfterFailure: true
+        disableStructuredAfterFailure: true,
+        runtime: { structuredDisabled: false }
       }
     };
 

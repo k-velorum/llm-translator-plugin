@@ -51,11 +51,53 @@ function buildStructuredBatchInstruction(settings) {
 
 function parseJsonLoose(s) {
   if (typeof s !== 'string') return null;
-  try { return JSON.parse(s); } catch (_) {}
-  const match = s.match(/[\[{][\s\S]*[\]}]/);
-  if (match) {
-    try { return JSON.parse(match[0]); } catch (_) {}
+  const input = s.trim();
+  if (!input) return null;
+
+  const tried = new Set();
+  const tryCandidate = (candidate) => {
+    const c = (candidate || '').trim();
+    if (!c || tried.has(c)) return null;
+    tried.add(c);
+    try { return JSON.parse(c); } catch (_) {}
+    return null;
+  };
+
+  const direct = tryCandidate(input);
+  if (direct !== null) return direct;
+
+  for (const m of input.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    const parsed = tryCandidate(m[1] || '');
+    if (parsed !== null) return parsed;
   }
+
+  const objStart = input.indexOf('{');
+  const arrStart = input.indexOf('[');
+  const preferArray = arrStart >= 0 && (objStart < 0 || arrStart < objStart);
+
+  const trySliceByBounds = (openChar, closeChar) => {
+    const start = input.indexOf(openChar);
+    const end = input.lastIndexOf(closeChar);
+    if (start >= 0 && end > start) {
+      const parsed = tryCandidate(input.slice(start, end + 1));
+      if (parsed !== null) return parsed;
+    }
+    return null;
+  };
+
+  if (preferArray) {
+    const parsedArray = trySliceByBounds('[', ']');
+    if (parsedArray !== null) return parsedArray;
+    const parsedObj = trySliceByBounds('{', '}');
+    if (parsedObj !== null) return parsedObj;
+  } else {
+    const parsedObj = trySliceByBounds('{', '}');
+    if (parsedObj !== null) return parsedObj;
+    const parsedArray = trySliceByBounds('[', ']');
+    if (parsedArray !== null) return parsedArray;
+  }
+
+  // ここまでで解析できない場合は null を返し、上位でフォールバックする。
   return null;
 }
 
@@ -90,12 +132,25 @@ function normalizeStructuredBatchResult(parsed, texts) {
     seen.add(id);
   }
 
-  if (seen.size !== texts.length) {
+  if (seen.size === 0) {
+    throw new Error('構造化出力の id が有効に取得できませんでした');
+  }
+
+  if (seen.size < texts.length) {
     const missing = [];
     for (let i = 0; i < texts.length; i++) {
-      if (!seen.has(i)) missing.push(i);
+      if (!seen.has(i)) {
+        out[i] = texts[i];
+        missing.push(i);
+      }
     }
-    throw new Error(`構造化出力の id が不足しています (missing=${missing.join(',')})`);
+    const missingRatio = missing.length / texts.length;
+    if (missingRatio >= 0.5) {
+      throw new Error(`構造化出力の id 欠落率が高すぎます (${missing.length}/${texts.length})`);
+    }
+    console.warn(
+      `構造化出力の id が不足しています。原文で補完します: [${missing.join(',')}] ratio=${missingRatio.toFixed(2)}`
+    );
   }
 
   return out;

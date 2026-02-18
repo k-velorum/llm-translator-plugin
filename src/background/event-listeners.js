@@ -15,59 +15,60 @@ async function setupContextMenu() {
 
   const menuId = 'translate-with-llm';
   setupContextMenuPromise = (async () => {
-    try {
-      await new Promise((resolve) => {
-        chrome.contextMenus.removeAll(() => {
+    await new Promise((resolve) => {
+      chrome.contextMenus.removeAll(() => {
+        if (chrome.runtime.lastError) {
+          console.debug(`コンテキストメニュー全削除時の情報: ${chrome.runtime.lastError.message}`);
+        }
+        resolve();
+      });
+    });
+
+    await new Promise((resolve, reject) => {
+      chrome.contextMenus.create(
+        {
+          id: menuId,
+          title: 'LLM翻訳',
+          contexts: ['selection']
+        },
+        () => {
           if (chrome.runtime.lastError) {
-            console.debug(`コンテキストメニュー全削除時の情報: ${chrome.runtime.lastError.message}`);
+            const errorMessage = chrome.runtime.lastError.message || '詳細不明のエラー';
+            console.error('コンテキストメニュー作成エラー:', errorMessage);
+            reject(new Error(errorMessage));
+          } else {
+            resolve();
           }
-          resolve();
-        });
-      });
+        }
+      );
+    });
 
-      await new Promise((resolve, reject) => {
-        chrome.contextMenus.create(
-          {
-            id: menuId,
-            title: 'LLM翻訳',
-            contexts: ['selection']
-          },
-          () => {
-            if (chrome.runtime.lastError) {
-              const errorMessage = chrome.runtime.lastError.message || '詳細不明のエラー';
-              console.error('コンテキストメニュー作成エラー:', errorMessage);
-              reject(new Error(errorMessage));
-            } else {
-              resolve();
-            }
+    await new Promise((resolve, reject) => {
+      chrome.contextMenus.create(
+        {
+          id: 'translate-page',
+          title: 'LLMページ全体翻訳',
+          contexts: ['page']
+        },
+        () => {
+          if (chrome.runtime.lastError) {
+            const errorMessage = chrome.runtime.lastError.message || '詳細不明のエラー';
+            console.error('ページ全体翻訳メニュー作成エラー:', errorMessage);
+            reject(new Error(errorMessage));
+          } else {
+            resolve();
           }
-        );
-      });
-
-      await new Promise((resolve, reject) => {
-        chrome.contextMenus.create(
-          {
-            id: 'translate-page',
-            title: 'LLMページ全体翻訳',
-            contexts: ['page']
-          },
-          () => {
-            if (chrome.runtime.lastError) {
-              const errorMessage = chrome.runtime.lastError.message || '詳細不明のエラー';
-              console.error('ページ全体翻訳メニュー作成エラー:', errorMessage);
-              reject(new Error(errorMessage));
-            } else {
-              resolve();
-            }
-          }
-        );
-      });
-    } catch (error) {
+        }
+      );
+    });
+  })()
+    .catch((error) => {
       console.error('コンテキストメニュー設定中に予期せぬエラー:', error);
-    }
-  })().finally(() => {
-    setupContextMenuPromise = null;
-  });
+      throw error;
+    })
+    .finally(() => {
+      setupContextMenuPromise = null;
+    });
 
   return setupContextMenuPromise;
 }
@@ -134,12 +135,16 @@ export function registerEventListeners() {
   chrome.runtime.onInstalled.addListener((details) => {
     console.log(`拡張機能が ${details.reason} されました。`);
     initializeDefaultSettings();
-    setupContextMenu();
+    setupContextMenu().catch((error) => {
+      console.error('onInstalled でのコンテキストメニュー設定に失敗:', error);
+    });
   });
 
   // Unpacked の再読み込み直後など onInstalled が発火しない場合に備えて、
   // 起動時にもコンテキストメニューを再作成する。
-  setupContextMenu();
+  setupContextMenu().catch((error) => {
+    console.error('起動時のコンテキストメニュー設定に失敗:', error);
+  });
 
   if (!chrome.contextMenus.onClicked.hasListener(handleContextMenuClick)) {
     chrome.contextMenus.onClicked.addListener(handleContextMenuClick);
