@@ -26,53 +26,92 @@ async function injectFallbackPopup(tabId, translatedText) {
         const hasRange = selection && selection.rangeCount > 0;
         const range = hasRange ? selection.getRangeAt(0) : null;
         const rect = range ? range.getBoundingClientRect() : { left: 24, bottom: 24 };
+        const isError = typeof text === 'string' && (text.includes('==== 翻訳エラー ====') || text.includes('翻訳エラー'));
 
         const popup = document.createElement('div');
         popup.className = 'llm-translation-popup-fallback';
         Object.assign(popup.style, {
           position: 'absolute',
           zIndex: '2147483647',
-          background: 'white',
-          border: '1px solid #ccc',
-          borderRadius: '6px',
-          padding: '10px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+          background: '#ffffff',
+          border: 'none',
+          borderTop: isError ? '3px solid #c62828' : '3px solid #2f6fb3',
+          borderRadius: '12px',
+          padding: '0',
+          boxShadow: '0 10px 30px rgba(16, 24, 40, 0.22), 0 2px 8px rgba(16, 24, 40, 0.15)',
           maxWidth: '420px',
-          maxHeight: '320px',
+          maxHeight: '360px',
           overflowY: 'auto',
           fontSize: '14px',
-          color: '#333',
+          color: '#1b2431',
+          fontFamily: '"Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", "Meiryo", sans-serif',
+          lineHeight: '1.7',
           boxSizing: 'border-box',
           left: `${window.scrollX + POPUP_MARGIN}px`,
           top: `${window.scrollY + POPUP_MARGIN}px`,
-          visibility: 'hidden'
+          visibility: 'hidden',
+          opacity: '0',
+          transform: 'translateY(6px)',
+          transition: 'opacity 140ms ease, transform 180ms ease'
         });
 
         const header = document.createElement('div');
         header.textContent = 'LLM翻訳結果 (fallback)';
-        Object.assign(header.style, { fontWeight: 'bold', marginBottom: '6px' });
+        Object.assign(header.style, {
+          fontWeight: '700',
+          fontSize: '11px',
+          color: '#5b6a82',
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          padding: '10px 14px 8px',
+          backgroundColor: '#f3f6fb',
+          borderBottom: '1px solid #e3e8f2',
+          borderRadius: '9px 9px 0 0'
+        });
 
         const body = document.createElement('div');
         Object.assign(body.style, {
+          margin: '0',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
-          background: '#f8f8f8',
-          padding: '8px',
-          borderRadius: '4px'
+          padding: '12px 14px',
+          background: isError ? '#fff5f5' : 'transparent',
+          color: isError ? '#b42318' : '#1b2431'
         });
+        if (isError) {
+          body.style.borderLeft = '3px solid #d92d20';
+          body.style.paddingLeft = '10px';
+          body.style.fontFamily = '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace';
+          body.style.fontSize = '13px';
+        }
         body.textContent = text;
 
         const row = document.createElement('div');
-        Object.assign(row.style, { display: 'flex', gap: '8px', marginTop: '8px' });
+        Object.assign(row.style, { display: 'flex', gap: '8px', padding: '0 14px 12px' });
 
         const copy = document.createElement('button');
         copy.textContent = 'コピー';
-        Object.assign(copy.style, { cursor: 'pointer' });
+        copy.type = 'button';
+        Object.assign(copy.style, {
+          cursor: 'pointer',
+          padding: '6px 14px',
+          backgroundColor: '#2f6fb3',
+          border: 'none',
+          borderRadius: '8px',
+          color: '#ffffff',
+          fontFamily: 'inherit',
+          fontSize: '13px',
+          transition: 'background-color 140ms ease'
+        });
+        copy.onmouseenter = () => { copy.style.backgroundColor = '#245a94'; };
+        copy.onmouseleave = () => { copy.style.backgroundColor = '#2f6fb3'; };
         copy.onclick = async () => {
           try {
             await navigator.clipboard.writeText(text);
             copy.textContent = 'コピーしました';
+            copy.style.backgroundColor = '#2e7d32';
             setTimeout(() => (copy.textContent = 'コピー'), 1500);
+            setTimeout(() => (copy.style.backgroundColor = '#2f6fb3'), 1500);
           } catch (_) {
             // no-op
           }
@@ -80,7 +119,19 @@ async function injectFallbackPopup(tabId, translatedText) {
 
         const close = document.createElement('button');
         close.textContent = '閉じる';
-        Object.assign(close.style, { cursor: 'pointer' });
+        close.type = 'button';
+        Object.assign(close.style, {
+          cursor: 'pointer',
+          padding: '6px 14px',
+          backgroundColor: '#ffffff',
+          border: '1px solid #cbd5e1',
+          borderRadius: '8px',
+          color: '#55627a',
+          fontFamily: 'inherit',
+          fontSize: '13px'
+        });
+        close.onmouseenter = () => { close.style.backgroundColor = '#f8fafc'; };
+        close.onmouseleave = () => { close.style.backgroundColor = '#ffffff'; };
         close.onclick = () => popup.remove();
 
         row.appendChild(copy);
@@ -119,6 +170,10 @@ async function injectFallbackPopup(tabId, translatedText) {
         popup.style.left = `${window.scrollX + left}px`;
         popup.style.top = `${window.scrollY + top}px`;
         popup.style.visibility = 'visible';
+        requestAnimationFrame(() => {
+          popup.style.opacity = '1';
+          popup.style.transform = 'translateY(0)';
+        });
 
         const onDocClick = (ev) => {
           if (!popup.contains(ev.target)) {

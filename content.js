@@ -132,59 +132,85 @@ const styles = {
   popup: {
     position: 'absolute',
     zIndex: '10000',
-    backgroundColor: 'white',
-    border: '1px solid #ccc',
-    borderRadius: '5px',
-    padding: '10px',
-    boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)',
-    maxWidth: '400px',
-    maxHeight: '300px',
+    backgroundColor: '#ffffff',
+    border: 'none',
+    borderRadius: '12px',
+    borderTop: '3px solid #2f6fb3',
+    padding: '0',
+    boxShadow: '0 10px 30px rgba(16, 24, 40, 0.22), 0 2px 8px rgba(16, 24, 40, 0.15)',
+    maxWidth: '420px',
+    maxHeight: '360px',
     overflowY: 'auto',
     fontSize: '14px',
-    fontFamily: 'Arial, sans-serif',
-    color: '#333',
-    boxSizing: 'border-box'
+    fontFamily: '"Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", "Meiryo", sans-serif',
+    color: '#1b2431',
+    boxSizing: 'border-box',
+    lineHeight: '1.7',
+    opacity: '0',
+    transform: 'translateY(6px)',
+    transition: 'opacity 140ms ease, transform 180ms ease'
+  },
+  popupError: {
+    borderTop: '3px solid #c62828'
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
-    marginBottom: '5px'
+    alignItems: 'center',
+    padding: '10px 14px 8px',
+    backgroundColor: '#f3f6fb',
+    borderBottom: '1px solid #e3e8f2',
+    borderRadius: '9px 9px 0 0'
   },
   title: {
-    fontWeight: 'bold'
+    fontWeight: '700',
+    fontSize: '11px',
+    color: '#5b6a82',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase'
   },
   closeBtn: {
     border: 'none',
     background: 'none',
     cursor: 'pointer',
-    fontSize: '16px',
-    padding: '0 5px',
-    color: '#333'
+    fontSize: '18px',
+    padding: '0 2px',
+    color: '#7b8aa4',
+    lineHeight: '1'
   },
   content: {
-    margin: '5px 0',
+    margin: '0',
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-word',
-    padding: '8px',
-    borderRadius: '4px'
+    padding: '12px 14px'
   },
   normalContent: {
-    color: '#000',
-    backgroundColor: '#f8f8f8'
+    color: '#1b2431',
+    backgroundColor: 'transparent'
   },
   errorContent: {
-    fontFamily: 'monospace',
-    backgroundColor: '#fff0f0',
-    color: '#d32f2f'
+    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
+    fontSize: '13px',
+    backgroundColor: '#fff5f5',
+    color: '#b42318',
+    borderLeft: '3px solid #d92d20',
+    paddingLeft: '10px'
+  },
+  actions: {
+    display: 'flex',
+    justifyContent: 'flex-start',
+    padding: '0 14px 12px'
   },
   copyBtn: {
-    padding: '5px 10px',
-    backgroundColor: '#f0f0f0',
-    border: '1px solid #ccc',
-    borderRadius: '3px',
+    padding: '6px 14px',
+    backgroundColor: '#2f6fb3',
+    border: 'none',
+    borderRadius: '8px',
     cursor: 'pointer',
-    marginTop: '5px',
-    color: '#333'
+    color: '#ffffff',
+    fontSize: '13px',
+    fontFamily: 'inherit',
+    transition: 'background-color 140ms ease'
   },
   tweetTranslation: {
     marginTop: '8px',
@@ -346,6 +372,8 @@ function showTranslationPopup(translatedText) {
   // ポップアップ要素の作成
   translationPopup = document.createElement('div');
   translationPopup.className = 'llm-translation-popup';
+  translationPopup.setAttribute('role', 'dialog');
+  translationPopup.setAttribute('aria-label', 'LLM翻訳結果');
   applyStyles(translationPopup, styles.popup);
   
   // ヘッダー部分
@@ -358,7 +386,11 @@ function showTranslationPopup(translatedText) {
   
   const closeBtn = document.createElement('button');
   closeBtn.textContent = '×';
+  closeBtn.type = 'button';
+  closeBtn.setAttribute('aria-label', '閉じる');
   applyStyles(closeBtn, styles.closeBtn);
+  closeBtn.onmouseenter = () => { closeBtn.style.color = '#55627a'; };
+  closeBtn.onmouseleave = () => { closeBtn.style.color = styles.closeBtn.color; };
   closeBtn.onclick = removePopup;
   
   header.appendChild(title);
@@ -372,6 +404,7 @@ function showTranslationPopup(translatedText) {
   const isError = ErrorUtils.isTranslationError(translatedText);
   
   if (isError) {
+    applyStyles(translationPopup, styles.popupError);
     applyStyles(content, styles.errorContent);
   } else {
     applyStyles(content, styles.normalContent);
@@ -382,28 +415,42 @@ function showTranslationPopup(translatedText) {
   // コピーボタン
   const copyBtn = document.createElement('button');
   copyBtn.textContent = 'コピー';
+  copyBtn.type = 'button';
   applyStyles(copyBtn, styles.copyBtn);
+  copyBtn.onmouseenter = () => { copyBtn.style.backgroundColor = '#245a94'; };
+  copyBtn.onmouseleave = () => { copyBtn.style.backgroundColor = styles.copyBtn.backgroundColor; };
   copyBtn.onclick = () => {
     navigator.clipboard.writeText(translatedText)
       .then(() => {
         const originalText = copyBtn.textContent;
         copyBtn.textContent = 'コピーしました！';
+        copyBtn.style.backgroundColor = '#2e7d32';
         setTimeout(() => {
           copyBtn.textContent = originalText;
+          copyBtn.style.backgroundColor = styles.copyBtn.backgroundColor;
         }, 2000);
       })
       .catch(err => {
         console.error('クリップボードへのコピーに失敗しました:', err);
       });
   };
-  
+
+  const actions = document.createElement('div');
+  applyStyles(actions, styles.actions);
+  actions.appendChild(copyBtn);
+
   // 要素の追加
   translationPopup.appendChild(header);
   translationPopup.appendChild(content);
-  translationPopup.appendChild(copyBtn);
+  translationPopup.appendChild(actions);
   
   document.body.appendChild(translationPopup);
   positionPopupInViewport(translationPopup, rect);
+  requestAnimationFrame(() => {
+    if (!translationPopup) return;
+    translationPopup.style.opacity = '1';
+    translationPopup.style.transform = 'translateY(0)';
+  });
   
   // クリック以外の場所をクリックしたらポップアップを閉じる
   document.addEventListener('click', closePopupOnClickOutside);
