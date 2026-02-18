@@ -10,6 +10,180 @@ const OPENROUTER_HEADERS_BASE = {
   'X-Title': 'LLM Translation Plugin'
 };
 
+const STRUCTURED_BATCH_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'integer' },
+          translation: { type: 'string' }
+        },
+        required: ['id', 'translation']
+      }
+    }
+  },
+  required: ['items']
+};
+
+function buildStructuredBatchItems(texts) {
+  return texts.map((t, i) => ({ id: i, text: t }));
+}
+
+function buildStructuredBatchInstruction(settings) {
+  const defaultPrompt = DEFAULT_SETTINGS.translationSystemPrompt;
+  const customPrompt = (settings?.translationSystemPrompt || '').trim();
+  const policy = (customPrompt && customPrompt !== defaultPrompt)
+    ? customPrompt
+    : '指示された文章を日本語に翻訳してください。翻訳結果のみを返してください。';
+  return [
+    'あなたは優秀な翻訳者です。与えられた JSON 配列 items の各要素を日本語に翻訳してください。',
+    '出力は JSON のみで、オブジェクト形式 {"items":[{"id": number, "translation": string}]} にしてください。',
+    '重要: 入力の id をそのまま維持し、items の件数は入力と同じにします。不要な説明文は一切出力しないでください。',
+    'HTMLタグやコードブロックなどのマークアップは保持し、意味を変えないように訳してください。',
+    `翻訳方針: ${policy}`
+  ].join('\n');
+}
+
+function parseJsonLoose(s) {
+  if (typeof s !== 'string') return null;
+  try { return JSON.parse(s); } catch (_) {}
+  const match = s.match(/[\[{][\s\S]*[\]}]/);
+  if (match) {
+    try { return JSON.parse(match[0]); } catch (_) {}
+  }
+  return null;
+}
+
+function extractChatMessageContent(data) {
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (typeof part === 'string') return part;
+      if (typeof part?.text === 'string') return part.text;
+      return '';
+    }).join('');
+  }
+  if (content && typeof content === 'object') return JSON.stringify(content);
+  return '';
+}
+
+function normalizeStructuredBatchResult(parsed, texts) {
+  const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.items) ? parsed.items : null);
+  if (!arr) {
+    throw new Error('構造化出力に配列(items)が見つかりません');
+  }
+
+  const out = new Array(texts.length);
+  const seen = new Set();
+  for (const it of arr) {
+    const id = it?.id;
+    const tr = it?.translation;
+    if (!Number.isInteger(id) || id < 0 || id >= out.length || typeof tr !== 'string') continue;
+    if (seen.has(id)) continue;
+    out[id] = tr.trim();
+    seen.add(id);
+  }
+
+  if (seen.size !== texts.length) {
+    const missing = [];
+    for (let i = 0; i < texts.length; i++) {
+      if (!seen.has(i)) missing.push(i);
+    }
+    throw new Error(`構造化出力の id が不足しています (missing=${missing.join(',')})`);
+  }
+
+  return out;
+}
+
+function parseStructuredBatchResponse(text, texts) {
+  const parsed = parseJsonLoose(text);
+  if (!parsed) {
+    throw new Error('構造化出力(JSON)の解析に失敗しました');
+  }
+  return normalizeStructuredBatchResult(parsed, texts);
+}
+
+function getOpenAICompatibleStructuredConfig(settings) {
+  if (settings.apiProvider === 'openrouter') {
+    if (!settings.openrouterApiKey) throw new Error('OpenRouter APIキーが設定されていません');
+    if (!settings.openrouterModel) throw new Error('OpenRouter のモデルが選択されていません');
+    return {
+      providerLabel: 'OpenRouter',
+      apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
+      model: settings.openrouterModel,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${settings.openrouterApiKey}`,
+        ...OPENROUTER_HEADERS_BASE
+      }
+    };
+  }
+
+  if (settings.apiProvider === 'cerebras') {
+    if (!settings.cerebrasApiKey) throw new Error('Cerebras APIキーが設定されていません');
+    if (!settings.cerebrasModel) throw new Error('Cerebras のモデルが選択されていません');
+    return {
+      providerLabel: 'Cerebras',
+      apiUrl: 'https://api.cerebras.ai/v1/chat/completions',
+      model: settings.cerebrasModel,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${settings.cerebrasApiKey}`
+      }
+    };
+  }
+
+  if (settings.apiProvider === 'zai') {
+    if (!settings.zaiApiKey) throw new Error('Z-AI APIキーが設定されていません');
+    if (!settings.zaiModel) throw new Error('Z-AIのモデルが選択されていません');
+    return {
+      providerLabel: 'Z-AI',
+      apiUrl: 'https://api.z.ai/api/paas/v4/chat/completions',
+      model: settings.zaiModel,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${settings.zaiApiKey}`,
+        'Accept-Language': 'en-US,en'
+      }
+    };
+  }
+
+  if (settings.apiProvider === 'lmstudio') {
+    const server = (settings.lmstudioServer || 'http://localhost:1234').replace(/\/$/, '');
+    if (!settings.lmstudioModel) throw new Error('LM Studio のモデルが選択されていません');
+    const headers = { 'Content-Type': 'application/json' };
+    if (settings.lmstudioApiKey) headers.Authorization = `Bearer ${settings.lmstudioApiKey}`;
+    return {
+      providerLabel: 'LM Studio',
+      apiUrl: `${server}/v1/chat/completions`,
+      model: settings.lmstudioModel,
+      headers
+    };
+  }
+
+  throw new Error(`structured batch is not supported for provider: ${settings.apiProvider}`);
+}
+
+function getOpenAICompatibleResponseFormatCandidates(settings) {
+  const schemaFormat = {
+    type: 'json_schema',
+    json_schema: {
+      name: 'translations',
+      strict: true,
+      schema: STRUCTURED_BATCH_SCHEMA
+    }
+  };
+  const jsonObjectFormat = { type: 'json_object' };
+  if (settings.apiProvider === 'zai') return [jsonObjectFormat];
+  return [schemaFormat, jsonObjectFormat];
+}
+
 // 以前のプロキシフォールバックは削除（直接アクセスのみ）
 
 // エラー詳細のフォーマット
@@ -422,33 +596,20 @@ export async function translateText(text, settings, requestOptions = {}) {
   }
 }
 
-// 構造化バッチ翻訳（Gemini専用）。
-// 入力: texts: string[] -> 出力: translations: string[]（同じ長さ、足りない分は原文で埋める）
-export async function translateBatchStructured(texts, settings, requestOptions = {}) {
-  if (settings.apiProvider !== 'gemini') {
-    throw new Error('structured batch translation is only implemented for Gemini provider for now');
-  }
-
+async function translateBatchStructuredGemini(texts, settings, requestOptions = {}) {
   if (!settings.geminiApiKey) {
     throw new Error('Gemini APIキーが設定されていません');
   }
 
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${settings.geminiModel}:generateContent?key=${settings.geminiApiKey}`;
-
-  // id で整合性を担保
-  const items = texts.map((t, i) => ({ id: i, text: t }));
-  const instr = [
-    'あなたは優秀な翻訳者です。与えられた JSON 配列 items の各要素を日本語に翻訳してください。',
-    '出力は JSON のみで、配列形式とし、各要素は {"id": number, "translation": string} のみを含めてください。',
-    '重要: 入力の id をそのまま維持し、出力配列の長さは入力と同じにします。不要な文字や説明文は一切出力しないでください。',
-    'HTMLタグやコードブロックなどのマークアップは保持し、意味を変えないように訳してください。',
-  ].join('\n');
+  const items = buildStructuredBatchItems(texts);
+  const instr = buildStructuredBatchInstruction(settings);
 
   const body = {
     contents: [
       {
         parts: [
-          { text: instr + '\n\nitems = ' + JSON.stringify(items) }
+          { text: `${instr}\n\nitems = ${JSON.stringify(items)}` }
         ]
       }
     ],
@@ -471,39 +632,119 @@ export async function translateBatchStructured(texts, settings, requestOptions =
   );
 
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return parseStructuredBatchResponse(text, texts);
+}
 
-  // JSON 抽出を頑健化: 最初にそのまま、だめなら JSON 部分っぽい範囲をサルベージ
-  function tryParseJson(s) {
-    try { return JSON.parse(s); } catch (_) {}
-    const match = s.match(/[\[{][\s\S]*[\]}]/);
-    if (match) {
-      try { return JSON.parse(match[0]); } catch (_) {}
+async function translateBatchStructuredOpenAICompatible(texts, settings, requestOptions = {}) {
+  const cfg = getOpenAICompatibleStructuredConfig(settings);
+  const items = buildStructuredBatchItems(texts);
+  const instr = buildStructuredBatchInstruction(settings);
+  const messages = [
+    {
+      role: 'system',
+      content: 'あなたは翻訳結果を厳密なJSONとして返すアシスタントです。JSON以外は出力しないでください。'
+    },
+    {
+      role: 'user',
+      content: `${instr}\n\nitems = ${JSON.stringify(items)}`
     }
-    return null;
-  }
+  ];
 
-  const parsed = tryParseJson(text);
-  if (!parsed) {
-    throw new Error('構造化出力(JSON)の解析に失敗しました');
-  }
+  const formats = getOpenAICompatibleResponseFormatCandidates(settings);
+  let lastError = null;
 
-  const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.items) ? parsed.items : null);
-  if (!arr) {
-    throw new Error('構造化出力に配列が見つかりません');
-  }
+  for (let i = 0; i < formats.length; i++) {
+    const responseFormat = formats[i];
+    try {
+      const data = await makeApiRequest(
+        cfg.apiUrl,
+        {
+          method: 'POST',
+          headers: cfg.headers,
+          body: JSON.stringify({
+            model: cfg.model,
+            messages,
+            temperature: 0.2,
+            stream: false,
+            response_format: responseFormat
+          }),
+          timeoutMs: requestOptions.timeoutMs ?? 180000,
+          signal: requestOptions.signal
+        },
+        `${cfg.providerLabel} API (structured batch) リクエスト中にエラーが発生`
+      );
 
-  // id に基づき並べ替え/補完
-  const out = new Array(texts.length);
-  for (const it of arr) {
-    const id = it?.id;
-    const tr = (it?.translation ?? '').toString();
-    if (Number.isInteger(id) && id >= 0 && id < out.length) {
-      out[id] = tr.trim();
+      return parseStructuredBatchResponse(extractChatMessageContent(data), texts);
+    } catch (error) {
+      if (error?.name === 'AbortError' || error?.name === 'TimeoutError') throw error;
+      lastError = error;
+      if (i >= formats.length - 1) break;
     }
   }
-  for (let i = 0; i < out.length; i++) {
-    if (typeof out[i] !== 'string' || out[i].length === 0) out[i] = texts[i];
+
+  throw lastError || new Error(`${cfg.providerLabel} structured batch translation failed`);
+}
+
+async function translateBatchStructuredOllama(texts, settings, requestOptions = {}) {
+  const server = (settings.ollamaServer || 'http://localhost:11434').replace(/\/$/, '');
+  if (!settings.ollamaModel) {
+    throw new Error('Ollamaのモデルが選択されていません');
   }
 
-  return out;
+  const apiUrl = `${server}/api/generate`;
+  const items = buildStructuredBatchItems(texts);
+  const instr = buildStructuredBatchInstruction(settings);
+  const prompt = `${instr}\n\nitems = ${JSON.stringify(items)}`;
+
+  const formatCandidates = [STRUCTURED_BATCH_SCHEMA, 'json'];
+  let lastError = null;
+
+  for (let i = 0; i < formatCandidates.length; i++) {
+    const format = formatCandidates[i];
+    try {
+      const data = await makeApiRequest(
+        apiUrl,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: settings.ollamaModel,
+            prompt,
+            stream: false,
+            format
+          }),
+          timeoutMs: requestOptions.timeoutMs ?? 180000,
+          signal: requestOptions.signal
+        },
+        'Ollama API (structured batch) リクエスト中にエラーが発生'
+      );
+
+      const text = (data?.response ?? '').toString();
+      return parseStructuredBatchResponse(text, texts);
+    } catch (error) {
+      if (error?.name === 'AbortError' || error?.name === 'TimeoutError') throw error;
+      lastError = error;
+      if (i >= formatCandidates.length - 1) break;
+    }
+  }
+
+  throw lastError || new Error('Ollama structured batch translation failed');
+}
+
+// 構造化バッチ翻訳（全Provider対応）。
+// 入力: texts: string[] -> 出力: translations: string[]（同じ長さ）
+export async function translateBatchStructured(texts, settings, requestOptions = {}) {
+  if (!Array.isArray(texts) || texts.length === 0) return [];
+
+  const provider = settings?.apiProvider || 'gemini';
+  if (provider === 'gemini') {
+    return translateBatchStructuredGemini(texts, settings, requestOptions);
+  }
+  if (provider === 'openrouter' || provider === 'cerebras' || provider === 'zai' || provider === 'lmstudio') {
+    return translateBatchStructuredOpenAICompatible(texts, settings, requestOptions);
+  }
+  if (provider === 'ollama') {
+    return translateBatchStructuredOllama(texts, settings, requestOptions);
+  }
+  throw new Error(`structured batch translation is not implemented for provider: ${provider}`);
 }

@@ -62,18 +62,10 @@ function chunkByMaxCharsAndItems(items, maxChars, maxItems, sep) {
 }
 
 async function translateJoinedOrSplit(chunk, settings, params, depth = 0, requestOptions = {}) {
-  if (settings.apiProvider === 'gemini') {
-    try {
-      const arr = await translateBatchStructured(chunk, settings, requestOptions);
-      if (Array.isArray(arr) && arr.length === chunk.length) return arr;
-    } catch (e) {
-      console.warn('構造化バッチ翻訳が失敗したため連結方式にフォールバックします:', e?.message || e);
-    }
-  }
-
   const sep = params?.sep || PAGE_TRANSLATION_SEPARATOR;
   const delayMs = typeof params?.delayMs === 'number' ? params.delayMs : PAGE_TRANSLATION_DELAY_MS;
   const maxChars = typeof params?.maxChars === 'number' ? params.maxChars : PAGE_TRANSLATION_MAX_CHARS;
+  const useStructuredOutput = params?.useStructuredOutput !== false;
 
   if (depth === 0) {
     try {
@@ -131,6 +123,43 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
     return [out.join('')];
   }
 
+  if (useStructuredOutput && depth === 0 && chunk.length > 1) {
+    const structuredStartedAt = Date.now();
+    try {
+      const arr = await translateBatchStructured(chunk, settings, requestOptions);
+      if (!Array.isArray(arr) || arr.length !== chunk.length) {
+        throw new Error('構造化出力の件数が不一致です');
+      }
+      await appendLog({
+        level: 'info',
+        type: 'page-translation',
+        event: 'chunk_translated',
+        ...getProviderMeta(settings),
+        method: 'structured',
+        items: chunk.length,
+        len: chunk.join(sep).length,
+        ms: Date.now() - structuredStartedAt,
+        timeoutMs: requestOptions.timeoutMs
+      });
+      return arr;
+    } catch (e) {
+      if (params && params.disableStructuredAfterFailure !== false) {
+        params.useStructuredOutput = false;
+      }
+      console.warn('構造化バッチ翻訳が失敗したため連結方式にフォールバックします:', e?.message || e);
+      await appendLog({
+        level: 'warn',
+        type: 'page-translation',
+        event: 'structured_batch_failed',
+        ...getProviderMeta(settings),
+        disableStructuredForSession: params?.useStructuredOutput === false,
+        items: chunk.length,
+        len: chunk.join(sep).length,
+        message: e?.message || String(e)
+      });
+    }
+  }
+
   const joined = chunk.join(sep);
   const startedAt = Date.now();
   const translated = await translateText(joined, settings, requestOptions);
@@ -141,6 +170,7 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
       type: 'page-translation',
       event: 'chunk_translated',
       ...getProviderMeta(settings),
+      method: 'separator',
       items: chunk.length,
       len: joined.length,
       ms: Date.now() - startedAt,
@@ -391,6 +421,7 @@ export async function startPageTranslation(tabId) {
     );
     const delayMs = clampInt(settings.pageTranslationDelayMs, 0, 60000, PAGE_TRANSLATION_DELAY_MS);
     const concurrency = clampInt(settings.pageTranslationConcurrency, 1, 20, PAGE_TRANSLATION_CONCURRENCY);
+    const useStructuredOutput = settings.pageTranslationUseStructuredOutput !== false;
 
     const chunks = chunkByMaxCharsAndItems(pageTexts, maxChars, maxItems, sep);
 
@@ -407,7 +438,16 @@ export async function startPageTranslation(tabId) {
       lastError: null,
       failedAt: null,
       abortController: new AbortController(),
-      params: { sep, maxChars, maxItemsPerChunk: maxItems, chunksPerPass, delayMs, concurrency }
+      params: {
+        sep,
+        maxChars,
+        maxItemsPerChunk: maxItems,
+        chunksPerPass,
+        delayMs,
+        concurrency,
+        useStructuredOutput,
+        disableStructuredAfterFailure: true
+      }
     };
 
     registerPageTranslationSession(session);
@@ -421,7 +461,7 @@ export async function startPageTranslation(tabId) {
       snapshotId,
       totalItems: session.totalItems,
       totalChunks: session.chunks.length,
-      params: { maxChars, maxItemsPerChunk: maxItems, chunksPerPass, delayMs, concurrency }
+      params: { maxChars, maxItemsPerChunk: maxItems, chunksPerPass, delayMs, concurrency, useStructuredOutput }
     });
 
     try {

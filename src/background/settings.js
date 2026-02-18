@@ -30,6 +30,8 @@ export const DEFAULT_SETTINGS = {
   pageTranslationDelayMs: 400,
   // ページ全体翻訳: 同時リクエスト数（並列）
   pageTranslationConcurrency: 4,
+  // ページ全体翻訳: 構造化出力を優先利用（失敗時はセパレータ方式へフォールバック）
+  pageTranslationUseStructuredOutput: true,
   // Anthropic / プロキシ機能は削除済み
 };
 
