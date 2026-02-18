@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LLM翻訳プラグイン",
-  "version": "1.0",
+  "version": "1.1.0",
   "description": "選択したテキストやTwitterのツイートをLLMを使用して翻訳する拡張機能",
   "permissions": [
     "contextMenus",
