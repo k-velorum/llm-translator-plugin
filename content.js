@@ -44,6 +44,7 @@ try {
       if (!featureSettings.enableYoutubeTranslation) { try { ytObserver?.disconnect(); } catch(_) {} ytObserver = null; document.querySelectorAll('.llm-yt-translate-button, .llm-yt-translation').forEach(n => n.remove()); }
       else { addTranslateButtonToYouTubeComments(); }
     }
+    updateTweetTranslationCacheScopeFromChanges(changes);
   });
 } catch (_) {}
 
@@ -139,6 +140,233 @@ function safeSendMessage(payload, callback) {
     return false;
   }
 }
+
+// Twitter翻訳の軽量キャッシュ（セッション内）
+const TWEET_TRANSLATION_CACHE_MAX_ENTRIES = 300;
+const tweetTranslationCache = new Map();
+const tweetTranslationInFlight = new Map();
+const TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS = {
+  apiProvider: 'openrouter',
+  openrouterModel: 'openai/gpt-4o-mini',
+  geminiModel: 'gemini-flash-2.0',
+  cerebrasModel: 'llama3.1-8b',
+  zaiModel: 'glm-4.7',
+  ollamaModel: '',
+  lmstudioModel: '',
+  translationSystemPrompt: ''
+};
+
+let tweetTranslationCacheSettings = { ...TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS };
+let tweetTranslationCacheScope = 'provider:openrouter|model:openai/gpt-4o-mini|prompt:0';
+
+function hashStringForCache(text) {
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function normalizeTweetTranslationCacheKey(text) {
+  if (typeof text !== 'string') return '';
+  let normalized = text;
+  try {
+    normalized = normalized.normalize('NFC');
+  } catch (_) {
+    // ignore normalization errors and keep original
+  }
+  return normalized.replace(/\s+/g, ' ').trim();
+}
+
+function computeTweetTranslationCacheScope(settings) {
+  const provider = settings.apiProvider || 'openrouter';
+  const modelByProvider = {
+    openrouter: settings.openrouterModel || '',
+    gemini: settings.geminiModel || '',
+    cerebras: settings.cerebrasModel || '',
+    zai: settings.zaiModel || '',
+    ollama: settings.ollamaModel || '',
+    lmstudio: settings.lmstudioModel || ''
+  };
+  const model = modelByProvider[provider] || '';
+  const promptHash = hashStringForCache(normalizeTweetTranslationCacheKey(settings.translationSystemPrompt || ''));
+  return `provider:${provider}|model:${model}|prompt:${promptHash}`;
+}
+
+function clearAllTweetTranslationCacheEntries() {
+  tweetTranslationCache.clear();
+  tweetTranslationInFlight.clear();
+}
+
+function syncTweetTranslationCacheScopeFromStorage() {
+  try {
+    chrome.storage?.sync?.get?.(TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS, (settings) => {
+      if (!settings) return;
+      tweetTranslationCacheSettings = { ...tweetTranslationCacheSettings, ...settings };
+      tweetTranslationCacheScope = computeTweetTranslationCacheScope(tweetTranslationCacheSettings);
+    });
+  } catch (_) {}
+}
+
+function updateTweetTranslationCacheScopeFromChanges(changes) {
+  let changed = false;
+  Object.keys(TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS).forEach((key) => {
+    if (!Object.prototype.hasOwnProperty.call(changes, key)) return;
+    tweetTranslationCacheSettings[key] = changes[key].newValue;
+    changed = true;
+  });
+  if (!changed) return;
+  tweetTranslationCacheScope = computeTweetTranslationCacheScope(tweetTranslationCacheSettings);
+  clearAllTweetTranslationCacheEntries();
+}
+
+function setTweetTranslationCache(key, translatedText) {
+  if (!key || typeof translatedText !== 'string') return;
+  if (tweetTranslationCache.has(key)) {
+    tweetTranslationCache.delete(key);
+  }
+  tweetTranslationCache.set(key, translatedText);
+  if (tweetTranslationCache.size > TWEET_TRANSLATION_CACHE_MAX_ENTRIES) {
+    const oldestKey = tweetTranslationCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      tweetTranslationCache.delete(oldestKey);
+    }
+  }
+}
+
+function extractTranslatedTextFromResponse(response) {
+  const err = response?.error;
+  const message = err?.message || (typeof err === 'string' ? err : null);
+  return message
+    ? `翻訳エラー: ${message}`
+    : (response?.translatedText ?? '翻訳エラー: 拡張機能との通信に失敗しました');
+}
+
+function extractTweetIdFromHref(href) {
+  if (typeof href !== 'string') return '';
+  const match = href.match(/\/status\/(\d+)/);
+  return match ? match[1] : '';
+}
+
+function collectTweetIdsInElement(rootElement) {
+  if (!(rootElement instanceof Element)) return [];
+  const ids = new Set();
+  rootElement.querySelectorAll('a[href*="/status/"]').forEach((anchor) => {
+    const id = extractTweetIdFromHref(anchor.getAttribute('href') || anchor.href || '');
+    if (id) ids.add(id);
+  });
+  return Array.from(ids);
+}
+
+function resolveTweetIdForTextElement(tweetElement, tweetTextElement) {
+  if (!(tweetTextElement instanceof Element)) return '';
+
+  const directAnchor = tweetTextElement.closest('a[href*="/status/"]');
+  if (directAnchor) {
+    const directId = extractTweetIdFromHref(directAnchor.getAttribute('href') || directAnchor.href || '');
+    if (directId) return directId;
+  }
+
+  let current = tweetTextElement;
+  while (current) {
+    const ids = collectTweetIdsInElement(current);
+    if (ids.length === 1) return ids[0];
+    if (current === tweetElement) break;
+    current = current.parentElement;
+  }
+
+  return '';
+}
+
+function buildTweetTranslationCacheKeys({ tweetElement, tweetTextElement, text }) {
+  const normalizedText = normalizeTweetTranslationCacheKey(text);
+  if (!normalizedText) {
+    return null;
+  }
+
+  const scope = tweetTranslationCacheScope || 'provider:unknown|model:|prompt:0';
+  const textHash = hashStringForCache(normalizedText);
+  const fallbackKey = `scope:${scope}|text:${textHash}`;
+  const tweetId = resolveTweetIdForTextElement(tweetElement, tweetTextElement);
+
+  if (!tweetId) {
+    return {
+      lookupKeys: [fallbackKey],
+      storeKeys: [fallbackKey]
+    };
+  }
+
+  const primaryKey = `scope:${scope}|tweet:${tweetId}|text:${textHash}`;
+  return {
+    lookupKeys: [primaryKey, fallbackKey],
+    storeKeys: [primaryKey, fallbackKey]
+  };
+}
+
+function requestTweetTranslationWithCache({ tweetElement, tweetTextElement, text }) {
+  const keys = buildTweetTranslationCacheKeys({ tweetElement, tweetTextElement, text });
+
+  if (!keys) {
+    return Promise.resolve('翻訳エラー: 翻訳対象テキストが見つかりません');
+  }
+
+  for (const key of keys.lookupKeys) {
+    const cached = tweetTranslationCache.get(key);
+    if (typeof cached === 'string') {
+      return Promise.resolve(cached);
+    }
+  }
+
+  for (const key of keys.lookupKeys) {
+    const pending = tweetTranslationInFlight.get(key);
+    if (pending) {
+      return pending;
+    }
+  }
+
+  const requestPromise = new Promise((resolve) => {
+    safeSendMessage({ action: 'translateTweet', text }, (response) => {
+      resolve(extractTranslatedTextFromResponse(response));
+    });
+  })
+    .then((translatedText) => {
+      if (!ErrorUtils.isTranslationError(translatedText)) {
+        keys.storeKeys.forEach((key) => {
+          setTweetTranslationCache(key, translatedText);
+        });
+      }
+      return translatedText;
+    })
+    .finally(() => {
+      keys.storeKeys.forEach((key) => {
+        tweetTranslationInFlight.delete(key);
+      });
+    });
+
+  keys.storeKeys.forEach((key) => {
+    tweetTranslationInFlight.set(key, requestPromise);
+  });
+
+  return requestPromise;
+}
+
+function clearTweetTranslationEntriesForElements(tweetElement, tweetTextElements) {
+  tweetTextElements.forEach((el) => {
+    const keys = buildTweetTranslationCacheKeys({
+      tweetElement,
+      tweetTextElement: el,
+      text: el?.textContent || ''
+    });
+    if (!keys) return;
+    keys.storeKeys.forEach((key) => {
+      tweetTranslationCache.delete(key);
+      tweetTranslationInFlight.delete(key);
+    });
+  });
+}
+
+syncTweetTranslationCacheScopeFromStorage();
 
 // スタイル定義
 const styles = {
@@ -969,44 +1197,55 @@ function addButtonToTweet(tweetElement) {
   // 翻訳ボタンのクリックイベント
   translateButton.addEventListener('click', () => {
     // ツイート本文と引用ツイートのテキスト要素を取得
-    const tweetTextElements = tweetElement.querySelectorAll('[data-testid="tweetText"]');
-    // 既に翻訳結果が表示されている場合は削除
-    const anyExisting = Array.from(tweetTextElements).some(el => {
+    const tweetTextElements = Array.from(tweetElement.querySelectorAll('[data-testid="tweetText"]'));
+
+    // 既に翻訳結果が表示されている場合は削除し、同時にキャッシュも捨てる
+    const anyExisting = tweetTextElements.some((el) => {
       const next = el.nextSibling;
       return next && next.classList && next.classList.contains('llm-tweet-translation');
     });
     if (anyExisting) {
-      tweetTextElements.forEach(el => {
+      tweetTextElements.forEach((el) => {
         const next = el.nextSibling;
         if (next && next.classList && next.classList.contains('llm-tweet-translation')) {
           next.remove();
         }
       });
+      clearTweetTranslationEntriesForElements(tweetElement, tweetTextElements);
       translateButton.style.color = 'rgb(83, 100, 113)';
+      translateIcon.style.display = 'block';
+      spinner.style.display = 'none';
       return;
     }
+
+    if (tweetTextElements.length === 0) {
+      return;
+    }
+
     // ローディング状態を表示
     translateButton.style.color = '#1DA1F2';
     translateIcon.style.display = 'none';
     spinner.style.display = 'block';
-    // 翻訳リクエストを一括送信
+
     let pending = tweetTextElements.length;
-    tweetTextElements.forEach(el => {
-      const text = el.textContent;
-      safeSendMessage({ action: 'translateTweet', text }, (response) => {
-        const err = response?.error;
-        const message = err?.message || (typeof err === 'string' ? err : null);
-        const translatedText = message
-          ? `翻訳エラー: ${message}`
-          : (response?.translatedText ?? '翻訳エラー: 拡張機能との通信に失敗しました');
-        showTweetTranslation(tweetElement, el, translatedText);
-        pending -= 1;
-        if (pending === 0) {
-          translateButton.style.color = 'rgb(83, 100, 113)';
-          translateIcon.style.display = 'block';
-          spinner.style.display = 'none';
-        }
-      });
+    tweetTextElements.forEach((el) => {
+      const text = el.textContent || '';
+      requestTweetTranslationWithCache({ tweetElement, tweetTextElement: el, text })
+        .then((translatedText) => {
+          showTweetTranslation(tweetElement, el, translatedText);
+        })
+        .catch((error) => {
+          const message = error?.message || String(error || 'unknown error');
+          showTweetTranslation(tweetElement, el, `翻訳エラー: ${message}`);
+        })
+        .finally(() => {
+          pending -= 1;
+          if (pending === 0) {
+            translateButton.style.color = 'rgb(83, 100, 113)';
+            translateIcon.style.display = 'block';
+            spinner.style.display = 'none';
+          }
+        });
     });
   });
 
