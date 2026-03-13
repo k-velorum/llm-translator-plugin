@@ -8,7 +8,7 @@ function getSystemPrompt(settings) {
 
 export function getProviderCapabilities(settings = {}) {
   const provider = settings?.apiProvider || 'gemini';
-  if (provider === 'lmstudio') {
+  if (provider === 'lmstudio' || provider === 'cerebras') {
     return {
       supportsStreaming: true,
       streamProtocol: 'openai-chat-sse'
@@ -693,6 +693,42 @@ async function translateWithCerebras(text, settings, requestOptions = {}) {
   return (data.choices?.[0]?.message?.content || '').trim();
 }
 
+async function translateWithCerebrasStream(text, settings, handlers = {}, requestOptions = {}) {
+  if (!settings.cerebrasApiKey) {
+    throw new Error('Cerebras APIキーが設定されていません');
+  }
+  if (!settings.cerebrasModel) {
+    throw new Error('Cerebras のモデルが選択されていません');
+  }
+
+  const apiUrl = 'https://api.cerebras.ai/v1/chat/completions';
+  const messages = [
+    { role: 'system', content: getSystemPrompt(settings) },
+    { role: 'user', content: text }
+  ];
+
+  return makeStreamingApiRequest(
+    apiUrl,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${settings.cerebrasApiKey}`
+      },
+      body: JSON.stringify({
+        model: settings.cerebrasModel,
+        messages,
+        temperature: 0.2,
+        stream: true
+      }),
+      timeoutMs: requestOptions.timeoutMs ?? 180000,
+      signal: requestOptions.signal
+    },
+    handlers,
+    'Cerebras API ストリーミング中にエラーが発生'
+  );
+}
+
 // Z-AI (OpenAI互換) での翻訳
 async function translateWithZai(text, settings, requestOptions = {}) {
   if (!settings.zaiApiKey) {
@@ -856,6 +892,9 @@ export async function translateTextStream(text, settings, handlers = {}, request
   const capabilities = getProviderCapabilities(settings);
   if (!capabilities.supportsStreaming) {
     throw new Error(`streaming is not supported for provider: ${settings?.apiProvider || 'unknown'}`);
+  }
+  if (settings.apiProvider === 'cerebras') {
+    return translateWithCerebrasStream(text, settings, handlers, requestOptions);
   }
   if (settings.apiProvider === 'lmstudio') {
     return translateWithLmStudioStream(text, settings, handlers, requestOptions);
