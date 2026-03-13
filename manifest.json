@@ -30,7 +30,16 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"]
+      "js": [
+        "src/content/shared.js",
+        "src/content/streaming.js",
+        "src/content/selection.js",
+        "src/content/page-translation.js",
+        "src/content/twitter.js",
+        "src/content/youtube.js",
+        "src/content/runtime.js",
+        "content.js"
+      ]
     }
   ],
   "action": {
