@@ -141,6 +141,77 @@ function safeSendMessage(payload, callback) {
   }
 }
 
+const STREAM_RENDER_INTERVAL_MS = 50;
+const streamViewSessions = new Map();
+
+function createTranslationRequestId(kind = 'translate') {
+  try {
+    if (typeof crypto?.randomUUID === 'function') {
+      return `${kind}-${crypto.randomUUID()}`;
+    }
+  } catch (_) {}
+  return `${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function providerSupportsStreaming() {
+  return tweetTranslationCacheSettings.apiProvider === 'lmstudio';
+}
+
+function cancelTranslationStream(requestId) {
+  if (!requestId) return;
+  safeSendMessage({ action: 'cancelTranslationStream', requestId }, () => {});
+}
+
+function registerStreamSession(requestId, session) {
+  const base = {
+    requestId,
+    renderedText: '',
+    pendingText: '',
+    renderTimer: null,
+    closed: false,
+    resolve: null,
+    reject: null
+  };
+  const fullSession = { ...base, ...session };
+  if (session.withPromise !== false && !fullSession.promise) {
+    fullSession.promise = new Promise((resolve, reject) => {
+      fullSession.resolve = resolve;
+      fullSession.reject = reject;
+    });
+  } else if (!fullSession.promise) {
+    fullSession.promise = Promise.resolve('');
+  }
+  streamViewSessions.set(requestId, fullSession);
+  return fullSession;
+}
+
+function clearStreamSessionTimer(session) {
+  if (session?.renderTimer) {
+    clearTimeout(session.renderTimer);
+    session.renderTimer = null;
+  }
+}
+
+function discardStreamSession(requestId, { removeElement = false } = {}) {
+  const session = streamViewSessions.get(requestId);
+  if (!session) return;
+  clearStreamSessionTimer(session);
+  session.closed = true;
+  if (removeElement && session.element?.parentNode) {
+    session.element.parentNode.removeChild(session.element);
+  }
+  streamViewSessions.delete(requestId);
+}
+
+function findStreamSessionByElement(kind, element) {
+  for (const session of streamViewSessions.values()) {
+    if (session.kind === kind && session.element === element) {
+      return session;
+    }
+  }
+  return null;
+}
+
 // Twitter翻訳の軽量キャッシュ（セッション内）
 const TWEET_TRANSLATION_CACHE_MAX_ENTRIES = 300;
 const tweetTranslationCache = new Map();
@@ -349,6 +420,39 @@ function requestTweetTranslationWithCache({ tweetElement, tweetTextElement, text
   });
 
   return requestPromise;
+}
+
+function requestTweetTranslationStreamWithCache({ tweetElement, tweetTextElement, text }) {
+  const keys = buildTweetTranslationCacheKeys({ tweetElement, tweetTextElement, text });
+  if (!keys) {
+    return Promise.reject(new Error('翻訳対象テキストが見つかりません'));
+  }
+
+  for (const key of keys.lookupKeys) {
+    const cached = tweetTranslationCache.get(key);
+    if (typeof cached === 'string') {
+      showTweetTranslation(tweetElement, tweetTextElement, cached);
+      return Promise.resolve(cached);
+    }
+  }
+
+  const translationElement = ensureTweetTranslationElement(tweetTextElement);
+  translationElement.textContent = '翻訳しています...';
+  const { promise } = startEmbeddedTranslationStream({
+    kind: 'tweet',
+    text,
+    element: translationElement,
+    meta: { platform: 'tweet' }
+  });
+
+  return promise.then((translatedText) => {
+    if (!ErrorUtils.isTranslationError(translatedText)) {
+      keys.storeKeys.forEach((key) => {
+        setTweetTranslationCache(key, translatedText);
+      });
+    }
+    return translatedText;
+  });
 }
 
 function clearTweetTranslationEntriesForElements(tweetElement, tweetTextElements) {
@@ -624,9 +728,301 @@ function positionPopupInViewport(popup, anchorRect) {
   popup.style.visibility = 'visible';
 }
 
+function applyTranslationTextState(element, text, isError, normalStyle = {}, errorStyle = {}) {
+  if (!element) return;
+  applyStyles(element, normalStyle);
+  if (isError) {
+    applyStyles(element, errorStyle);
+  }
+  element.textContent = text;
+}
+
+function ensureTweetTranslationElement(tweetTextElement) {
+  const next = tweetTextElement?.nextSibling;
+  if (next && next.classList && next.classList.contains('llm-tweet-translation')) {
+    return next;
+  }
+  const translationElement = document.createElement('div');
+  translationElement.className = 'llm-tweet-translation';
+  applyStyles(translationElement, styles.tweetTranslation);
+  tweetTextElement.parentNode.insertBefore(translationElement, tweetTextElement.nextSibling);
+  return translationElement;
+}
+
+function ensureYouTubeTranslationElement(contentTextEl) {
+  const container = contentTextEl.closest('ytd-comment-view-model, ytd-comment-renderer') || contentTextEl.parentElement || contentTextEl;
+  const prev = container.querySelector('.llm-yt-translation');
+  if (prev) return prev;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'llm-yt-translation';
+  wrap.style.marginTop = '6px';
+  wrap.style.padding = '8px 10px';
+  wrap.style.background = '#f2f5f9';
+  wrap.style.borderRadius = '8px';
+  wrap.style.fontSize = '13px';
+  wrap.style.color = '#0f0f0f';
+  wrap.style.whiteSpace = 'pre-wrap';
+  wrap.style.wordBreak = 'break-word';
+  wrap.style.maxHeight = 'none';
+  wrap.style.overflow = 'visible';
+
+  const expander = contentTextEl.closest('ytd-expander');
+  if (expander && expander.parentElement) {
+    expander.insertAdjacentElement('afterend', wrap);
+  } else {
+    contentTextEl.insertAdjacentElement('afterend', wrap);
+  }
+  return wrap;
+}
+
+function renderSessionContent(session, text, isError = false) {
+  if (!session) return;
+  if (session.kind === 'selection') {
+    updateSelectionStreamPopup(session.requestId, text, {
+      isError,
+      isCompleted: session.state === 'completed'
+    });
+    return;
+  }
+  if (session.kind === 'tweet') {
+    applyTranslationTextState(session.element, text, isError, styles.tweetTranslation, styles.tweetTranslationError);
+    return;
+  }
+  if (session.kind === 'youtube') {
+    session.element.style.background = isError ? '#fff0f0' : '#f2f5f9';
+    session.element.style.color = isError ? '#b00020' : '#0f0f0f';
+    session.element.style.fontFamily = isError ? 'monospace' : '';
+    session.element.textContent = text;
+  }
+}
+
+function flushStreamSession(requestId) {
+  const session = streamViewSessions.get(requestId);
+  if (!session || session.closed || !session.pendingText) return;
+  session.renderedText += session.pendingText;
+  session.pendingText = '';
+  renderSessionContent(session, session.renderedText, false);
+}
+
+function scheduleStreamSessionRender(requestId) {
+  const session = streamViewSessions.get(requestId);
+  if (!session || session.closed || session.renderTimer) return;
+  session.renderTimer = setTimeout(() => {
+    session.renderTimer = null;
+    flushStreamSession(requestId);
+  }, STREAM_RENDER_INTERVAL_MS);
+}
+
+function appendStreamSessionDelta(requestId, deltaText) {
+  const session = streamViewSessions.get(requestId);
+  if (!session || session.closed || typeof deltaText !== 'string' || !deltaText.length) return;
+  session.pendingText += deltaText;
+  scheduleStreamSessionRender(requestId);
+}
+
+function completeStreamSession(requestId, finalText) {
+  const session = streamViewSessions.get(requestId);
+  if (!session || session.closed) return;
+  clearStreamSessionTimer(session);
+  session.pendingText = '';
+  session.renderedText = typeof finalText === 'string' ? finalText : session.renderedText;
+  session.state = 'completed';
+  renderSessionContent(session, session.renderedText, false);
+  session.closed = true;
+  session.resolve?.(session.renderedText);
+  streamViewSessions.delete(requestId);
+}
+
+function failStreamSession(requestId, error) {
+  const session = streamViewSessions.get(requestId);
+  if (!session || session.closed) return;
+  clearStreamSessionTimer(session);
+  session.pendingText = '';
+  const message = error?.message || 'ストリーム翻訳に失敗しました';
+  const errorText = `翻訳エラー: ${message}`;
+  session.renderedText = errorText;
+  session.state = 'error';
+  renderSessionContent(session, errorText, true);
+  session.closed = true;
+  session.reject?.(new Error(message));
+  streamViewSessions.delete(requestId);
+}
+
+function cancelLocalStreamSession(requestId, { removeElement = false } = {}) {
+  const session = streamViewSessions.get(requestId);
+  if (!session) return;
+  session.reject?.(new Error('cancelled'));
+  discardStreamSession(requestId, { removeElement });
+}
+
+function startEmbeddedTranslationStream({ kind, text, element, meta }) {
+  const requestId = createTranslationRequestId(kind);
+  const session = registerStreamSession(requestId, {
+    kind,
+    element,
+    state: 'running'
+  });
+
+  safeSendMessage(
+    { action: 'startTranslationStream', requestId, kind, text, meta },
+    (response) => {
+      if (response?.error) {
+        failStreamSession(requestId, response.error);
+        return;
+      }
+      if (!response?.accepted) {
+        const reason = response?.reason || 'unsupported';
+        failStreamSession(requestId, { message: reason });
+      }
+    }
+  );
+
+  return {
+    requestId,
+    promise: session.promise
+  };
+}
+
+function getSelectionAnchorRect() {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return null;
+  return selection.getRangeAt(0).getBoundingClientRect();
+}
+
+function createSelectionPopup({
+  titleText,
+  bodyText,
+  isError = false,
+  requestId = '',
+  loading = false
+}) {
+  removePopup();
+
+  const rect = getSelectionAnchorRect();
+  if (!rect) return null;
+
+  translationPopup = document.createElement('div');
+  translationPopup.className = 'llm-translation-popup';
+  translationPopup.setAttribute('role', 'dialog');
+  translationPopup.setAttribute('aria-label', titleText || '翻訳結果');
+  translationPopup.dataset.requestId = requestId || '';
+  applyStyles(translationPopup, styles.popup);
+
+  const header = document.createElement('div');
+  applyStyles(header, styles.header);
+
+  const title = document.createElement('div');
+  title.textContent = titleText;
+  applyStyles(title, styles.title);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = '×';
+  closeBtn.type = 'button';
+  closeBtn.setAttribute('aria-label', '閉じる');
+  applyStyles(closeBtn, styles.closeBtn);
+  closeBtn.onmouseenter = () => { closeBtn.style.color = '#55627a'; };
+  closeBtn.onmouseleave = () => { closeBtn.style.color = styles.closeBtn.color; };
+  closeBtn.onclick = () => removePopup();
+
+  header.appendChild(title);
+  header.appendChild(closeBtn);
+
+  const content = document.createElement('div');
+  applyStyles(content, styles.content);
+  applyStyles(content, isError ? styles.errorContent : styles.normalContent);
+  content.textContent = bodyText;
+
+  const copyBtn = document.createElement('button');
+  copyBtn.textContent = 'コピー';
+  copyBtn.type = 'button';
+  applyStyles(copyBtn, styles.copyBtn);
+  copyBtn.disabled = !bodyText || loading;
+  copyBtn.style.opacity = copyBtn.disabled ? '0.65' : '1';
+  copyBtn.onclick = () => {
+    const text = translationPopup?.__renderedText || '';
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        const originalText = copyBtn.textContent;
+        copyBtn.textContent = 'コピーしました！';
+        copyBtn.style.backgroundColor = '#2e7d32';
+        setTimeout(() => {
+          copyBtn.textContent = originalText;
+          copyBtn.style.backgroundColor = styles.copyBtn.backgroundColor;
+        }, 2000);
+      })
+      .catch(err => {
+        console.error('クリップボードへのコピーに失敗しました:', err);
+      });
+  };
+
+  const actions = document.createElement('div');
+  applyStyles(actions, styles.actions);
+  actions.appendChild(copyBtn);
+
+  if (isError) {
+    applyStyles(translationPopup, styles.popupError);
+  }
+
+  translationPopup.__contentEl = content;
+  translationPopup.__titleEl = title;
+  translationPopup.__copyBtn = copyBtn;
+  translationPopup.__renderedText = bodyText;
+
+  translationPopup.appendChild(header);
+  translationPopup.appendChild(content);
+  translationPopup.appendChild(actions);
+
+  document.body.appendChild(translationPopup);
+  positionPopupInViewport(translationPopup, rect);
+  requestAnimationFrame(() => {
+    if (!translationPopup) return;
+    translationPopup.style.opacity = '1';
+    translationPopup.style.transform = 'translateY(0)';
+  });
+  document.addEventListener('click', closePopupOnClickOutside);
+  return translationPopup;
+}
+
+function showSelectionStreamPopup(requestId) {
+  return createSelectionPopup({
+    titleText: '翻訳中',
+    bodyText: '翻訳しています...',
+    requestId,
+    loading: true
+  });
+}
+
+function updateSelectionStreamPopup(requestId, text, { isError = false, isCompleted = false } = {}) {
+  if (!translationPopup || translationPopup.dataset.requestId !== requestId) return;
+  const content = translationPopup.__contentEl;
+  const title = translationPopup.__titleEl;
+  const copyBtn = translationPopup.__copyBtn;
+  if (!content || !title || !copyBtn) return;
+
+  title.textContent = isError ? '翻訳エラー' : (isCompleted ? '翻訳結果' : '翻訳中');
+  translationPopup.__renderedText = text;
+  content.textContent = text || (isCompleted ? '' : '翻訳しています...');
+  copyBtn.disabled = !text;
+  copyBtn.style.opacity = copyBtn.disabled ? '0.65' : '1';
+
+  if (isError) {
+    applyStyles(translationPopup, styles.popupError);
+    applyStyles(content, styles.errorContent);
+  } else {
+    applyStyles(content, styles.normalContent);
+    translationPopup.style.borderTop = styles.popup.borderTop;
+  }
+}
+
 // ポップアップを削除する関数
-function removePopup() {
+function removePopup({ suppressCancel = false } = {}) {
   if (translationPopup) {
+    const requestId = translationPopup.dataset?.requestId || '';
+    if (!suppressCancel && requestId && streamViewSessions.has(requestId)) {
+      cancelTranslationStream(requestId);
+      cancelLocalStreamSession(requestId);
+    }
     document.body.removeChild(translationPopup);
     translationPopup = null;
     document.removeEventListener('click', closePopupOnClickOutside);
@@ -702,6 +1098,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.action === 'showTranslation') {
     showTranslationPopup(message.translatedText);
     // sendResponse を呼ばないので false (または undefined) を返す
+    return false;
+  } else if (message.action === 'prepareSelectionTranslationStream') {
+    const requestId = createTranslationRequestId('selection');
+    const session = registerStreamSession(requestId, {
+      kind: 'selection',
+      state: 'running',
+      withPromise: false
+    });
+    const popup = showSelectionStreamPopup(requestId);
+    if (!popup) {
+      discardStreamSession(requestId);
+      sendResponse({ requestId: '' });
+      return true;
+    }
+    sendResponse({ requestId: session.requestId });
+    return true;
+  } else if (message.action === 'translationStreamStart') {
+    return false;
+  } else if (message.action === 'translationStreamDelta') {
+    appendStreamSessionDelta(message.requestId, message.deltaText || '');
+    return false;
+  } else if (message.action === 'translationStreamComplete') {
+    completeStreamSession(message.requestId, message.finalText || '');
+    return false;
+  } else if (message.action === 'translationStreamError') {
+    failStreamSession(message.requestId, message.error || { message: 'ストリーム翻訳エラー' });
+    return false;
+  } else if (message.action === 'translationStreamCancelled') {
+    const requestId = message.requestId || '';
+    if (translationPopup?.dataset?.requestId === requestId) {
+      removePopup({ suppressCancel: true });
+    }
+    cancelLocalStreamSession(requestId);
     return false;
   } else if (message.action === 'getSelectedText') {
     // 選択されたテキストを取得してバックグラウンドスクリプトに返す
@@ -1208,6 +1637,11 @@ function addButtonToTweet(tweetElement) {
       tweetTextElements.forEach((el) => {
         const next = el.nextSibling;
         if (next && next.classList && next.classList.contains('llm-tweet-translation')) {
+          const activeSession = findStreamSessionByElement('tweet', next);
+          if (activeSession) {
+            cancelTranslationStream(activeSession.requestId);
+            cancelLocalStreamSession(activeSession.requestId);
+          }
           next.remove();
         }
       });
@@ -1227,14 +1661,23 @@ function addButtonToTweet(tweetElement) {
     translateIcon.style.display = 'none';
     spinner.style.display = 'block';
 
+    const useStreaming = providerSupportsStreaming();
     let pending = tweetTextElements.length;
     tweetTextElements.forEach((el) => {
       const text = el.textContent || '';
-      requestTweetTranslationWithCache({ tweetElement, tweetTextElement: el, text })
+      const requestPromise = useStreaming
+        ? requestTweetTranslationStreamWithCache({ tweetElement, tweetTextElement: el, text })
+        : requestTweetTranslationWithCache({ tweetElement, tweetTextElement: el, text });
+      requestPromise
         .then((translatedText) => {
-          showTweetTranslation(tweetElement, el, translatedText);
+          if (!useStreaming) {
+            showTweetTranslation(tweetElement, el, translatedText);
+          }
         })
         .catch((error) => {
+          if (error?.message === 'cancelled') {
+            return;
+          }
           const message = error?.message || String(error || 'unknown error');
           showTweetTranslation(tweetElement, el, `翻訳エラー: ${message}`);
         })
@@ -1255,26 +1698,14 @@ function addButtonToTweet(tweetElement) {
 
 // ツイートの下に翻訳結果を表示する関数
 function showTweetTranslation(tweetElement, tweetTextElement, translatedText) {
-  // 既にこのツイートの翻訳結果が表示されている場合は削除
-  const next = tweetTextElement.nextSibling;
-  if (next && next.classList && next.classList.contains('llm-tweet-translation')) {
-    next.remove();
-  }
-
-  // 翻訳結果の要素を作成
-  const translationElement = document.createElement('div');
-  translationElement.className = 'llm-tweet-translation';
-  applyStyles(translationElement, styles.tweetTranslation);
-
-  // エラーメッセージかどうかをチェック
-  if (ErrorUtils.isTranslationError(translatedText)) {
-    applyStyles(translationElement, styles.tweetTranslationError);
-  }
-
-  translationElement.textContent = translatedText;
-
-  // ツイートのテキスト要素の後に翻訳結果を挿入
-  tweetTextElement.parentNode.insertBefore(translationElement, tweetTextElement.nextSibling);
+  const translationElement = ensureTweetTranslationElement(tweetTextElement);
+  applyTranslationTextState(
+    translationElement,
+    translatedText,
+    ErrorUtils.isTranslationError(translatedText),
+    styles.tweetTranslation,
+    styles.tweetTranslationError
+  );
 }
 
 // ページ読み込み完了時に実行
@@ -1384,6 +1815,11 @@ function addButtonToYouTubeComment(contentTextEl) {
     const container = contentTextEl.closest('ytd-comment-view-model, ytd-comment-renderer') || contentTextEl.parentElement;
     const existing = container?.querySelector('.llm-yt-translation');
     if (existing) {
+      const activeSession = findStreamSessionByElement('youtube', existing);
+      if (activeSession) {
+        cancelTranslationStream(activeSession.requestId);
+        cancelLocalStreamSession(activeSession.requestId);
+      }
       existing.remove();
       // トグル解除: ボタンの見た目を初期化
       btn.style.color = 'rgb(83, 100, 113)';
@@ -1398,6 +1834,33 @@ function addButtonToYouTubeComment(contentTextEl) {
     spinner.style.display = 'inline-block';
 
     const text = contentTextEl.textContent || '';
+    const onFinally = () => {
+      btn.style.color = 'rgb(83, 100, 113)';
+      translateIcon.style.display = 'inline-block';
+      spinner.style.display = 'none';
+    };
+
+    const useStreaming = providerSupportsStreaming();
+    if (useStreaming) {
+      const element = ensureYouTubeTranslationElement(contentTextEl);
+      element.textContent = '翻訳しています...';
+      const { promise } = startEmbeddedTranslationStream({
+        kind: 'youtube',
+        text,
+        element,
+        meta: { platform: 'youtube' }
+      });
+      promise
+        .catch((error) => {
+          if (error?.message === 'cancelled') {
+            return;
+          }
+          showYouTubeCommentTranslation(contentTextEl, `翻訳エラー: ${error?.message || 'unknown error'}`);
+        })
+        .finally(onFinally);
+      return;
+    }
+
     safeSendMessage({ action: 'translateTweet', text }, (response) => {
       const err = response?.error;
       const message = err?.message || (typeof err === 'string' ? err : null);
@@ -1405,51 +1868,18 @@ function addButtonToYouTubeComment(contentTextEl) {
         ? `翻訳エラー: ${message}`
         : (response?.translatedText ?? '翻訳エラー: 拡張機能との通信に失敗しました');
       showYouTubeCommentTranslation(contentTextEl, translatedText);
-      btn.style.color = 'rgb(83, 100, 113)';
-      translateIcon.style.display = 'inline-block';
-      spinner.style.display = 'none';
+      onFinally();
     });
   });
 }
 
 function showYouTubeCommentTranslation(contentTextEl, translatedText) {
-  // 既存を削除してから表示（コメント単位で1つだけ）
-  const container = contentTextEl.closest('ytd-comment-view-model, ytd-comment-renderer') || contentTextEl.parentElement || contentTextEl;
-  const prev = container.querySelector('.llm-yt-translation');
-  if (prev) prev.remove();
-
-  const wrap = document.createElement('div');
-  wrap.className = 'llm-yt-translation';
-  wrap.style.marginTop = '6px';
-  wrap.style.padding = '8px 10px';
-  wrap.style.background = '#f2f5f9';
-  wrap.style.borderRadius = '8px';
-  wrap.style.fontSize = '13px';
-  wrap.style.color = '#0f0f0f';
-  wrap.style.whiteSpace = 'pre-wrap';
-  wrap.style.wordBreak = 'break-word';
-  // 高さ制限をかけない
-  wrap.style.maxHeight = 'none';
-  wrap.style.overflow = 'visible';
-
+  const wrap = ensureYouTubeTranslationElement(contentTextEl);
   const isErr = ErrorUtils.isTranslationError(translatedText);
-  if (isErr) {
-    wrap.style.background = '#fff0f0';
-    wrap.style.color = '#b00020';
-    wrap.style.fontFamily = 'monospace';
-  }
-
+  wrap.style.background = isErr ? '#fff0f0' : '#f2f5f9';
+  wrap.style.color = isErr ? '#b00020' : '#0f0f0f';
+  wrap.style.fontFamily = isErr ? 'monospace' : '';
   wrap.textContent = translatedText;
-
-  // YouTubeのコメント本文はytd-expander配下で折りたたまれていることがあるので、
-  // その直後（expanderの外側）に挿入して高さ制限の影響を受けないようにする。
-  const expander = contentTextEl.closest('ytd-expander');
-  if (expander && expander.parentElement) {
-    expander.insertAdjacentElement('afterend', wrap);
-  } else {
-    // フォールバック: 元要素の直後
-    contentTextEl.insertAdjacentElement('afterend', wrap);
-  }
 }
 
 // (重複していたYouTubeの即時実行は、全体の初期化に統合済み)

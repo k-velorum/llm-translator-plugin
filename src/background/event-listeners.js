@@ -85,7 +85,7 @@ async function handleContextMenuClick(info, tab) {
     console.log('コンテキストメニューから翻訳:', selectedText);
     try {
       await chrome.tabs.get(tab.id);
-      await translateAndNotify(tab.id, selectedText);
+      await translateAndNotify(tab.id, selectedText, Number.isInteger(info?.frameId) ? info.frameId : 0);
     } catch (tabError) {
       console.error('タブへのアクセスエラー (コンテキストメニュー):', tabError);
     }
@@ -119,7 +119,7 @@ async function handleCommand(command) {
 
       const selectedText = response.selectedText;
       console.log('選択テキスト (ショートカット):', selectedText);
-      await translateAndNotify(tab.id, selectedText);
+      await translateAndNotify(tab.id, selectedText, 0);
     } catch (error) {
       if (error.message && error.message.includes('Could not establish connection')) {
         console.warn('コンテンツスクリプトとの接続確立失敗 (ショートカット):', error.message);

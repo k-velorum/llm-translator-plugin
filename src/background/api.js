@@ -5,6 +5,20 @@ function getSystemPrompt(settings) {
   const v = (settings && settings.translationSystemPrompt) || DEFAULT_SETTINGS.translationSystemPrompt;
   return (typeof v === 'string' && v.trim().length) ? v : DEFAULT_SETTINGS.translationSystemPrompt;
 }
+
+export function getProviderCapabilities(settings = {}) {
+  const provider = settings?.apiProvider || 'gemini';
+  if (provider === 'lmstudio') {
+    return {
+      supportsStreaming: true,
+      streamProtocol: 'openai-chat-sse'
+    };
+  }
+  return {
+    supportsStreaming: false,
+    streamProtocol: null
+  };
+}
 const OPENROUTER_HEADERS_BASE = {
   'HTTP-Referer': 'chrome-extension://llm-translator',
   'X-Title': 'LLM Translation Plugin'
@@ -112,6 +126,21 @@ function extractChatMessageContent(data) {
     }).join('');
   }
   if (content && typeof content === 'object') return JSON.stringify(content);
+  return '';
+}
+
+function normalizeOpenAICompatibleDeltaText(content) {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (typeof part === 'string') return part;
+      if (typeof part?.text === 'string') return part.text;
+      return '';
+    }).join('');
+  }
+  if (content && typeof content === 'object' && typeof content.text === 'string') {
+    return content.text;
+  }
   return '';
 }
 
@@ -408,6 +437,144 @@ export async function makeApiRequest(url, options = {}, errorMessage, logLevel =
   }
 }
 
+export async function makeStreamingApiRequest(url, options = {}, handlers = {}, errorMessage, logLevel = 'error') {
+  const logger = (console[logLevel] || console.error).bind(console);
+  const timeoutMs = Number.isFinite(options?.timeoutMs) ? options.timeoutMs : null;
+  const externalSignal = options?.signal;
+
+  const baseOptions = { ...(options || {}) };
+  delete baseOptions.timeoutMs;
+  delete baseOptions.signal;
+
+  let timeoutId = null;
+  let timedOut = false;
+  const controller = new AbortController();
+  const onExternalAbort = () => controller.abort();
+
+  try {
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        controller.abort();
+      } else {
+        externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+      }
+    }
+
+    if (timeoutMs && timeoutMs > 0) {
+      timeoutId = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs);
+    }
+
+    const response = await fetch(url, { ...baseOptions, signal: controller.signal });
+    if (!response.ok) {
+      let errorText = '';
+      try {
+        const errorData = await response.json();
+        errorText = JSON.stringify(errorData);
+        throw new Error(`API Error: ${errorData.error?.message || response.statusText} (${response.status})`);
+      } catch (parseError) {
+        try {
+          errorText = await response.text();
+        } catch (_) {
+          errorText = 'レスポンステキストを取得できませんでした';
+        }
+        throw new Error(`API Error: ${response.statusText} (${response.status}) - ${errorText}`);
+      }
+    }
+
+    if (!response.body) {
+      throw new Error('API Error: ストリーム応答ボディが取得できませんでした');
+    }
+
+    return await readOpenAICompatibleSSE(response.body, handlers);
+  } catch (error) {
+    if (timedOut) {
+      const timeoutError = new Error(`API Error: request timed out after ${timeoutMs}ms`);
+      timeoutError.name = 'TimeoutError';
+      logger(`${errorMessage}:`, timeoutError);
+      throw timeoutError;
+    }
+    if (error && error.name === 'AbortError') {
+      throw error;
+    }
+    logger(`${errorMessage}:`, error);
+    throw error;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (externalSignal) {
+      try { externalSignal.removeEventListener('abort', onExternalAbort); } catch (_) {}
+    }
+  }
+}
+
+export async function readOpenAICompatibleSSE(stream, handlers = {}) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let aggregated = '';
+
+  const processEvent = async (rawEvent) => {
+    const lines = rawEvent.split(/\r?\n/);
+    const dataLines = [];
+
+    for (const line of lines) {
+      if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+    }
+
+    const payload = dataLines.join('\n').trim();
+    if (!payload) return false;
+    if (payload === '[DONE]') return true;
+
+    let parsed;
+    try {
+      parsed = JSON.parse(payload);
+    } catch (_) {
+      throw new Error(`API Error: SSE payload JSON の解析に失敗しました: ${payload.slice(0, 200)}`);
+    }
+
+    if (parsed?.error?.message) {
+      throw new Error(`API Error: ${parsed.error.message}`);
+    }
+
+    const deltaText = normalizeOpenAICompatibleDeltaText(parsed?.choices?.[0]?.delta?.content);
+    if (deltaText) {
+      aggregated += deltaText;
+      await handlers.onDelta?.(deltaText, aggregated, parsed);
+    }
+
+    await handlers.onEvent?.(parsed);
+    return false;
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+    let boundaryIndex = buffer.search(/\r?\n\r?\n/);
+    while (boundaryIndex >= 0) {
+      const rawEvent = buffer.slice(0, boundaryIndex);
+      const separatorLength = buffer[boundaryIndex] === '\r' ? (buffer[boundaryIndex + 1] === '\n' && buffer[boundaryIndex + 2] === '\r' ? 4 : 2) : 2;
+      buffer = buffer.slice(boundaryIndex + separatorLength);
+      if (await processEvent(rawEvent)) {
+        await handlers.onDone?.(aggregated);
+        return aggregated;
+      }
+      boundaryIndex = buffer.search(/\r?\n\r?\n/);
+    }
+
+    if (done) {
+      const rest = buffer.trim();
+      if (rest) {
+        await processEvent(rest);
+      }
+      await handlers.onDone?.(aggregated);
+      return aggregated;
+    }
+  }
+}
+
 // OpenRouter APIでの翻訳
 async function translateWithOpenRouter(text, settings, requestOptions = {}) {
   if (!settings.openrouterApiKey) {
@@ -634,6 +801,40 @@ async function translateWithLmStudio(text, settings, requestOptions = {}) {
   }
 }
 
+async function translateWithLmStudioStream(text, settings, handlers = {}, requestOptions = {}) {
+  const server = (settings.lmstudioServer || 'http://localhost:1234').replace(/\/$/, '');
+  if (!settings.lmstudioModel) {
+    throw new Error('LM Studio のモデルが選択されていません');
+  }
+
+  const apiUrl = `${server}/v1/chat/completions`;
+  const messages = [
+    { role: 'system', content: getSystemPrompt(settings) },
+    { role: 'user', content: text }
+  ];
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (settings.lmstudioApiKey) headers.Authorization = `Bearer ${settings.lmstudioApiKey}`;
+
+  return makeStreamingApiRequest(
+    apiUrl,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model: settings.lmstudioModel,
+        messages,
+        temperature: 0.2,
+        stream: true
+      }),
+      timeoutMs: requestOptions.timeoutMs ?? 180000,
+      signal: requestOptions.signal
+    },
+    handlers,
+    'LM Studio API ストリーミング中にエラーが発生'
+  );
+}
+
 // テキスト翻訳関数
 export async function translateText(text, settings, requestOptions = {}) {
   if (settings.apiProvider === 'openrouter') {
@@ -649,6 +850,17 @@ export async function translateText(text, settings, requestOptions = {}) {
   } else {
     return await translateWithGemini(text, settings, requestOptions);
   }
+}
+
+export async function translateTextStream(text, settings, handlers = {}, requestOptions = {}) {
+  const capabilities = getProviderCapabilities(settings);
+  if (!capabilities.supportsStreaming) {
+    throw new Error(`streaming is not supported for provider: ${settings?.apiProvider || 'unknown'}`);
+  }
+  if (settings.apiProvider === 'lmstudio') {
+    return translateWithLmStudioStream(text, settings, handlers, requestOptions);
+  }
+  throw new Error(`streaming is not implemented for provider: ${settings?.apiProvider || 'unknown'}`);
 }
 
 async function translateBatchStructuredGemini(texts, settings, requestOptions = {}) {
