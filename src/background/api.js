@@ -299,6 +299,85 @@ function getOpenAICompatibleResponseFormatCandidates(settings) {
 
 // 以前のプロキシフォールバックは削除（直接アクセスのみ）
 
+const HTTP_429_RETRY_DELAY_MS = 500;
+// 初回リクエストとは別に、429 発生時の再試行回数を表す。
+const HTTP_429_MAX_RETRY_COUNT = 5;
+const TRANSIENT_HTTP_MAX_RETRIES = 3;
+
+function createAbortError() {
+  const error = new Error('The operation was aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+function isRetriableHttpStatus(status) {
+  return status === 429 || (status >= 500 && status < 600);
+}
+
+async function sleepWithSignal(ms, signal) {
+  if (!(ms > 0)) return;
+  if (signal?.aborted) throw createAbortError();
+
+  await new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      cleanup();
+      reject(createAbortError());
+    };
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      if (signal) {
+        try { signal.removeEventListener('abort', onAbort); } catch (_) {}
+      }
+    };
+
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+}
+
+async function waitBeforeRetry({
+  response,
+  retryContext,
+  errorMessage,
+  logger,
+  signal
+}) {
+  if (!isRetriableHttpStatus(response.status)) {
+    return false;
+  }
+
+  if (response.status === 429) {
+    if (retryContext.rateLimitRetries >= HTTP_429_MAX_RETRY_COUNT) {
+      return false;
+    }
+    retryContext.rateLimitRetries += 1;
+    logger(
+      `${errorMessage}: HTTP 429 -> ${HTTP_429_RETRY_DELAY_MS}ms 待機後にリトライ (${retryContext.rateLimitRetries}/${HTTP_429_MAX_RETRY_COUNT})`
+    );
+    await sleepWithSignal(HTTP_429_RETRY_DELAY_MS, signal);
+    return true;
+  }
+
+  if (retryContext.transientHttpRetries >= TRANSIENT_HTTP_MAX_RETRIES) {
+    return false;
+  }
+
+  retryContext.transientHttpRetries += 1;
+  const delay = Math.min(4000, 250 * Math.pow(2, retryContext.transientHttpRetries - 1));
+  logger(
+    `${errorMessage}: HTTP ${response.status} -> ${delay}ms 待機後にリトライ (${retryContext.transientHttpRetries}/${TRANSIENT_HTTP_MAX_RETRIES})`
+  );
+  await sleepWithSignal(delay, signal);
+  return true;
+}
+
 // エラー詳細のフォーマット
 export function formatErrorDetails(error, settings) {
   const maskApiKey = (apiKey) => {
@@ -354,9 +433,6 @@ ${error.stack ? '\nスタックトレース:\n' + error.stack : ''}
 export async function makeApiRequest(url, options = {}, errorMessage, logLevel = 'error') {
   const logger = (console[logLevel] || console.error).bind(console);
 
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  const maxRetries = 3;
-
   const timeoutMs = Number.isFinite(options?.timeoutMs) ? options.timeoutMs : null;
   const externalSignal = options?.signal;
 
@@ -365,7 +441,12 @@ export async function makeApiRequest(url, options = {}, errorMessage, logLevel =
   delete baseOptions.timeoutMs;
   delete baseOptions.signal;
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  const retryContext = {
+    rateLimitRetries: 0,
+    transientHttpRetries: 0
+  };
+
+  while (true) {
     let timeoutId = null;
     let timedOut = false;
 
@@ -402,16 +483,14 @@ export async function makeApiRequest(url, options = {}, errorMessage, logLevel =
           );
         }
 
-        // 429/5xx はリトライ（Retry-After ヘッダを尊重）
-        if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
-          const retryAfter = response.headers.get('Retry-After');
-          const baseDelay = retryAfter ? Math.min(5000, parseInt(retryAfter, 10) * 1000 || 0) : 0;
-          const backoff = baseDelay || Math.min(4000, 250 * Math.pow(2, attempt));
-          if (attempt < maxRetries) {
-            logger(`${errorMessage}: HTTP ${response.status} -> ${backoff}ms 待機後にリトライ (${attempt + 1}/${maxRetries})`);
-            await sleep(backoff);
-            continue; // リトライ
-          }
+        if (await waitBeforeRetry({
+          response,
+          retryContext,
+          errorMessage,
+          logger,
+          signal: externalSignal
+        })) {
+          continue;
         }
 
         let errorText = '';
@@ -449,10 +528,13 @@ export async function makeApiRequest(url, options = {}, errorMessage, logLevel =
 
       // ネットワーク失敗は指数バックオフでリトライ
       const isNetworkError = (error instanceof TypeError && error.message === 'Failed to fetch');
-      if (isNetworkError && attempt < maxRetries) {
-        const delay = Math.min(4000, 250 * Math.pow(2, attempt));
-        logger(`${errorMessage}: ネットワークエラー -> ${delay}ms 待機後にリトライ (${attempt + 1}/${maxRetries})`);
-        await sleep(delay);
+      if (isNetworkError && retryContext.transientHttpRetries < TRANSIENT_HTTP_MAX_RETRIES) {
+        retryContext.transientHttpRetries += 1;
+        const delay = Math.min(4000, 250 * Math.pow(2, retryContext.transientHttpRetries - 1));
+        logger(
+          `${errorMessage}: ネットワークエラー -> ${delay}ms 待機後にリトライ (${retryContext.transientHttpRetries}/${TRANSIENT_HTTP_MAX_RETRIES})`
+        );
+        await sleepWithSignal(delay, externalSignal);
         continue;
       }
       logger(`${errorMessage}:`, error);
@@ -475,65 +557,82 @@ export async function makeStreamingApiRequest(url, options = {}, handlers = {}, 
   delete baseOptions.timeoutMs;
   delete baseOptions.signal;
 
-  let timeoutId = null;
-  let timedOut = false;
-  const controller = new AbortController();
-  const onExternalAbort = () => controller.abort();
+  const retryContext = {
+    rateLimitRetries: 0,
+    transientHttpRetries: 0
+  };
 
-  try {
-    if (externalSignal) {
-      if (externalSignal.aborted) {
-        controller.abort();
-      } else {
-        externalSignal.addEventListener('abort', onExternalAbort, { once: true });
-      }
-    }
+  while (true) {
+    let timeoutId = null;
+    let timedOut = false;
+    const controller = new AbortController();
+    const onExternalAbort = () => controller.abort();
 
-    if (timeoutMs && timeoutMs > 0) {
-      timeoutId = setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, timeoutMs);
-    }
-
-    const response = await fetch(url, { ...baseOptions, signal: controller.signal });
-    if (!response.ok) {
-      let errorText = '';
-      try {
-        const errorData = await response.json();
-        errorText = JSON.stringify(errorData);
-        throw new Error(`API Error: ${errorData.error?.message || response.statusText} (${response.status})`);
-      } catch (parseError) {
-        try {
-          errorText = await response.text();
-        } catch (_) {
-          errorText = 'レスポンステキストを取得できませんでした';
+    try {
+      if (externalSignal) {
+        if (externalSignal.aborted) {
+          controller.abort();
+        } else {
+          externalSignal.addEventListener('abort', onExternalAbort, { once: true });
         }
-        throw new Error(`API Error: ${response.statusText} (${response.status}) - ${errorText}`);
       }
-    }
 
-    if (!response.body) {
-      throw new Error('API Error: ストリーム応答ボディが取得できませんでした');
-    }
+      if (timeoutMs && timeoutMs > 0) {
+        timeoutId = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs);
+      }
 
-    return await readOpenAICompatibleSSE(response.body, handlers);
-  } catch (error) {
-    if (timedOut) {
-      const timeoutError = new Error(`API Error: request timed out after ${timeoutMs}ms`);
-      timeoutError.name = 'TimeoutError';
-      logger(`${errorMessage}:`, timeoutError);
-      throw timeoutError;
-    }
-    if (error && error.name === 'AbortError') {
+      const response = await fetch(url, { ...baseOptions, signal: controller.signal });
+      if (!response.ok) {
+        if (await waitBeforeRetry({
+          response,
+          retryContext,
+          errorMessage,
+          logger,
+          signal: externalSignal
+        })) {
+          continue;
+        }
+
+        let errorText = '';
+        try {
+          const errorData = await response.json();
+          errorText = JSON.stringify(errorData);
+          throw new Error(`API Error: ${errorData.error?.message || response.statusText} (${response.status})`);
+        } catch (parseError) {
+          try {
+            errorText = await response.text();
+          } catch (_) {
+            errorText = 'レスポンステキストを取得できませんでした';
+          }
+          throw new Error(`API Error: ${response.statusText} (${response.status}) - ${errorText}`);
+        }
+      }
+
+      if (!response.body) {
+        throw new Error('API Error: ストリーム応答ボディが取得できませんでした');
+      }
+
+      return await readOpenAICompatibleSSE(response.body, handlers);
+    } catch (error) {
+      if (timedOut) {
+        const timeoutError = new Error(`API Error: request timed out after ${timeoutMs}ms`);
+        timeoutError.name = 'TimeoutError';
+        logger(`${errorMessage}:`, timeoutError);
+        throw timeoutError;
+      }
+      if (error && error.name === 'AbortError') {
+        throw error;
+      }
+      logger(`${errorMessage}:`, error);
       throw error;
-    }
-    logger(`${errorMessage}:`, error);
-    throw error;
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-    if (externalSignal) {
-      try { externalSignal.removeEventListener('abort', onExternalAbort); } catch (_) {}
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (externalSignal) {
+        try { externalSignal.removeEventListener('abort', onExternalAbort); } catch (_) {}
+      }
     }
   }
 }
