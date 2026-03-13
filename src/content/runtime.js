@@ -1,12 +1,28 @@
 const runtimeMessageHandlers = {
-  showLoading() {
-    showLoadingPopup();
+  showLoading(message) {
+    showLoadingPopup(message?.anchorRect || null);
     return false;
   },
 
   showTranslation(message) {
-    showTranslationPopup(message.translatedText);
+    showTranslationPopup(message.translatedText, message?.anchorRect || null);
     return false;
+  },
+
+  getImageAnchorRect(message, sender, sendResponse) {
+    sendResponse({ anchorRect: resolveImageAnchorRect(message?.srcUrl || '') });
+    return true;
+  },
+
+  getImageDataUrl(message, sender, sendResponse) {
+    resolveImageDataUrl(message?.srcUrl || '')
+      .then((dataUrl) => {
+        sendResponse({ dataUrl });
+      })
+      .catch((error) => {
+        sendResponse({ error: { message: error?.message || String(error) } });
+      });
+    return true;
   },
 
   prepareSelectionTranslationStream(message, sender, sendResponse) {

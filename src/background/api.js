@@ -11,12 +11,14 @@ export function getProviderCapabilities(settings = {}) {
   if (provider === 'lmstudio' || provider === 'cerebras') {
     return {
       supportsStreaming: true,
-      streamProtocol: 'openai-chat-sse'
+      streamProtocol: 'openai-chat-sse',
+      supportsImageTranslation: provider === 'lmstudio'
     };
   }
   return {
     supportsStreaming: false,
-    streamProtocol: null
+    streamProtocol: null,
+    supportsImageTranslation: false
   };
 }
 const OPENROUTER_HEADERS_BASE = {
@@ -127,6 +129,33 @@ function extractChatMessageContent(data) {
   }
   if (content && typeof content === 'object') return JSON.stringify(content);
   return '';
+}
+
+function extractLmStudioRestMessageContent(data) {
+  const output = Array.isArray(data?.output) ? data.output : [];
+
+  const normalizeContent = (content) => {
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+      return content.map((part) => {
+        if (typeof part === 'string') return part;
+        if (typeof part?.text === 'string') return part.text;
+        if (typeof part?.content === 'string') return part.content;
+        return '';
+      }).join('');
+    }
+    if (content && typeof content === 'object' && typeof content.text === 'string') {
+      return content.text;
+    }
+    return '';
+  };
+
+  return output
+    .filter((item) => item?.type === 'message')
+    .map((item) => normalizeContent(item?.content).trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
 }
 
 function normalizeOpenAICompatibleDeltaText(content) {
@@ -871,6 +900,63 @@ async function translateWithLmStudioStream(text, settings, handlers = {}, reques
   );
 }
 
+function buildImageTranslationPrompt() {
+  return [
+    'この画像に含まれるテキストを読み取り、日本語に翻訳してください。',
+    '翻訳結果のみを出力してください。',
+    'テキストが見当たらない場合は「翻訳対象のテキストが見つかりませんでした。」とだけ出力してください。'
+  ].join('\n');
+}
+
+async function translateImageWithLmStudio(imageInput, settings, requestOptions = {}) {
+  const server = (settings.lmstudioServer || 'http://localhost:1234').replace(/\/$/, '');
+  if (!settings.lmstudioModel) {
+    throw new Error('LM Studio のモデルが選択されていません');
+  }
+  if (!imageInput?.dataUrl || !imageInput?.mimeType) {
+    throw new Error('画像入力データが不正です');
+  }
+
+  const apiUrl = `${server}/api/v1/chat`;
+  const headers = { 'Content-Type': 'application/json' };
+  if (settings.lmstudioApiKey) headers.Authorization = `Bearer ${settings.lmstudioApiKey}`;
+
+  const body = JSON.stringify({
+    model: settings.lmstudioModel,
+    system_prompt: getSystemPrompt(settings),
+    input: [
+      {
+        type: 'message',
+        content: buildImageTranslationPrompt()
+      },
+      {
+        type: 'image',
+        data_url: imageInput.dataUrl
+      }
+    ],
+    temperature: 0.2,
+    stream: false
+  });
+
+  const data = await makeApiRequest(
+    apiUrl,
+    {
+      method: 'POST',
+      headers,
+      body,
+      timeoutMs: requestOptions.timeoutMs ?? 180000,
+      signal: requestOptions.signal
+    },
+    'LM Studio 画像翻訳 API リクエスト中にエラーが発生'
+  );
+
+  const text = extractLmStudioRestMessageContent(data);
+  if (!text) {
+    throw new Error('LM Studio から画像翻訳結果を取得できませんでした');
+  }
+  return text;
+}
+
 // テキスト翻訳関数
 export async function translateText(text, settings, requestOptions = {}) {
   if (settings.apiProvider === 'openrouter') {
@@ -886,6 +972,19 @@ export async function translateText(text, settings, requestOptions = {}) {
   } else {
     return await translateWithGemini(text, settings, requestOptions);
   }
+}
+
+export async function translateImage(imageInput, settings, requestOptions = {}) {
+  const capabilities = getProviderCapabilities(settings);
+  if (!capabilities.supportsImageTranslation) {
+    throw new Error(`現在のプロバイダー (${settings?.apiProvider || 'unknown'}) は画像翻訳に対応していません`);
+  }
+
+  if (settings.apiProvider === 'lmstudio') {
+    return translateImageWithLmStudio(imageInput, settings, requestOptions);
+  }
+
+  throw new Error(`画像翻訳は未実装のプロバイダーです: ${settings?.apiProvider || 'unknown'}`);
 }
 
 export async function translateTextStream(text, settings, handlers = {}, requestOptions = {}) {

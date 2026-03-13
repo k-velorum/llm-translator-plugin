@@ -4,6 +4,7 @@ import {
   startPageTranslation
 } from './page-translation-service.js';
 import { translateAndNotify } from './selection-translation.js';
+import { translateImageAndNotify } from './image-translation.js';
 
 let setupContextMenuPromise = null;
 
@@ -61,6 +62,25 @@ async function setupContextMenu() {
         }
       );
     });
+
+    await new Promise((resolve, reject) => {
+      chrome.contextMenus.create(
+        {
+          id: 'translate-image-with-llm',
+          title: 'LLM画像翻訳',
+          contexts: ['image']
+        },
+        () => {
+          if (chrome.runtime.lastError) {
+            const errorMessage = chrome.runtime.lastError.message || '詳細不明のエラー';
+            console.error('画像翻訳メニュー作成エラー:', errorMessage);
+            reject(new Error(errorMessage));
+          } else {
+            resolve();
+          }
+        }
+      );
+    });
   })()
     .catch((error) => {
       console.error('コンテキストメニュー設定中に予期せぬエラー:', error);
@@ -88,6 +108,15 @@ async function handleContextMenuClick(info, tab) {
       await translateAndNotify(tab.id, selectedText, Number.isInteger(info?.frameId) ? info.frameId : 0);
     } catch (tabError) {
       console.error('タブへのアクセスエラー (コンテキストメニュー):', tabError);
+    }
+  }
+
+  if (info.menuItemId === 'translate-image-with-llm' && info.srcUrl) {
+    try {
+      await chrome.tabs.get(tab.id);
+      await translateImageAndNotify(tab.id, info.srcUrl, Number.isInteger(info?.frameId) ? info.frameId : 0);
+    } catch (tabError) {
+      console.error('タブへのアクセスエラー (画像コンテキストメニュー):', tabError);
     }
   }
 }

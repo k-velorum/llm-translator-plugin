@@ -4,17 +4,168 @@ function getSelectionAnchorRect() {
   return selection.getRangeAt(0).getBoundingClientRect();
 }
 
+let lastImageContext = null;
+const MAX_MESSAGE_IMAGE_BYTES = 2 * 1024 * 1024;
+const CONTENT_IMAGE_FETCH_TIMEOUT_MS = 30000;
+
+function serializeRect(rect) {
+  if (!rect) return null;
+  return {
+    left: rect.left,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+    width: rect.width,
+    height: rect.height
+  };
+}
+
+function normalizeUrlForComparison(url) {
+  try {
+    return new URL(url, window.location.href).href;
+  } catch (_) {
+    return url || '';
+  }
+}
+
+function getImageElementFromNode(node) {
+  if (!node) return null;
+  if (node instanceof HTMLImageElement) return node;
+  return node.closest?.('img') || null;
+}
+
+function rememberImageContextFromEvent(event) {
+  const imageElement = getImageElementFromNode(event.target);
+  if (!imageElement) return;
+  const srcUrl = imageElement.currentSrc || imageElement.src;
+  if (!srcUrl) return;
+  lastImageContext = {
+    srcUrl: normalizeUrlForComparison(srcUrl),
+    rect: serializeRect(imageElement.getBoundingClientRect()),
+    updatedAt: Date.now(),
+    element: imageElement
+  };
+}
+
+document.addEventListener('contextmenu', rememberImageContextFromEvent, true);
+
+function findImageAnchorRect(srcUrl) {
+  const normalizedSrcUrl = normalizeUrlForComparison(srcUrl);
+  if (
+    lastImageContext
+    && lastImageContext.srcUrl === normalizedSrcUrl
+    && Date.now() - lastImageContext.updatedAt < 15000
+  ) {
+    return lastImageContext.rect;
+  }
+
+  const imageElement = Array.from(document.images).find((img) => {
+    const candidateUrl = img.currentSrc || img.src;
+    return candidateUrl && normalizeUrlForComparison(candidateUrl) === normalizedSrcUrl;
+  });
+  return imageElement ? serializeRect(imageElement.getBoundingClientRect()) : null;
+}
+
+function findImageElement(srcUrl) {
+  const normalizedSrcUrl = normalizeUrlForComparison(srcUrl);
+  if (
+    lastImageContext
+    && lastImageContext.srcUrl === normalizedSrcUrl
+    && lastImageContext.element instanceof HTMLImageElement
+    && lastImageContext.element.isConnected
+  ) {
+    return lastImageContext.element;
+  }
+  return Array.from(document.images).find((img) => {
+    const candidateUrl = img.currentSrc || img.src;
+    return candidateUrl && normalizeUrlForComparison(candidateUrl) === normalizedSrcUrl;
+  }) || null;
+}
+
+function readBlobAsDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(reader.error || new Error('blob の data URL 変換に失敗しました'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function inferImageMimeTypeFromUrl(url) {
+  const normalizedUrl = normalizeUrlForComparison(url).toLowerCase();
+  if (normalizedUrl.endsWith('.png')) return 'image/png';
+  if (normalizedUrl.endsWith('.jpg') || normalizedUrl.endsWith('.jpeg')) return 'image/jpeg';
+  if (normalizedUrl.endsWith('.webp')) return 'image/webp';
+  if (normalizedUrl.endsWith('.gif')) return 'image/gif';
+  if (normalizedUrl.endsWith('.svg')) return 'image/svg+xml';
+  if (normalizedUrl.endsWith('.bmp')) return 'image/bmp';
+  if (normalizedUrl.endsWith('.avif')) return 'image/avif';
+  return '';
+}
+
+async function resolveImageDataUrl(srcUrl) {
+  const imageElement = findImageElement(srcUrl);
+  if (!imageElement) {
+    throw new Error('対象画像の要素を特定できませんでした');
+  }
+
+  const targetUrl = imageElement.currentSrc || imageElement.src || srcUrl;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CONTENT_IMAGE_FETCH_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(targetUrl, {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+      signal: controller.signal
+    });
+  } catch (error) {
+    throw new Error(`画像取得に失敗しました (${error?.message || String(error)})`);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  if (!response.ok) {
+    throw new Error(`画像取得に失敗しました (${response.status} ${response.statusText})`);
+  }
+  const blob = await response.blob();
+  const mimeType = blob.type || inferImageMimeTypeFromUrl(targetUrl);
+  if (!mimeType.startsWith('image/')) {
+    throw new Error(`画像ではないレスポンスです: ${mimeType || 'unknown'}`);
+  }
+  const normalizedBlob = blob.type ? blob : new Blob([blob], { type: mimeType });
+  if (normalizedBlob.size > MAX_MESSAGE_IMAGE_BYTES) {
+    throw new Error(`content script フォールバック上限を超えています (${Math.ceil(normalizedBlob.size / 1024 / 1024)}MB > 2MB)`);
+  }
+  // runtime messaging で背景へ返すため、content 側のフォールバック経路はサイズを厳しく抑える。
+  return readBlobAsDataUrl(normalizedBlob);
+}
+
+function resolvePopupAnchorRect(anchorRect) {
+  if (anchorRect && Number.isFinite(anchorRect.left) && Number.isFinite(anchorRect.top)) {
+    return anchorRect;
+  }
+  return getSelectionAnchorRect() || {
+    left: 16,
+    top: 16,
+    right: 16,
+    bottom: 16,
+    width: 0,
+    height: 0
+  };
+}
+
 function createSelectionPopup({
   titleText,
   bodyText,
   isError = false,
   requestId = '',
-  loading = false
+  loading = false,
+  anchorRect = null
 }) {
   removePopup();
 
-  const rect = getSelectionAnchorRect();
-  if (!rect) return null;
+  const rect = resolvePopupAnchorRect(anchorRect);
 
   translationPopup = document.createElement('div');
   translationPopup.className = 'llm-translation-popup';
@@ -163,14 +314,10 @@ function removePopup({ suppressCancel = false } = {}) {
   document.removeEventListener('click', closePopupOnClickOutside);
 }
 
-function showLoadingPopup() {
+function showLoadingPopup(anchorRect = null) {
   removePopup();
   ensureSelectionLoadingSpinnerStyles();
-
-  const selection = window.getSelection();
-  if (!selection.rangeCount) return;
-
-  const rect = selection.getRangeAt(0).getBoundingClientRect();
+  const rect = resolvePopupAnchorRect(anchorRect);
 
   translationPopup = document.createElement('div');
   translationPopup.className = 'llm-translation-popup';
@@ -223,12 +370,17 @@ function showLoadingPopup() {
   document.addEventListener('click', closePopupOnClickOutside);
 }
 
-function showTranslationPopup(translatedText) {
+function showTranslationPopup(translatedText, anchorRect = null) {
   createSelectionPopup({
     titleText: '翻訳結果',
     bodyText: translatedText,
-    isError: ErrorUtils.isTranslationError(translatedText)
+    isError: ErrorUtils.isTranslationError(translatedText),
+    anchorRect
   });
+}
+
+function resolveImageAnchorRect(srcUrl) {
+  return findImageAnchorRect(srcUrl);
 }
 
 function closePopupOnClickOutside(event) {
