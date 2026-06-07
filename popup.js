@@ -201,6 +201,10 @@ function loadModels(elements) {
 // 特定プロバイダーのモデル一覧を読み込む
 function loadProviderModels(provider, elements) {
   const modelSelect = elements[`${provider}ModelSelect`];
+  console.info('[popup] loadProviderModels:start', {
+    provider,
+    hasModelSelect: Boolean(modelSelect)
+  });
 
   if (provider === 'zai') {
     chrome.storage.sync.get(['zaiModel'], (settings) => {
@@ -228,8 +232,17 @@ function loadProviderModels(provider, elements) {
     chrome.storage.sync.get(['lmstudioServer', 'lmstudioApiKey', 'lmstudioModel'], async (settings) => {
       const server = settings.lmstudioServer || 'http://localhost:1234';
       const apiKey = settings.lmstudioApiKey || '';
+      console.info('[popup] loadProviderModels:lmstudio:settings', {
+        server,
+        hasApiKey: Boolean(apiKey),
+        hasSavedModel: Boolean(settings.lmstudioModel)
+      });
       try {
         const models = await fetchModels(provider, { server, apiKey });
+        console.info('[popup] loadProviderModels:lmstudio:fetched', {
+          server,
+          modelCount: Array.isArray(models) ? models.length : null
+        });
         populateModelSelect(provider, modelSelect, models, settings.lmstudioModel || '');
       } catch (error) {
         console.info('LM Studioモデル一覧の取得に失敗:', error);
@@ -296,15 +309,36 @@ function fetchModelsViaBackground(provider, options) {
         if (options.server) payload.server = options.server;
       }
     }
+    console.info('[popup] fetchModelsViaBackground:request', {
+      provider,
+      action: payload.action,
+      server: payload.server || null,
+      hasApiKey: Boolean(payload.apiKey)
+    });
     chrome.runtime.sendMessage(
       payload,
       response => {
         if (chrome.runtime.lastError) {
+          console.warn('[popup] fetchModelsViaBackground:lastError', {
+            provider,
+            action: payload.action,
+            message: chrome.runtime.lastError.message
+          });
           return reject(new Error(`バックグラウンドスクリプトエラー: ${chrome.runtime.lastError.message}`));
         }
         if (response.error) {
+          console.warn('[popup] fetchModelsViaBackground:errorResponse', {
+            provider,
+            action: payload.action,
+            message: response.error.message || 'モデル取得エラー'
+          });
           return reject(new Error(response.error.message || 'モデル取得エラー'));
         }
+        console.info('[popup] fetchModelsViaBackground:response', {
+          provider,
+          action: payload.action,
+          modelCount: Array.isArray(response.models) ? response.models.length : null
+        });
         resolve(response.models || []);
       }
     );

@@ -404,13 +404,29 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
       const headers = {};
       const apiKey = message.apiKey || settings.lmstudioApiKey;
       if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+      console.info('[background] getLmstudioModels:start', {
+        server,
+        endpoint,
+        hasApiKey: Boolean(apiKey)
+      });
       makeApiRequest(endpoint, { method: 'GET', headers }, 'LM Studio モデル一覧取得中にエラーが発生', 'info')
         .then((result) => {
           const arr = result.data || [];
           const models = arr.map(m => ({ id: m.id, name: m.id }));
+          console.info('[background] getLmstudioModels:response', {
+            server,
+            rawModelCount: Array.isArray(arr) ? arr.length : null,
+            modelCount: models.length
+          });
           sendResponse({ models });
         })
-        .catch((error) => sendResponse({ error: { message: error.message, details: error.stack || '' } }));
+        .catch((error) => {
+          console.warn('[background] getLmstudioModels:error', {
+            server,
+            message: error.message
+          });
+          sendResponse({ error: { message: error.message, details: error.stack || '' } });
+        });
     });
     return true;
   }
