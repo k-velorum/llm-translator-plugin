@@ -26,6 +26,8 @@ export const DEFAULT_SETTINGS = {
   lmstudioServer: 'http://localhost:1234',
   lmstudioModel: '',
   lmstudioApiKey: '',
+  // Chrome Built-in Prompt API / Gemini Nano
+  chromePromptTemperature: 0.2,
   // プラットフォーム別 機能有効/無効
   enableTwitterTranslation: true,
   enableYoutubeTranslation: true,

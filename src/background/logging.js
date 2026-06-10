@@ -46,5 +46,6 @@ export function getProviderMeta(settings) {
   if (provider === 'zai') return { provider: 'zai', model: settings.zaiModel || '' };
   if (provider === 'ollama') return { provider: 'ollama', model: settings.ollamaModel || '' };
   if (provider === 'lmstudio') return { provider: 'lmstudio', model: settings.lmstudioModel || '' };
+  if (provider === 'chromePrompt') return { provider: 'chromePrompt', model: 'Gemini Nano' };
   return { provider, model: '' };
 }

@@ -188,6 +188,7 @@ const TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS = {
   zaiModel: 'glm-4.7',
   ollamaModel: '',
   lmstudioModel: '',
+  chromePromptTemperature: 0.2,
   translationSystemPrompt: ''
 };
 

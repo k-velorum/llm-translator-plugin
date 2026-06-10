@@ -474,6 +474,7 @@ function getElements() {
     zaiSection: document.getElementById('zai-section'),
     ollamaSection: document.getElementById('ollama-section'),
     lmstudioSection: document.getElementById('lmstudio-section'),
+    chromePromptSection: document.getElementById('chromePrompt-section'),
     openrouterApiKeyInput: document.getElementById('openrouter-api-key'),
     openrouterModelSelect: document.getElementById('openrouter-model'),
     geminiApiKeyInput: document.getElementById('gemini-api-key'),
@@ -487,6 +488,7 @@ function getElements() {
     lmstudioServerInput: document.getElementById('lmstudio-server'),
     lmstudioApiKeyInput: document.getElementById('lmstudio-api-key'),
     lmstudioModelSelect: document.getElementById('lmstudio-model'),
+    chromePromptTemperatureInput: document.getElementById('chromePrompt-temperature'),
     saveButton: document.getElementById('save-button'),
     statusMessage: document.getElementById('status-message'),
     featureStatusMessage: document.getElementById('feature-status-message'),
@@ -538,15 +540,23 @@ function initTabs({ tabs, tabContents }) {
   });
 }
 
-function setupApiProviderToggle({ apiProviderSelect, openrouterSection, geminiSection, cerebrasSection, zaiSection, ollamaSection, lmstudioSection }) {
+function setupApiProviderToggle({ apiProviderSelect, openrouterSection, geminiSection, cerebrasSection, zaiSection, ollamaSection, lmstudioSection, chromePromptSection }) {
   apiProviderSelect.addEventListener('change', () => {
-    const sections = { openrouter: openrouterSection, gemini: geminiSection, cerebras: cerebrasSection, zai: zaiSection, ollama: ollamaSection, lmstudio: lmstudioSection };
+    const sections = {
+      openrouter: openrouterSection,
+      gemini: geminiSection,
+      cerebras: cerebrasSection,
+      zai: zaiSection,
+      ollama: ollamaSection,
+      lmstudio: lmstudioSection,
+      chromePrompt: chromePromptSection
+    };
     
     // すべてのセクションを非表示にする
-    Object.values(sections).forEach(section => section.classList.add('hidden'));
+    Object.values(sections).forEach(section => section?.classList.add('hidden'));
     
     // 選択されたプロバイダーのセクションを表示する
-    sections[apiProviderSelect.value].classList.remove('hidden');
+    sections[apiProviderSelect.value]?.classList.remove('hidden');
   });
 }
 
@@ -811,13 +821,16 @@ function loadSettings({
   lmstudioServerInput,
   lmstudioApiKeyInput,
   lmstudioModelSelect,
+  chromePromptSection,
+  chromePromptTemperatureInput,
   twitterFeatureCheckbox,
   youtubeFeatureCheckbox
 }) {
   chrome.storage.sync.get(
     null,
     settings => {
-      apiProviderSelect.value = settings.apiProvider;
+      const apiProvider = settings.apiProvider || 'openrouter';
+      apiProviderSelect.value = apiProvider;
       openrouterApiKeyInput.value = settings.openrouterApiKey;
       openrouterModelSelect.value = settings.openrouterModel;
       geminiApiKeyInput.value = settings.geminiApiKey;
@@ -831,6 +844,7 @@ function loadSettings({
       lmstudioServerInput.value = settings.lmstudioServer || 'http://localhost:1234';
       lmstudioApiKeyInput.value = settings.lmstudioApiKey || '';
       lmstudioModelSelect.value = settings.lmstudioModel || '';
+      if (chromePromptTemperatureInput) chromePromptTemperatureInput.value = settings.chromePromptTemperature ?? 0.2;
 
       // 機能オン/オフの復元（デフォルトtrue）
       if (twitterFeatureCheckbox) twitterFeatureCheckbox.checked = settings.enableTwitterTranslation !== false;
@@ -878,14 +892,15 @@ function loadSettings({
         cerebras: cerebrasSection,
         zai: zaiSection,
         ollama: ollamaSection,
-        lmstudio: lmstudioSection
+        lmstudio: lmstudioSection,
+        chromePrompt: chromePromptSection
       };
       
       // すべてのセクションを非表示にする
-      Object.values(sections).forEach(section => section.classList.add('hidden'));
+      Object.values(sections).forEach(section => section?.classList.add('hidden'));
       
       // 選択されたプロバイダーのセクションを表示する
-      sections[settings.apiProvider].classList.remove('hidden');
+      sections[apiProvider]?.classList.remove('hidden');
       
       // モデルの選択状態を復元
       PopupUtils.restoreModelSelection('openrouter', openrouterModelSelect, settings.openrouterModel);
@@ -899,7 +914,8 @@ function loadSettings({
 }
 
 // 設定の保存
-function saveSettings({ apiProviderSelect, openrouterApiKeyInput, openrouterModelSelect, geminiApiKeyInput, geminiModelSelect, cerebrasApiKeyInput, cerebrasModelSelect, zaiApiKeyInput, zaiModelSelect, ollamaServerInput, ollamaModelSelect, lmstudioServerInput, lmstudioApiKeyInput, lmstudioModelSelect, statusMessage, twitterFeatureCheckbox, youtubeFeatureCheckbox }) {
+function saveSettings({ apiProviderSelect, openrouterApiKeyInput, openrouterModelSelect, geminiApiKeyInput, geminiModelSelect, cerebrasApiKeyInput, cerebrasModelSelect, zaiApiKeyInput, zaiModelSelect, ollamaServerInput, ollamaModelSelect, lmstudioServerInput, lmstudioApiKeyInput, lmstudioModelSelect, chromePromptTemperatureInput, statusMessage, twitterFeatureCheckbox, youtubeFeatureCheckbox }) {
+  const chromePromptTemperature = Number(chromePromptTemperatureInput?.value);
   const settings = {
     apiProvider: apiProviderSelect.value,
     openrouterApiKey: openrouterApiKeyInput.value.trim(),
@@ -914,7 +930,10 @@ function saveSettings({ apiProviderSelect, openrouterApiKeyInput, openrouterMode
     ollamaModel: ollamaModelSelect.value,
     lmstudioServer: lmstudioServerInput.value.trim() || 'http://localhost:1234',
     lmstudioApiKey: lmstudioApiKeyInput.value.trim(),
-    lmstudioModel: lmstudioModelSelect.value
+    lmstudioModel: lmstudioModelSelect.value,
+    chromePromptTemperature: Number.isFinite(chromePromptTemperature)
+      ? Math.max(0, Math.min(2, chromePromptTemperature))
+      : 0.2
   };
 
   // 機能タブの値も併せて保存（存在する場合）
@@ -1022,6 +1041,11 @@ function testApi(elements) {
           lmstudioServer: settings.lmstudioServer || 'http://localhost:1234',
           lmstudioApiKey: settings.lmstudioApiKey || '',
           lmstudioModel: settings.lmstudioModel
+        };
+      } else if (apiProvider === 'chromePrompt') {
+        providerSettings = {
+          apiProvider: 'chromePrompt',
+          chromePromptTemperature: settings.chromePromptTemperature ?? 0.2
         };
       }
       

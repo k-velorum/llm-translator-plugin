@@ -31,7 +31,8 @@ function computeTweetTranslationCacheScope(settings) {
     cerebras: settings.cerebrasModel || '',
     zai: settings.zaiModel || '',
     ollama: settings.ollamaModel || '',
-    lmstudio: settings.lmstudioModel || ''
+    lmstudio: settings.lmstudioModel || '',
+    chromePrompt: 'Gemini Nano'
   };
   const model = modelByProvider[provider] || '';
   const promptHash = hashStringForCache(normalizeTweetTranslationCacheKey(settings.translationSystemPrompt || ''));

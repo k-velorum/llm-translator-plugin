@@ -1,4 +1,8 @@
 import { DEFAULT_SETTINGS } from './settings.js';
+import {
+  translateWithChromePromptRuntime,
+  translateBatchStructuredWithChromePromptRuntime
+} from './chrome-prompt-client.js';
 
 // 共通プロンプト取得（設定のカスタムがあれば優先）
 function getSystemPrompt(settings) {
@@ -412,10 +416,10 @@ export function formatErrorDetails(error, settings) {
     apiProvider = `LM Studio (${settings.lmstudioServer || 'http://localhost:1234'})`;
     modelName = settings.lmstudioModel || '未選択';
     maskedApiKey = maskApiKey(settings.lmstudioApiKey);
-  } else if (settings.apiProvider === 'anthropic') {
-    apiProvider = 'Anthropic';
-    modelName = settings.anthropicModel;
-    maskedApiKey = maskApiKey(settings.anthropicApiKey);
+  } else if (settings.apiProvider === 'chromePrompt') {
+    apiProvider = 'Chrome Gemini Nano';
+    modelName = 'Gemini Nano';
+    maskedApiKey = '不要';
   }
 
   return `
@@ -1068,6 +1072,8 @@ export async function translateText(text, settings, requestOptions = {}) {
     return await translateWithOllama(text, settings, requestOptions);
   } else if (settings.apiProvider === 'lmstudio') {
     return await translateWithLmStudio(text, settings, requestOptions);
+  } else if (settings.apiProvider === 'chromePrompt') {
+    return await translateWithChromePromptRuntime(text, settings, requestOptions);
   } else {
     return await translateWithGemini(text, settings, requestOptions);
   }
@@ -1249,6 +1255,9 @@ export async function translateBatchStructured(texts, settings, requestOptions =
   }
   if (provider === 'ollama') {
     return translateBatchStructuredOllama(texts, settings, requestOptions);
+  }
+  if (provider === 'chromePrompt') {
+    return translateBatchStructuredWithChromePromptRuntime(texts, settings, requestOptions);
   }
   throw new Error(`structured batch translation is not implemented for provider: ${provider}`);
 }

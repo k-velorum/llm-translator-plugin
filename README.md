@@ -1,6 +1,6 @@
 # LLM翻訳プラグイン
 
-Google Chrome用の拡張機能で、選択したテキストをLLM（大規模言語モデル）を使用して翻訳します。OpenRouter、Google Gemini API、Cerebras API、Z-AI、Ollama、LM Studioを利用して翻訳機能を提供します。
+Google Chrome用の拡張機能で、選択したテキストをLLM（大規模言語モデル）を使用して翻訳します。OpenRouter、Google Gemini API、Cerebras API、Z-AI、Ollama、LM Studio、Chrome Gemini Nanoを利用して翻訳機能を提供します。
 
 ## 機能
 
@@ -11,7 +11,7 @@ Google Chrome用の拡張機能で、選択したテキストをLLM（大規模�
 - プラットフォーム連携: Twitter(X) ツイート、YouTube コメントの翻訳ボタン
 
 追加機能
-- 複数プロバイダー対応: OpenRouter / Google Gemini / Cerebras / Z-AI / Ollama / LM Studio（モデル選択・APIキー設定）
+- 複数プロバイダー対応: OpenRouter / Google Gemini / Cerebras / Z-AI / Ollama / LM Studio / Chrome Gemini Nano
 - 詳細設定: ページ翻訳のチャンク/ディレイ/区切りトークンを調整
 - システムプロンプト編集: 翻訳方針を機能タブから変更
 - テストタブ: 短文で疎通確認
@@ -37,7 +37,7 @@ Google Chrome用の拡張機能で、選択したテキストをLLM（大規模�
 ### API設定
 
 1. 拡張アイコンをクリックして設定を開きます
-2. 使用するAPIプロバイダー（OpenRouter / Google Gemini / Cerebras / Z-AI / Ollama / LM Studio）を選択
+2. 使用するAPIプロバイダー（OpenRouter / Google Gemini / Cerebras / Z-AI / Ollama / LM Studio / Chrome Gemini Nano）を選択
 3. プロバイダーごとの設定を入力:
    - OpenRouter: [OpenRouter](https://openrouter.ai/) でAPIキー取得
    - Google Gemini: [Google AI Studio](https://aistudio.google.com/) でAPIキー取得
@@ -45,7 +45,8 @@ Google Chrome用の拡張機能で、選択したテキストをLLM（大規模�
    - Z-AI: Z-AI の API Keys ページでAPIキー取得
    - Ollama: [Ollama](https://ollama.ai/) をインストール・起動（既定: http://localhost:11434）
    - LM Studio: [LM Studio](https://lmstudio.ai/) をインストール・起動（既定: http://localhost:1234）
-4. モデルを選択して「設定を保存」
+   - Chrome Gemini Nano: Chrome Built-in Prompt API を使用。APIキーと外部HTTP通信は不要
+4. 必要なプロバイダーではモデルを選択して「設定を保存」
 
 ### 機能設定（機能タブ）
 
@@ -110,7 +111,7 @@ Google Chrome用の拡張機能で、選択したテキストをLLM（大規模�
 ## 開発者向け情報
 
 - Manifest V3に準拠したChrome拡張機能
-- OpenRouter API、Google Gemini API、Cerebras API、Z-AI、Ollama、LM Studioに対応
+- OpenRouter API、Google Gemini API、Cerebras API、Z-AI、Ollama、LM Studio、Chrome Built-in Prompt APIに対応
 - ES Modules対応のバックグラウンドスクリプト
 - バックグラウンド処理は責務別に分割（`event-listeners.js` / `page-translation-service.js` / `selection-translation.js` / `message-handlers.js` / `api.js` / `settings.js`）
 - jQuery 3.7.1 + Select2 4.0.13を使用したUI
@@ -118,6 +119,7 @@ Google Chrome用の拡張機能で、選択したテキストをLLM（大規模�
 ## 既知の制限/注意点
 
 - LLMの出力は安定しない場合があります（同じ入力でも表現がぶれることがあります）
+- Chrome Gemini Nano は Prompt API 対応 Chrome とローカルモデルの利用条件を満たす環境でのみ動作します
 - 区切りトークンを変更する場合は、プロンプト文面も同じトークンに合わせてください
 
 ## トラブルシューティング
