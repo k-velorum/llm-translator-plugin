@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  DEFAULT_SETTINGS,
   DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT,
   DEFAULT_TRANSLATION_SYSTEM_PROMPT,
   LEGACY_COMBINED_TRANSLATION_SYSTEM_PROMPT,
@@ -28,6 +29,22 @@ function installChromeStorageMock(settings) {
 }
 
 describe('loadSettings', () => {
+  it('keeps the default settings keys stable', () => {
+    expect(DEFAULT_SETTINGS).toMatchObject({
+      apiProvider: 'openrouter',
+      openrouterModel: 'openai/gpt-4o-mini',
+      geminiModel: 'gemini-flash-2.0',
+      cerebrasModel: 'llama3.1-8b',
+      zaiModel: 'glm-4.7',
+      ollamaServer: 'http://localhost:11434',
+      lmstudioServer: 'http://localhost:1234',
+      chromePromptTemperature: 0.2,
+      enableTwitterTranslation: true,
+      enableYoutubeTranslation: true,
+      pageTranslationUseStructuredOutput: true
+    });
+  });
+
   it('migrates the legacy combined prompt into separate prompt settings', async () => {
     const { set } = installChromeStorageMock({
       translationSystemPrompt: LEGACY_COMBINED_TRANSLATION_SYSTEM_PROMPT,

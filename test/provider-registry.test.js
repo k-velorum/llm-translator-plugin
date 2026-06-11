@@ -53,4 +53,30 @@ describe('provider registry', () => {
       model: 'lmstudioModel'
     });
   });
+
+  it('keeps provider definitions structurally complete', () => {
+    for (const [providerId, provider] of Object.entries(PROVIDERS)) {
+      expect(provider.id).toBe(providerId);
+      expect(provider.label).toEqual(expect.any(String));
+      expect(provider.settingsKeys).toEqual(expect.any(Object));
+      expect(provider.capabilities).toMatchObject({
+        supportsStreaming: expect.any(Boolean),
+        supportsImageTranslation: expect.any(Boolean)
+      });
+      expect(provider.capabilities).toHaveProperty('streamProtocol');
+      expect(provider.translate).toEqual(expect.any(Function));
+      expect(provider.translateBatchStructured).toEqual(expect.any(Function));
+    }
+  });
+
+  it('requires streaming providers to expose translateStream', () => {
+    for (const provider of Object.values(PROVIDERS)) {
+      if (provider.capabilities.supportsStreaming) {
+        expect(provider.capabilities.streamProtocol).toBe('openai-chat-sse');
+        expect(provider.translateStream).toEqual(expect.any(Function));
+      } else {
+        expect(provider.capabilities.streamProtocol).toBeNull();
+      }
+    }
+  });
 });
