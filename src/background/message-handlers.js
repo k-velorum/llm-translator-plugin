@@ -366,7 +366,7 @@ const PROVIDER_MODEL_LOADERS = {
     const headers = {};
     const apiKey = message.apiKey || settings.lmstudioApiKey;
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-    log.info('messageHandlers', 'getLmstudioModels:start', {
+    log.info('messageHandlers', 'getModels:lmstudio:start', {
       server,
       endpoint,
       hasApiKey: Boolean(apiKey)
@@ -375,7 +375,7 @@ const PROVIDER_MODEL_LOADERS = {
       .then((result) => {
         const arr = result.data || [];
         const models = arr.map(m => ({ id: m.id, name: m.id }));
-        log.info('messageHandlers', 'getLmstudioModels:response', {
+        log.info('messageHandlers', 'getModels:lmstudio:response', {
           server,
           rawModelCount: Array.isArray(arr) ? arr.length : null,
           modelCount: models.length
@@ -383,7 +383,7 @@ const PROVIDER_MODEL_LOADERS = {
         sendResponse({ models });
       })
       .catch((error) => {
-        log.warn('messageHandlers', 'getLmstudioModels:error', {
+        log.warn('messageHandlers', 'getModels:lmstudio:error', {
           server,
           message: error.message
         });
@@ -415,7 +415,6 @@ function handleGetModels(message, _sender, sendResponse, providerOverride) {
 const ACTION_HANDLERS = {
   startTranslationStream: (message, sender, sendResponse) => startStreamingTranslation(message, sender, sendResponse),
   cancelTranslationStream: handleCancelTranslationStream,
-  translateTweet: (message, sender, sendResponse) => handleEmbeddedTextTranslation(message, sender, sendResponse),
   translateEmbeddedText: (message, sender, sendResponse) =>
     handleEmbeddedTextTranslation(message, sender, sendResponse, {
       eventName: 'embedded_text_failed',
@@ -423,15 +422,7 @@ const ACTION_HANDLERS = {
     }),
   testTranslate: handleTestTranslate,
   verifyApiKey: (message, sender, sendResponse) => handleVerifyApiKey(message, sender, sendResponse),
-  getModels: (message, sender, sendResponse) => handleGetModels(message, sender, sendResponse),
-  verifyOpenrouterApiKey: (message, sender, sendResponse) => handleVerifyApiKey(message, sender, sendResponse, 'openrouter'),
-  getOpenrouterModels: (message, sender, sendResponse) => handleGetModels(message, sender, sendResponse, 'openrouter'),
-  verifyCerebrasApiKey: (message, sender, sendResponse) => handleVerifyApiKey(message, sender, sendResponse, 'cerebras'),
-  getCerebrasModels: (message, sender, sendResponse) => handleGetModels(message, sender, sendResponse, 'cerebras'),
-  verifyGeminiApiKey: (message, sender, sendResponse) => handleVerifyApiKey(message, sender, sendResponse, 'gemini'),
-  getGeminiModels: (message, sender, sendResponse) => handleGetModels(message, sender, sendResponse, 'gemini'),
-  getOllamaModels: (message, sender, sendResponse) => handleGetModels(message, sender, sendResponse, 'ollama'),
-  getLmstudioModels: (message, sender, sendResponse) => handleGetModels(message, sender, sendResponse, 'lmstudio')
+  getModels: (message, sender, sendResponse) => handleGetModels(message, sender, sendResponse)
 };
 
 
