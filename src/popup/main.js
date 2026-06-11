@@ -88,26 +88,10 @@ function initTabs({ tabs, tabContents }) {
   });
 }
 
-function setupApiProviderToggle({
-  apiProviderSelect,
-  openrouterSection,
-  geminiSection,
-  cerebrasSection,
-  zaiSection,
-  ollamaSection,
-  lmstudioSection,
-  chromePromptSection
-}) {
+function setupApiProviderToggle(elements) {
+  const { apiProviderSelect } = elements;
   apiProviderSelect.addEventListener('change', () => {
-    const sections = getProviderSections({
-      openrouterSection,
-      geminiSection,
-      cerebrasSection,
-      zaiSection,
-      ollamaSection,
-      lmstudioSection,
-      chromePromptSection
-    });
+    const sections = getProviderSections(elements);
 
     Object.values(sections).forEach(section => section?.classList.add('hidden'));
     sections[apiProviderSelect.value]?.classList.remove('hidden');

@@ -34,13 +34,6 @@ function readNumberInput(element, fallback, min, max) {
 export function loadSettings(elements) {
   const {
     apiProviderSelect,
-    openrouterSection,
-    geminiSection,
-    cerebrasSection,
-    zaiSection,
-    ollamaSection,
-    lmstudioSection,
-    chromePromptSection,
     twitterFeatureCheckbox,
     youtubeFeatureCheckbox,
     translationSystemPromptTextarea,
@@ -92,15 +85,7 @@ export function loadSettings(elements) {
     if (pageTranslationConcurrencyInput) pageTranslationConcurrencyInput.value = (settings.pageTranslationConcurrency ?? 4);
     if (pageTranslationSeparatorInput) pageTranslationSeparatorInput.value = (settings.pageTranslationSeparator ?? '[[[SEP]]]');
 
-    const sections = getProviderSections({
-      openrouterSection,
-      geminiSection,
-      cerebrasSection,
-      zaiSection,
-      ollamaSection,
-      lmstudioSection,
-      chromePromptSection
-    });
+    const sections = getProviderSections(elements);
     Object.values(sections).forEach(section => section?.classList.add('hidden'));
     sections[apiProvider]?.classList.remove('hidden');
 
