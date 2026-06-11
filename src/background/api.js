@@ -1,8 +1,5 @@
-import {
-  translateWithChromePromptRuntime,
-  translateBatchStructuredWithChromePromptRuntime
-} from './chrome-prompt-client.js';
 import cerebrasProvider from './api/providers/cerebras.js';
+import chromePromptProvider from './api/providers/chrome-prompt.js';
 import geminiProvider from './api/providers/gemini.js';
 import lmstudioProvider from './api/providers/lmstudio.js';
 import ollamaProvider from './api/providers/ollama.js';
@@ -82,7 +79,7 @@ export async function translateText(text, settings, requestOptions = {}) {
   } else if (settings.apiProvider === 'lmstudio') {
     return await lmstudioProvider.translate(text, settings, requestOptions);
   } else if (settings.apiProvider === 'chromePrompt') {
-    return await translateWithChromePromptRuntime(text, settings, requestOptions);
+    return await chromePromptProvider.translate(text, settings, requestOptions);
   } else {
     return await geminiProvider.translate(text, settings, requestOptions);
   }
@@ -140,7 +137,7 @@ export async function translateBatchStructured(texts, settings, requestOptions =
     return ollamaProvider.translateBatchStructured(texts, settings, requestOptions);
   }
   if (provider === 'chromePrompt') {
-    return translateBatchStructuredWithChromePromptRuntime(texts, settings, requestOptions);
+    return chromePromptProvider.translateBatchStructured(texts, settings, requestOptions);
   }
   throw new Error(`structured batch translation is not implemented for provider: ${provider}`);
 }
