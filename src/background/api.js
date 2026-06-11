@@ -1,4 +1,3 @@
-import { DEFAULT_SETTINGS } from './settings.js';
 import {
   translateWithChromePromptRuntime,
   translateBatchStructuredWithChromePromptRuntime
@@ -11,18 +10,13 @@ import {
   parseJsonLoose
 } from '../shared/structured-batch.js';
 import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
-import { log } from '../shared/logger.js';
 import { makeApiRequest, makeStreamingApiRequest } from './api/http.js';
+import { getSystemPrompt } from './api/prompt.js';
+import geminiProvider from './api/providers/gemini.js';
 import { getProviderCapabilities } from './api/registry.js';
 
 export { makeApiRequest, makeStreamingApiRequest, readOpenAICompatibleSSE } from './api/http.js';
 export { getProviderCapabilities } from './api/registry.js';
-
-// 共通プロンプト取得（設定のカスタムがあれば優先）
-function getSystemPrompt(settings) {
-  const v = (settings && settings.translationSystemPrompt) || DEFAULT_SETTINGS.translationSystemPrompt;
-  return (typeof v === 'string' && v.trim().length) ? v : DEFAULT_SETTINGS.translationSystemPrompt;
-}
 
 export const OPENROUTER_HEADERS_BASE = {
   'HTTP-Referer': 'chrome-extension://llm-translator',
@@ -246,47 +240,6 @@ async function translateWithOpenRouter(text, settings, requestOptions = {}) {
     } catch (error) {
       throw error;
     }
-  }
-}
-
-// Gemini APIでの翻訳
-async function translateWithGemini(text, settings, requestOptions = {}) {
-  if (!settings.geminiApiKey) {
-    throw new Error('Gemini APIキーが設定されていません');
-  }
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${settings.geminiModel}:generateContent?key=${settings.geminiApiKey}`;
-  log.info('api', 'Gemini API リクエスト開始', {
-    apiUrl: apiUrl.replace(settings.geminiApiKey, '[redacted]')
-  });
-
-  try {
-    const data = await makeApiRequest(
-      apiUrl,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: `${getSystemPrompt(settings)}\n\n${text}` }
-              ]
-            }
-          ],
-          generationConfig: { temperature: 0.2 }
-        }),
-        timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
-        signal: requestOptions.signal
-      },
-      'Gemini API リクエスト中にエラーが発生'
-    );
-
-    return data.candidates[0].content.parts[0].text.trim();
-  } catch (error) {
-    if (error instanceof TypeError && error.message === 'Failed to fetch') {
-      throw new Error('ネットワーク接続エラー: Gemini APIに接続できません。インターネット接続を確認してください。');
-    }
-    throw error;
   }
 }
 
@@ -576,7 +529,7 @@ export async function translateText(text, settings, requestOptions = {}) {
   } else if (settings.apiProvider === 'chromePrompt') {
     return await translateWithChromePromptRuntime(text, settings, requestOptions);
   } else {
-    return await translateWithGemini(text, settings, requestOptions);
+    return await geminiProvider.translate(text, settings, requestOptions);
   }
 }
 
@@ -605,45 +558,6 @@ export async function translateTextStream(text, settings, handlers = {}, request
     return translateWithLmStudioStream(text, settings, handlers, requestOptions);
   }
   throw new Error(`streaming is not implemented for provider: ${settings?.apiProvider || 'unknown'}`);
-}
-
-async function translateBatchStructuredGemini(texts, settings, requestOptions = {}) {
-  if (!settings.geminiApiKey) {
-    throw new Error('Gemini APIキーが設定されていません');
-  }
-
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${settings.geminiModel}:generateContent?key=${settings.geminiApiKey}`;
-  const items = buildStructuredBatchItems(texts);
-  const instr = buildStructuredBatchInstruction(settings);
-
-  const body = {
-    contents: [
-      {
-        parts: [
-          { text: `${instr}\n\nitems = ${JSON.stringify(items)}` }
-        ]
-      }
-    ],
-    generationConfig: {
-      temperature: 0.2,
-      response_mime_type: 'application/json'
-    }
-  };
-
-  const data = await makeApiRequest(
-    apiUrl,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
-      signal: requestOptions.signal
-    },
-    'Gemini API (structured batch) リクエスト中にエラーが発生'
-  );
-
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  return parseStructuredBatchResponse(text, texts);
 }
 
 async function translateBatchStructuredOpenAICompatible(texts, settings, requestOptions = {}) {
@@ -749,7 +663,7 @@ export async function translateBatchStructured(texts, settings, requestOptions =
 
   const provider = settings?.apiProvider || 'gemini';
   if (provider === 'gemini') {
-    return translateBatchStructuredGemini(texts, settings, requestOptions);
+    return geminiProvider.translateBatchStructured(texts, settings, requestOptions);
   }
   if (provider === 'openrouter' || provider === 'cerebras' || provider === 'zai' || provider === 'lmstudio') {
     return translateBatchStructuredOpenAICompatible(texts, settings, requestOptions);
