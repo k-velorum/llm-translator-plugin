@@ -301,7 +301,7 @@ async function fetchModels(provider, options) {
 // バックグラウンド経由でモデル一覧を取得
 function fetchModelsViaBackground(provider, options) {
   return new Promise((resolve, reject) => {
-    const payload = { action: `get${provider.charAt(0).toUpperCase() + provider.slice(1)}Models` };
+    const payload = { action: 'getModels', provider };
     if (options) {
       if (typeof options === 'string') {
         payload.apiKey = options;
@@ -784,8 +784,9 @@ function verifyApiKeyViaBackground(provider, apiKey) {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage(
       {
-        action: `verify${provider.charAt(0).toUpperCase() + provider.slice(1)}ApiKey`,
-        apiKey: apiKey
+        action: 'verifyApiKey',
+        provider,
+        apiKey
       },
       response => {
         if (chrome.runtime.lastError) {
