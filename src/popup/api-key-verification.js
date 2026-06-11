@@ -7,6 +7,11 @@ import {
   fetchModelsViaBackground,
   populateModelSelect
 } from './models.js';
+import {
+  showPendingStatus,
+  showStatus
+} from './status.js';
+import { log } from '../shared/logger.js';
 
 export function createVerificationUI(elements) {
   PROVIDER_ORDER
@@ -43,7 +48,7 @@ function createProviderVerificationUI(provider, apiKeyInput, modelSelect) {
         const models = await fetchModels(provider, apiKey);
         populateModelSelect(provider, modelSelect, models);
       } catch (error) {
-        console.error('モデル一覧の更新に失敗:', error);
+        log.error('popup.apiKeyVerification', 'モデル一覧の更新に失敗', { error });
       }
     }
   });
@@ -55,25 +60,21 @@ function createProviderVerificationUI(provider, apiKeyInput, modelSelect) {
 
 async function verifyApiKey(provider, apiKey, statusElem, buttonElem, modelSelect) {
   if (!apiKey) {
-    statusElem.textContent = 'APIキーを入力してください';
-    statusElem.style.color = '#d32f2f';
+    showStatus(statusElem, 'APIキーを入力してください', false, { autoHide: false });
     return;
   }
   buttonElem.disabled = true;
-  statusElem.textContent = '検証中...';
-  statusElem.style.color = '#666';
+  showPendingStatus(statusElem, '検証中...');
 
   try {
     await verifyApiKeyViaBackground(provider, apiKey);
-    statusElem.textContent = '✓ APIキーは有効です';
-    statusElem.style.color = '#155724';
+    showStatus(statusElem, '✓ APIキーは有効です', true, { autoHide: false });
 
     const models = await fetchModelsViaBackground(provider, apiKey);
     populateModelSelect(provider, modelSelect, models);
   } catch (error) {
-    console.error('APIキー検証エラー:', error);
-    statusElem.textContent = `✗ APIキー検証失敗: ${error.message || 'ネットワークエラー'}`;
-    statusElem.style.color = '#d32f2f';
+    log.error('popup.apiKeyVerification', 'APIキー検証エラー', { error });
+    showStatus(statusElem, `✗ APIキー検証失敗: ${error.message || 'ネットワークエラー'}`, false, { autoHide: false });
   } finally {
     buttonElem.disabled = false;
   }

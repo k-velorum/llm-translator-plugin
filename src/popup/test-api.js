@@ -1,5 +1,6 @@
 import { getProviderUi } from './provider-ui.js';
 import { showStatus } from './status.js';
+import { log } from '../shared/logger.js';
 
 function buildProviderSettingsForTest(apiProvider, settings) {
   const config = getProviderUi(apiProvider);
@@ -69,7 +70,7 @@ export function testApi(elements) {
         }
       );
     } catch (error) {
-      console.error('APIテストエラー:', error);
+      log.error('popup.testApi', 'APIテストエラー', { error });
       showStatus(testStatus, `エラー: ${error.message}`, false);
       testResult.textContent = error.stack || 'スタックトレース情報なし';
       testResult.classList.remove('hidden');

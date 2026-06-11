@@ -1,4 +1,5 @@
 import { showStatus } from './status.js';
+import { log } from '../shared/logger.js';
 
 function storageLocalGet(key) {
   return new Promise((resolve) => {
@@ -66,7 +67,7 @@ export function bindLogHandlers({ logClearButton, logStatus, logView }) {
         if (logView) logView.textContent = 'ログをクリアしました。';
         if (logStatus) showStatus(logStatus, 'ログをクリアしました', true);
       } catch (error) {
-        console.error('ログクリア失敗:', error);
+        log.error('popup.logs', 'ログクリア失敗', { error });
         if (logStatus) showStatus(logStatus, `ログクリア失敗: ${error.message || error}`, false);
       }
     });

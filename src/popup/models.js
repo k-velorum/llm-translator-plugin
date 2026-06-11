@@ -6,6 +6,7 @@ import {
   setupOrResetSelect2,
   updateModelInfo
 } from './model-info.js';
+import { log } from '../shared/logger.js';
 
 function createApiKeyChangeHandler(provider, apiKeyInput, modelSelect) {
   return async () => {
@@ -15,7 +16,7 @@ function createApiKeyChangeHandler(provider, apiKeyInput, modelSelect) {
       const models = await fetchModels(provider, apiKey);
       populateModelSelect(provider, modelSelect, models);
     } catch (error) {
-      console.error('APIキー変更時のモデル一覧取得エラー:', error);
+      log.error('popup.models', 'APIキー変更時のモデル一覧取得エラー', { error, provider });
     }
   };
 }
@@ -53,7 +54,7 @@ export function initSelect2() {
       }
     });
   } else {
-    console.error('Select2またはjQueryが読み込まれていません');
+    log.error('popup.models', 'Select2またはjQueryが読み込まれていません');
   }
 }
 
@@ -64,7 +65,7 @@ export function loadModels(elements) {
 function loadProviderModels(provider, elements) {
   const providerConfig = getProviderUi(provider);
   const modelSelect = elements[providerConfig?.elements?.model];
-  console.info('[popup] loadProviderModels:start', {
+  log.info('popup.models', 'loadProviderModels:start', {
     provider,
     hasModelSelect: Boolean(modelSelect)
   });
@@ -89,13 +90,13 @@ function loadProviderModels(provider, elements) {
       const apiKey = settingsKeys.apiKey ? settings[settingsKeys.apiKey] || '' : '';
       try {
         const models = await fetchModels(provider, { server, apiKey });
-        console.info(`[popup] loadProviderModels:${provider}:fetched`, {
+        log.info('popup.models', `loadProviderModels:${provider}:fetched`, {
           server,
           modelCount: Array.isArray(models) ? models.length : null
         });
         populateModelSelect(provider, modelSelect, models, settings[settingsKeys.model] || '');
       } catch (error) {
-        console.info(`${providerConfig.label}モデル一覧の取得に失敗:`, error);
+        log.info('popup.models', `${providerConfig.label}モデル一覧の取得に失敗`, { error, provider });
       }
     });
     return;
@@ -109,7 +110,7 @@ function loadProviderModels(provider, elements) {
         const models = await fetchModels(provider, { apiKey: settings[apiKeyKey] });
         populateModelSelect(provider, modelSelect, models, settings[modelKey] || '');
       } catch (error) {
-        console.error(`${provider}モデル一覧の取得に失敗:`, error);
+        log.error('popup.models', `${provider}モデル一覧の取得に失敗`, { error, provider });
         setDefaultModels(provider, modelSelect);
       }
     } else {
@@ -120,7 +121,7 @@ function loadProviderModels(provider, elements) {
           const models = await fetchModels(provider);
           populateModelSelect(provider, modelSelect, models, settings[modelKey] || '');
         } catch (error) {
-          console.error(`公開APIからの${provider}モデル一覧の取得に失敗:`, error);
+          log.error('popup.models', `公開APIからの${provider}モデル一覧の取得に失敗`, { error, provider });
         }
       }
     }
@@ -133,9 +134,9 @@ export async function fetchModels(provider, options) {
   } catch (error) {
     const isLocal = Boolean(getProviderUi(provider)?.settingsKeys?.server);
     if (isLocal) {
-      console.info(`${provider}モデル取得エラー:`, error);
+      log.info('popup.models', `${provider}モデル取得エラー`, { error, provider });
     } else {
-      console.error(`${provider}モデル取得エラー:`, error);
+      log.error('popup.models', `${provider}モデル取得エラー`, { error, provider });
     }
     throw error;
   }
@@ -152,7 +153,7 @@ export function fetchModelsViaBackground(provider, options) {
         if (options.server) payload.server = options.server;
       }
     }
-    console.info('[popup] fetchModelsViaBackground:request', {
+    log.info('popup.models', 'fetchModelsViaBackground:request', {
       provider,
       action: payload.action,
       server: payload.server || null,
@@ -162,7 +163,7 @@ export function fetchModelsViaBackground(provider, options) {
       payload,
       response => {
         if (chrome.runtime.lastError) {
-          console.warn('[popup] fetchModelsViaBackground:lastError', {
+          log.warn('popup.models', 'fetchModelsViaBackground:lastError', {
             provider,
             action: payload.action,
             message: chrome.runtime.lastError.message
@@ -170,14 +171,14 @@ export function fetchModelsViaBackground(provider, options) {
           return reject(new Error(`バックグラウンドスクリプトエラー: ${chrome.runtime.lastError.message}`));
         }
         if (response.error) {
-          console.warn('[popup] fetchModelsViaBackground:errorResponse', {
+          log.warn('popup.models', 'fetchModelsViaBackground:errorResponse', {
             provider,
             action: payload.action,
             message: response.error.message || 'モデル取得エラー'
           });
           return reject(new Error(response.error.message || 'モデル取得エラー'));
         }
-        console.info('[popup] fetchModelsViaBackground:response', {
+        log.info('popup.models', 'fetchModelsViaBackground:response', {
           provider,
           action: payload.action,
           modelCount: Array.isArray(response.models) ? response.models.length : null
@@ -269,7 +270,7 @@ export function bindProviderModelRefreshHandlers(elements) {
           const models = await fetchModels(provider, options);
           populateModelSelect(provider, modelSelect, models);
         } catch (error) {
-          console.error(`${config.label}モデル一覧の取得に失敗:`, error);
+          log.error('popup.models', `${config.label}モデル一覧の取得に失敗`, { error, provider });
         }
       };
       serverInput.addEventListener('change', refreshModels);
