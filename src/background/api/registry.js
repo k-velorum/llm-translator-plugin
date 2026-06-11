@@ -1,6 +1,5 @@
 import cerebrasProvider from './providers/cerebras.js';
 import chromePromptProvider from './providers/chrome-prompt.js';
-import dummyProvider from './providers/dummy.js';
 import geminiProvider from './providers/gemini.js';
 import lmstudioProvider from './providers/lmstudio.js';
 import ollamaProvider from './providers/ollama.js';
@@ -63,14 +62,6 @@ export const PROVIDERS = {
     needsApiKey: true,
     capabilities: DEFAULT_CAPABILITIES,
     ...zaiProvider
-  },
-  dummy: {
-    id: 'dummy',
-    label: 'Dummy',
-    settingsKeys: { apiKey: 'dummyApiKey', model: 'dummyModel' },
-    needsApiKey: true,
-    capabilities: DEFAULT_CAPABILITIES,
-    ...dummyProvider
   },
   ollama: {
     id: 'ollama',
