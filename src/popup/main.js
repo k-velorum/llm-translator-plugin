@@ -3,6 +3,12 @@ import {
   DEFAULT_TRANSLATION_SYSTEM_PROMPT,
   LEGACY_COMBINED_TRANSLATION_SYSTEM_PROMPT
 } from '../background/settings.js';
+import {
+  MODEL_PROVIDER_IDS,
+  PROVIDER_ORDER,
+  getProviderSections,
+  getProviderUi
+} from './provider-ui.js';
 
 document.addEventListener('DOMContentLoaded', init);
 
@@ -47,17 +53,10 @@ const PopupUtils = {
 
   // APIキーのバリデーションとエラーメッセージを取得
   validateApiKey(apiProvider, settings) {
-    const validationRules = {
-      openrouter: { key: 'openrouterApiKey', message: 'OpenRouter APIキーを入力してください' },
-      gemini: { key: 'geminiApiKey', message: 'Gemini APIキーを入力してください' },
-      cerebras: { key: 'cerebrasApiKey', message: 'Cerebras APIキーを入力してください' },
-      zai: { key: 'zaiApiKey', message: 'Z-AI APIキーを入力してください' },
-      // Ollama はAPIキー不要
-    };
-    
-    const rule = validationRules[apiProvider];
-    if (rule && !settings[rule.key]) {
-      return { isValid: false, message: rule.message };
+    const provider = getProviderUi(apiProvider);
+    const apiKeyKey = provider?.settingsKeys?.apiKey;
+    if (provider?.needsApiKey && apiKeyKey && !settings[apiKeyKey]) {
+      return { isValid: false, message: provider.validationMessage };
     }
     
     return { isValid: true, message: '' };
@@ -72,7 +71,7 @@ function init() {
   loadSettings(elements);
   bindEventHandlers(elements);
   bindLogHandlers(elements);
-  initSelect2(elements);
+  initSelect2();
   loadModels(elements);
 
   // 初期表示
@@ -80,7 +79,7 @@ function init() {
 }
 
 // Select2の初期化
-function initSelect2(elements) {
+function initSelect2() {
   // jQueryが読み込まれているか確認
   if (typeof jQuery !== 'undefined' && jQuery.fn.select2) {
     $('.model-select').each(function() {
@@ -88,9 +87,9 @@ function initSelect2(elements) {
     });
     
     // モデル選択時の処理
-    $('#openrouter-model, #gemini-model, #cerebras-model, #zai-model, #ollama-model, #lmstudio-model').on('select2:select', function(e) {
+    $(MODEL_PROVIDER_IDS.map((provider) => `#${provider}-model`).join(', ')).on('select2:select', function(event) {
       const provider = this.id.split('-')[0];
-      const modelId = e.params.data.id;
+      const modelId = event.params.data.id;
       const modelData = $(this).find(`option[value="${modelId}"]`).data('model');
       if (modelData) {
         updateModelInfo(provider, modelData);
@@ -104,7 +103,7 @@ function initSelect2(elements) {
 function setupOrResetSelect2($select) {
   // 既に初期化済みなら一旦破棄してから再初期化（重複DOM/当たり判定を排除）
   if ($select.data('select2')) {
-    try { $select.select2('destroy'); } catch (e) {}
+    try { $select.select2('destroy'); } catch {}
   }
   const $parent = $select.closest('.api-section');
   $select.select2({
@@ -196,65 +195,53 @@ function updateModelInfo(provider, modelData) {
 
 // モデル一覧の読み込み
 function loadModels(elements) {
-  ['openrouter', 'gemini', 'cerebras', 'zai', 'ollama', 'lmstudio'].forEach(p => loadProviderModels(p, elements));
+  MODEL_PROVIDER_IDS.forEach(p => loadProviderModels(p, elements));
 }
 
 // 特定プロバイダーのモデル一覧を読み込む
 function loadProviderModels(provider, elements) {
-  const modelSelect = elements[`${provider}ModelSelect`];
+  const providerConfig = getProviderUi(provider);
+  const modelSelect = elements[providerConfig?.elements?.model];
   console.info('[popup] loadProviderModels:start', {
     provider,
     hasModelSelect: Boolean(modelSelect)
   });
 
-  if (provider === 'zai') {
-    chrome.storage.sync.get(['zaiModel'], (settings) => {
+  if (!providerConfig || !modelSelect) return;
+
+  const { settingsKeys } = providerConfig;
+
+  if (providerConfig.staticModelsOnly) {
+    chrome.storage.sync.get([settingsKeys.model], (settings) => {
       setDefaultModels(provider, modelSelect);
-      PopupUtils.restoreModelSelection(provider, modelSelect, settings.zaiModel);
+      PopupUtils.restoreModelSelection(provider, modelSelect, settings[settingsKeys.model]);
     });
     return;
   }
 
-  if (provider === 'ollama') {
-    chrome.storage.sync.get(['ollamaServer', 'ollamaModel'], async (settings) => {
-      const server = settings.ollamaServer || 'http://localhost:11434';
-      try {
-        const models = await fetchModels(provider, { server });
-        populateModelSelect(provider, modelSelect, models, settings.ollamaModel || '');
-      } catch (error) {
-        console.info('Ollamaモデル一覧の取得に失敗:', error);
-        // 失敗時は空のまま
-      }
-    });
-    return;
-  }
-
-  if (provider === 'lmstudio') {
-    chrome.storage.sync.get(['lmstudioServer', 'lmstudioApiKey', 'lmstudioModel'], async (settings) => {
-      const server = settings.lmstudioServer || 'http://localhost:1234';
-      const apiKey = settings.lmstudioApiKey || '';
-      console.info('[popup] loadProviderModels:lmstudio:settings', {
-        server,
-        hasApiKey: Boolean(apiKey),
-        hasSavedModel: Boolean(settings.lmstudioModel)
-      });
+  if (settingsKeys.server) {
+    const keys = [settingsKeys.server, settingsKeys.model];
+    if (settingsKeys.apiKey) keys.push(settingsKeys.apiKey);
+    chrome.storage.sync.get(keys, async (settings) => {
+      const server = settings[settingsKeys.server] || providerConfig.defaultServer;
+      const apiKey = settingsKeys.apiKey ? settings[settingsKeys.apiKey] || '' : '';
       try {
         const models = await fetchModels(provider, { server, apiKey });
-        console.info('[popup] loadProviderModels:lmstudio:fetched', {
+        console.info(`[popup] loadProviderModels:${provider}:fetched`, {
           server,
           modelCount: Array.isArray(models) ? models.length : null
         });
-        populateModelSelect(provider, modelSelect, models, settings.lmstudioModel || '');
+        populateModelSelect(provider, modelSelect, models, settings[settingsKeys.model] || '');
       } catch (error) {
-        console.info('LM Studioモデル一覧の取得に失敗:', error);
+        console.info(`${providerConfig.label}モデル一覧の取得に失敗:`, error);
         // 失敗時は空のまま
       }
     });
     return;
   }
 
-  const apiKeyKey = `${provider}ApiKey`;
-  const modelKey = `${provider}Model`;
+  const apiKeyKey = settingsKeys.apiKey;
+  const modelKey = settingsKeys.model;
   // 保存されているAPIキーを取得
   chrome.storage.sync.get([apiKeyKey, modelKey], async (settings) => {
     if (settings[apiKeyKey]) {
@@ -270,8 +257,7 @@ function loadProviderModels(provider, elements) {
       // APIキーがない場合はデフォルトモデルを設定
       setDefaultModels(provider, modelSelect);
 
-      // OpenRouter / Cerebras の場合は公開APIからモデル一覧を取得
-      if (provider === 'openrouter' || provider === 'cerebras') {
+      if (providerConfig.publicModelsWithoutApiKey) {
         try {
           const models = await fetchModels(provider);
           populateModelSelect(provider, modelSelect, models, settings[modelKey] || '');
@@ -288,7 +274,7 @@ async function fetchModels(provider, options) {
   try {
     return await fetchModelsViaBackground(provider, options);
   } catch (error) {
-    const isLocal = provider === 'ollama' || provider === 'lmstudio';
+    const isLocal = Boolean(getProviderUi(provider)?.settingsKeys?.server);
     if (isLocal) {
       console.info(`${provider}モデル取得エラー:`, error);
     } else {
@@ -401,32 +387,7 @@ function populateModelSelect(provider, selectElement, models, preferredValue = '
 
 // デフォルトのモデルをセット
 function setDefaultModels(provider, selectElement) {
-  const defaultModels = {
-    openrouter: [
-      { id: 'openai/gpt-4o-mini', name: 'GPT 4o mini' },
-      { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku' },
-      { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet' }
-    ],
-    cerebras: [
-      { id: 'llama3.1-8b', name: 'llama3.1-8b' },
-      { id: 'llama-3.3-70b', name: 'llama-3.3-70b' },
-      { id: 'qwen-3-32b', name: 'qwen-3-32b' },
-      { id: 'qwen-3-coder-480b', name: 'qwen-3-coder-480b' }
-    ],
-    zai: [
-      { id: 'glm-4.7', name: 'glm-4.7' },
-      { id: 'glm-4.7-flash', name: 'glm-4.7-flash' },
-      { id: 'glm-4.7-flashx', name: 'glm-4.7-flashx' },
-      { id: 'glm-4.6', name: 'glm-4.6' },
-      { id: 'glm-4.5', name: 'glm-4.5' },
-      { id: 'glm-4.5-air', name: 'glm-4.5-air' },
-      { id: 'glm-4.5-x', name: 'glm-4.5-x' },
-      { id: 'glm-4.5-airx', name: 'glm-4.5-airx' },
-      { id: 'glm-4.5-flash', name: 'glm-4.5-flash' },
-      { id: 'glm-4-32b-0414-128k', name: 'glm-4-32b-0414-128k' }
-    ],
-
-  };
+  const defaultModels = getProviderUi(provider)?.defaultModels || [];
   
   // 現在選択されているモデルを保存
   const selectedModel = selectElement.value;
@@ -435,14 +396,14 @@ function setDefaultModels(provider, selectElement) {
   selectElement.innerHTML = '';
   
   // デフォルトモデルでオプションを生成
-  if (defaultModels[provider]) {
+  if (defaultModels.length) {
     // プレースホルダー（空）
     const emptyOption = document.createElement('option');
     emptyOption.value = '';
     emptyOption.textContent = '';
     selectElement.appendChild(emptyOption);
 
-    defaultModels[provider].forEach(model => {
+    defaultModels.forEach(model => {
       const option = document.createElement('option');
       option.value = model.id;
       option.textContent = model.name;
@@ -543,15 +504,7 @@ function initTabs({ tabs, tabContents }) {
 
 function setupApiProviderToggle({ apiProviderSelect, openrouterSection, geminiSection, cerebrasSection, zaiSection, ollamaSection, lmstudioSection, chromePromptSection }) {
   apiProviderSelect.addEventListener('change', () => {
-    const sections = {
-      openrouter: openrouterSection,
-      gemini: geminiSection,
-      cerebras: cerebrasSection,
-      zai: zaiSection,
-      ollama: ollamaSection,
-      lmstudio: lmstudioSection,
-      chromePrompt: chromePromptSection
-    };
+    const sections = getProviderSections({ openrouterSection, geminiSection, cerebrasSection, zaiSection, ollamaSection, lmstudioSection, chromePromptSection });
     
     // すべてのセクションを非表示にする
     Object.values(sections).forEach(section => section?.classList.add('hidden'));
@@ -562,9 +515,12 @@ function setupApiProviderToggle({ apiProviderSelect, openrouterSection, geminiSe
 }
 
 function createVerificationUI(elements) {
-  createProviderVerificationUI('openrouter', elements.openrouterApiKeyInput);
-  createProviderVerificationUI('gemini', elements.geminiApiKeyInput);
-  createProviderVerificationUI('cerebras', elements.cerebrasApiKeyInput);
+  PROVIDER_ORDER
+    .filter((provider) => getProviderUi(provider)?.supportsVerification)
+    .forEach((provider) => {
+      const apiKeyInput = elements[getProviderUi(provider).elements.apiKey];
+      if (apiKeyInput) createProviderVerificationUI(provider, apiKeyInput);
+    });
 }
 
 // APIキー検証UI作成の共通関数
@@ -609,17 +565,6 @@ function bindEventHandlers(elements) {
     saveButton,
     featureSaveButton,
     testButton,
-    openrouterApiKeyInput,
-    openrouterModelSelect,
-    geminiApiKeyInput,
-    geminiModelSelect,
-    cerebrasApiKeyInput,
-    cerebrasModelSelect,
-    ollamaServerInput,
-    ollamaModelSelect,
-    lmstudioServerInput,
-    lmstudioApiKeyInput,
-    lmstudioModelSelect,
     advancedToggleButton,
     advancedBody,
     resetSystemPromptButton,
@@ -634,40 +579,32 @@ function bindEventHandlers(elements) {
   if (featureSaveButton) featureSaveButton.addEventListener('click', () => saveFeatureSettings(elements));
   testButton.addEventListener('click', () => testApi(elements));
   
-  // APIキーが変更されたときにモデル一覧を更新
-  openrouterApiKeyInput.addEventListener('change', 
-    PopupUtils.createApiKeyChangeHandler('openrouter', openrouterApiKeyInput, openrouterModelSelect));
-    
-  geminiApiKeyInput.addEventListener('change', 
-    PopupUtils.createApiKeyChangeHandler('gemini', geminiApiKeyInput, geminiModelSelect));
-
-  cerebrasApiKeyInput.addEventListener('change',
-    PopupUtils.createApiKeyChangeHandler('cerebras', cerebrasApiKeyInput, cerebrasModelSelect));
-
-  // Ollama サーバーが変更されたらモデル一覧を更新
-  ollamaServerInput.addEventListener('change', async () => {
-    const server = ollamaServerInput.value.trim() || 'http://localhost:11434';
-    try {
-      const models = await fetchModels('ollama', { server });
-      populateModelSelect('ollama', ollamaModelSelect, models);
-    } catch (error) {
-      console.error('Ollamaモデル一覧の取得に失敗:', error);
+  MODEL_PROVIDER_IDS.forEach((provider) => {
+    const config = getProviderUi(provider);
+    const apiKeyInput = elements[config.elements.apiKey];
+    const serverInput = elements[config.elements.server];
+    const modelSelect = elements[config.elements.model];
+    if (config.supportsVerification && apiKeyInput && modelSelect) {
+      apiKeyInput.addEventListener('change',
+        PopupUtils.createApiKeyChangeHandler(provider, apiKeyInput, modelSelect));
+    }
+    if (serverInput && modelSelect) {
+      const refreshModels = async () => {
+        const options = {
+          server: serverInput.value.trim() || config.defaultServer
+        };
+        if (apiKeyInput) options.apiKey = apiKeyInput.value.trim();
+        try {
+          const models = await fetchModels(provider, options);
+          populateModelSelect(provider, modelSelect, models);
+        } catch (error) {
+          console.error(`${config.label}モデル一覧の取得に失敗:`, error);
+        }
+      };
+      serverInput.addEventListener('change', refreshModels);
+      apiKeyInput?.addEventListener('change', refreshModels);
     }
   });
-
-  // LM Studio サーバー/APIキー変更でモデル一覧を更新
-  const refreshLmstudioModels = async () => {
-    const server = lmstudioServerInput.value.trim() || 'http://localhost:1234';
-    const apiKey = lmstudioApiKeyInput.value.trim();
-    try {
-      const models = await fetchModels('lmstudio', { server, apiKey });
-      populateModelSelect('lmstudio', lmstudioModelSelect, models);
-    } catch (error) {
-      console.error('LM Studioモデル一覧の取得に失敗:', error);
-    }
-  };
-  lmstudioServerInput.addEventListener('change', refreshLmstudioModels);
-  lmstudioApiKeyInput.addEventListener('change', refreshLmstudioModels);
 
   // 高度な設定の開閉
   if (advancedToggleButton && advancedBody) {
@@ -802,51 +739,38 @@ function verifyApiKeyViaBackground(provider, apiKey) {
 }
 
 // 設定の読み込み
-function loadSettings({ 
-  apiProviderSelect, 
-  openrouterApiKeyInput, 
-  openrouterModelSelect, 
-  geminiApiKeyInput, 
-  geminiModelSelect, 
-  cerebrasApiKeyInput,
-  cerebrasModelSelect,
-  zaiApiKeyInput,
-  zaiModelSelect,
-  openrouterSection, 
-  geminiSection,
-  cerebrasSection,
-  zaiSection,
-  ollamaSection,
-  ollamaServerInput,
-  ollamaModelSelect,
-  lmstudioSection,
-  lmstudioServerInput,
-  lmstudioApiKeyInput,
-  lmstudioModelSelect,
-  chromePromptSection,
-  chromePromptTemperatureInput,
-  twitterFeatureCheckbox,
-  youtubeFeatureCheckbox
-}) {
+function loadSettings(elements) {
+  const {
+    apiProviderSelect,
+    openrouterSection,
+    geminiSection,
+    cerebrasSection,
+    zaiSection,
+    ollamaSection,
+    lmstudioSection,
+    chromePromptSection,
+    twitterFeatureCheckbox,
+    youtubeFeatureCheckbox
+  } = elements;
   chrome.storage.sync.get(
     null,
     settings => {
       const apiProvider = settings.apiProvider || 'openrouter';
       apiProviderSelect.value = apiProvider;
-      openrouterApiKeyInput.value = settings.openrouterApiKey;
-      openrouterModelSelect.value = settings.openrouterModel;
-      geminiApiKeyInput.value = settings.geminiApiKey;
-      geminiModelSelect.value = settings.geminiModel;
-      cerebrasApiKeyInput.value = settings.cerebrasApiKey || '';
-      cerebrasModelSelect.value = settings.cerebrasModel || '';
-      zaiApiKeyInput.value = settings.zaiApiKey;
-      zaiModelSelect.value = settings.zaiModel;
-      ollamaServerInput.value = settings.ollamaServer || 'http://localhost:11434';
-      ollamaModelSelect.value = settings.ollamaModel || '';
-      lmstudioServerInput.value = settings.lmstudioServer || 'http://localhost:1234';
-      lmstudioApiKeyInput.value = settings.lmstudioApiKey || '';
-      lmstudioModelSelect.value = settings.lmstudioModel || '';
-      if (chromePromptTemperatureInput) chromePromptTemperatureInput.value = settings.chromePromptTemperature ?? 0.2;
+      PROVIDER_ORDER.forEach((provider) => {
+        const config = getProviderUi(provider);
+        const { settingsKeys } = config;
+        const apiKeyInput = elements[config.elements.apiKey];
+        const serverInput = elements[config.elements.server];
+        const modelSelect = elements[config.elements.model];
+        const temperatureInput = elements[config.elements.temperature];
+        if (apiKeyInput) apiKeyInput.value = settings[settingsKeys.apiKey] || '';
+        if (serverInput) serverInput.value = settings[settingsKeys.server] || config.defaultServer || '';
+        if (modelSelect) modelSelect.value = settings[settingsKeys.model] || '';
+        if (temperatureInput) {
+          temperatureInput.value = settings[settingsKeys.temperature] ?? config.defaultTemperature ?? 0.2;
+        }
+      });
 
       // 機能オン/オフの復元（デフォルトtrue）
       if (twitterFeatureCheckbox) twitterFeatureCheckbox.checked = settings.enableTwitterTranslation !== false;
@@ -887,15 +811,7 @@ function loadSettings({
       }
       
       // APIプロバイダーに応じたセクションの表示制御
-      const sections = {
-        openrouter: openrouterSection,
-        gemini: geminiSection,
-        cerebras: cerebrasSection,
-        zai: zaiSection,
-        ollama: ollamaSection,
-        lmstudio: lmstudioSection,
-        chromePrompt: chromePromptSection
-      };
+      const sections = getProviderSections({ openrouterSection, geminiSection, cerebrasSection, zaiSection, ollamaSection, lmstudioSection, chromePromptSection });
       
       // すべてのセクションを非表示にする
       Object.values(sections).forEach(section => section?.classList.add('hidden'));
@@ -904,38 +820,42 @@ function loadSettings({
       sections[apiProvider]?.classList.remove('hidden');
       
       // モデルの選択状態を復元
-      PopupUtils.restoreModelSelection('openrouter', openrouterModelSelect, settings.openrouterModel);
-      PopupUtils.restoreModelSelection('gemini', geminiModelSelect, settings.geminiModel);
-      PopupUtils.restoreModelSelection('cerebras', cerebrasModelSelect, settings.cerebrasModel);
-      PopupUtils.restoreModelSelection('zai', zaiModelSelect, settings.zaiModel);
-      PopupUtils.restoreModelSelection('ollama', ollamaModelSelect, settings.ollamaModel);
-      PopupUtils.restoreModelSelection('lmstudio', lmstudioModelSelect, settings.lmstudioModel);
+      MODEL_PROVIDER_IDS.forEach((provider) => {
+        const config = getProviderUi(provider);
+        PopupUtils.restoreModelSelection(
+          provider,
+          elements[config.elements.model],
+          settings[config.settingsKeys.model]
+        );
+      });
     }
   );
 }
 
 // 設定の保存
-function saveSettings({ apiProviderSelect, openrouterApiKeyInput, openrouterModelSelect, geminiApiKeyInput, geminiModelSelect, cerebrasApiKeyInput, cerebrasModelSelect, zaiApiKeyInput, zaiModelSelect, ollamaServerInput, ollamaModelSelect, lmstudioServerInput, lmstudioApiKeyInput, lmstudioModelSelect, chromePromptTemperatureInput, statusMessage, twitterFeatureCheckbox, youtubeFeatureCheckbox }) {
-  const chromePromptTemperature = Number(chromePromptTemperatureInput?.value);
+function saveSettings(elements) {
+  const { apiProviderSelect, statusMessage, twitterFeatureCheckbox, youtubeFeatureCheckbox } = elements;
   const settings = {
-    apiProvider: apiProviderSelect.value,
-    openrouterApiKey: openrouterApiKeyInput.value.trim(),
-    openrouterModel: openrouterModelSelect.value,
-    geminiApiKey: geminiApiKeyInput.value.trim(),
-    geminiModel: geminiModelSelect.value,
-    cerebrasApiKey: cerebrasApiKeyInput.value.trim(),
-    cerebrasModel: cerebrasModelSelect.value,
-    zaiApiKey: zaiApiKeyInput.value.trim(),
-    zaiModel: zaiModelSelect.value,
-    ollamaServer: ollamaServerInput.value.trim() || 'http://localhost:11434',
-    ollamaModel: ollamaModelSelect.value,
-    lmstudioServer: lmstudioServerInput.value.trim() || 'http://localhost:1234',
-    lmstudioApiKey: lmstudioApiKeyInput.value.trim(),
-    lmstudioModel: lmstudioModelSelect.value,
-    chromePromptTemperature: Number.isFinite(chromePromptTemperature)
-      ? Math.max(0, Math.min(2, chromePromptTemperature))
-      : 0.2
+    apiProvider: apiProviderSelect.value
   };
+
+  PROVIDER_ORDER.forEach((provider) => {
+    const config = getProviderUi(provider);
+    const { settingsKeys } = config;
+    const apiKeyInput = elements[config.elements.apiKey];
+    const serverInput = elements[config.elements.server];
+    const modelSelect = elements[config.elements.model];
+    const temperatureInput = elements[config.elements.temperature];
+    if (apiKeyInput) settings[settingsKeys.apiKey] = apiKeyInput.value.trim();
+    if (serverInput) settings[settingsKeys.server] = serverInput.value.trim() || config.defaultServer;
+    if (modelSelect) settings[settingsKeys.model] = modelSelect.value;
+    if (temperatureInput) {
+      const temperature = Number(temperatureInput.value);
+      settings[settingsKeys.temperature] = Number.isFinite(temperature)
+        ? Math.max(0, Math.min(2, temperature))
+        : config.defaultTemperature ?? 0.2;
+    }
+  });
 
   // 機能タブの値も併せて保存（存在する場合）
   if (twitterFeatureCheckbox) settings.enableTwitterTranslation = !!twitterFeatureCheckbox.checked;
@@ -953,6 +873,29 @@ function saveSettings({ apiProviderSelect, openrouterApiKeyInput, openrouterMode
   });
 }
 
+function buildProviderSettingsForTest(apiProvider, settings) {
+  const config = getProviderUi(apiProvider);
+  if (!config) {
+    return { error: `未対応のプロバイダーです: ${apiProvider}` };
+  }
+
+  for (const rule of config.testRequired || []) {
+    if (!settings[rule.key]) {
+      return { error: rule.message };
+    }
+  }
+
+  const providerSettings = { apiProvider };
+  const { settingsKeys } = config;
+  if (settingsKeys.apiKey) providerSettings[settingsKeys.apiKey] = settings[settingsKeys.apiKey] || '';
+  if (settingsKeys.server) providerSettings[settingsKeys.server] = settings[settingsKeys.server] || config.defaultServer;
+  if (settingsKeys.model) providerSettings[settingsKeys.model] = settings[settingsKeys.model] || '';
+  if (settingsKeys.temperature) {
+    providerSettings[settingsKeys.temperature] = settings[settingsKeys.temperature] ?? config.defaultTemperature ?? 0.2;
+  }
+  return { providerSettings };
+}
+
 // APIテスト処理（実際の翻訳処理を利用）
 function testApi(elements) {
   const { testApiProviderSelect, testTextArea, testButton, testStatus, testResult } = elements;
@@ -965,89 +908,11 @@ function testApi(elements) {
   chrome.storage.sync.get(
     null,
     async settings => {
-      let providerSettings;
-      if (apiProvider === 'openrouter') {
-        if (!settings.openrouterApiKey) {
-          showStatus(testStatus, 'OpenRouter APIキーが設定されていません', false);
-          testButton.disabled = false;
-          return;
-        }
-        providerSettings = {
-          apiProvider: 'openrouter',
-          openrouterApiKey: settings.openrouterApiKey,
-          openrouterModel: settings.openrouterModel
-        };
-      } else if (apiProvider === 'gemini') {
-        if (!settings.geminiApiKey) {
-          showStatus(testStatus, 'Gemini APIキーが設定されていません', false);
-          testButton.disabled = false;
-          return;
-        }
-        providerSettings = {
-          apiProvider: 'gemini',
-          geminiApiKey: settings.geminiApiKey,
-          geminiModel: settings.geminiModel
-        };
-      } else if (apiProvider === 'cerebras') {
-        if (!settings.cerebrasApiKey) {
-          showStatus(testStatus, 'Cerebras APIキーが設定されていません', false);
-          testButton.disabled = false;
-          return;
-        }
-        if (!settings.cerebrasModel) {
-          showStatus(testStatus, 'Cerebras のモデルが設定されていません', false);
-          testButton.disabled = false;
-          return;
-        }
-        providerSettings = {
-          apiProvider: 'cerebras',
-          cerebrasApiKey: settings.cerebrasApiKey,
-          cerebrasModel: settings.cerebrasModel
-        };
-      } else if (apiProvider === 'zai') {
-        if (!settings.zaiApiKey) {
-          showStatus(testStatus, 'Z-AI APIキーが設定されていません', false);
-          testButton.disabled = false;
-          return;
-        }
-        if (!settings.zaiModel) {
-          showStatus(testStatus, 'Z-AI のモデルが設定されていません', false);
-          testButton.disabled = false;
-          return;
-        }
-        providerSettings = {
-          apiProvider: 'zai',
-          zaiApiKey: settings.zaiApiKey,
-          zaiModel: settings.zaiModel
-        };
-      } else if (apiProvider === 'ollama') {
-        if (!settings.ollamaModel) {
-          showStatus(testStatus, 'Ollamaのモデルが設定されていません', false);
-          testButton.disabled = false;
-          return;
-        }
-        providerSettings = {
-          apiProvider: 'ollama',
-          ollamaServer: settings.ollamaServer || 'http://localhost:11434',
-          ollamaModel: settings.ollamaModel
-        };
-      } else if (apiProvider === 'lmstudio') {
-        if (!settings.lmstudioModel) {
-          showStatus(testStatus, 'LM Studio のモデルが設定されていません', false);
-          testButton.disabled = false;
-          return;
-        }
-        providerSettings = {
-          apiProvider: 'lmstudio',
-          lmstudioServer: settings.lmstudioServer || 'http://localhost:1234',
-          lmstudioApiKey: settings.lmstudioApiKey || '',
-          lmstudioModel: settings.lmstudioModel
-        };
-      } else if (apiProvider === 'chromePrompt') {
-        providerSettings = {
-          apiProvider: 'chromePrompt',
-          chromePromptTemperature: settings.chromePromptTemperature ?? 0.2
-        };
+      const { providerSettings, error } = buildProviderSettingsForTest(apiProvider, settings);
+      if (error) {
+        showStatus(testStatus, error, false);
+        testButton.disabled = false;
+        return;
       }
       
       try {
@@ -1101,7 +966,7 @@ function storageLocalGet(key) {
   return new Promise((resolve) => {
     try {
       chrome.storage.local.get(key, (data) => resolve(data || {}));
-    } catch (_) {
+    } catch {
       resolve({});
     }
   });
