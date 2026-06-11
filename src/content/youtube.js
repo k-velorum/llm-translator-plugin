@@ -1,3 +1,6 @@
+(() => {
+  'use strict';
+
 function ensureYouTubeTranslationStyles() {
   if (document.querySelector('#llm-yt-translation-styles')) return;
   const styleElement = document.createElement('style');
@@ -162,3 +165,10 @@ function showYouTubeCommentTranslation(contentTextEl, translatedText) {
   const isError = ErrorUtils.isTranslationError(translatedText);
   renderYouTubeTranslationElement(wrap, translatedText, isError);
 }
+
+window.LLMT = window.LLMT || {};
+window.LLMT.youtube = {
+  addTranslateButtonToYouTubeComments
+};
+Object.assign(window, window.LLMT.youtube);
+})();
