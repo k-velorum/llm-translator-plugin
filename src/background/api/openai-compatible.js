@@ -48,6 +48,12 @@ function getDefaultResponseFormatCandidates() {
 export function createOpenAICompatibleProvider({
   providerLabel,
   getConfig,
+  buildTranslateBody = ({ cfg, messages }) => ({
+    model: cfg.model,
+    messages,
+    temperature: 0.2,
+    stream: false
+  }),
   responseFormatCandidates = getDefaultResponseFormatCandidates
 }) {
   async function translate(text, settings, requestOptions = {}) {
@@ -62,12 +68,7 @@ export function createOpenAICompatibleProvider({
       {
         method: 'POST',
         headers: cfg.headers,
-        body: JSON.stringify({
-          model: cfg.model,
-          messages,
-          temperature: 0.2,
-          stream: false
-        }),
+        body: JSON.stringify(buildTranslateBody({ cfg, messages, settings, text })),
         timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
         signal: requestOptions.signal
       },

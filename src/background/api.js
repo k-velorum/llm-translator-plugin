@@ -14,15 +14,13 @@ import { makeApiRequest, makeStreamingApiRequest } from './api/http.js';
 import { getSystemPrompt } from './api/prompt.js';
 import cerebrasProvider from './api/providers/cerebras.js';
 import geminiProvider from './api/providers/gemini.js';
+import openrouterProvider from './api/providers/openrouter.js';
+import zaiProvider from './api/providers/zai.js';
 import { getProviderCapabilities } from './api/registry.js';
 
 export { makeApiRequest, makeStreamingApiRequest, readOpenAICompatibleSSE } from './api/http.js';
 export { getProviderCapabilities } from './api/registry.js';
-
-export const OPENROUTER_HEADERS_BASE = {
-  'HTTP-Referer': 'chrome-extension://llm-translator',
-  'X-Title': 'LLM Translation Plugin'
-};
+export { OPENROUTER_HEADERS_BASE } from './api/providers/openrouter.js';
 
 function extractChatMessageContent(data) {
   const content = data?.choices?.[0]?.message?.content;
@@ -74,50 +72,6 @@ function parseStructuredBatchResponse(text, texts) {
 }
 
 function getOpenAICompatibleStructuredConfig(settings) {
-  if (settings.apiProvider === 'openrouter') {
-    if (!settings.openrouterApiKey) throw new Error('OpenRouter APIキーが設定されていません');
-    if (!settings.openrouterModel) throw new Error('OpenRouter のモデルが選択されていません');
-    return {
-      providerLabel: 'OpenRouter',
-      apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
-      model: settings.openrouterModel,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.openrouterApiKey}`,
-        ...OPENROUTER_HEADERS_BASE
-      }
-    };
-  }
-
-  if (settings.apiProvider === 'cerebras') {
-    if (!settings.cerebrasApiKey) throw new Error('Cerebras APIキーが設定されていません');
-    if (!settings.cerebrasModel) throw new Error('Cerebras のモデルが選択されていません');
-    return {
-      providerLabel: 'Cerebras',
-      apiUrl: 'https://api.cerebras.ai/v1/chat/completions',
-      model: settings.cerebrasModel,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.cerebrasApiKey}`
-      }
-    };
-  }
-
-  if (settings.apiProvider === 'zai') {
-    if (!settings.zaiApiKey) throw new Error('Z-AI APIキーが設定されていません');
-    if (!settings.zaiModel) throw new Error('Z-AIのモデルが選択されていません');
-    return {
-      providerLabel: 'Z-AI',
-      apiUrl: 'https://api.z.ai/api/paas/v4/chat/completions',
-      model: settings.zaiModel,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.zaiApiKey}`,
-        'Accept-Language': 'en-US,en'
-      }
-    };
-  }
-
   if (settings.apiProvider === 'lmstudio') {
     const server = (settings.lmstudioServer || 'http://localhost:1234').replace(/\/$/, '');
     if (!settings.lmstudioModel) throw new Error('LM Studio のモデルが選択されていません');
@@ -134,7 +88,7 @@ function getOpenAICompatibleStructuredConfig(settings) {
   throw new Error(`structured batch is not supported for provider: ${settings.apiProvider}`);
 }
 
-function getOpenAICompatibleResponseFormatCandidates(settings) {
+function getOpenAICompatibleResponseFormatCandidates() {
   const schemaFormat = {
     type: 'json_schema',
     json_schema: {
@@ -144,7 +98,6 @@ function getOpenAICompatibleResponseFormatCandidates(settings) {
     }
   };
   const jsonObjectFormat = { type: 'json_object' };
-  if (settings.apiProvider === 'zai') return [jsonObjectFormat];
   return [schemaFormat, jsonObjectFormat];
 }
 
@@ -201,86 +154,6 @@ APIキー: ${maskedApiKey}
 ${error.stack ? '\nスタックトレース:\n' + error.stack : ''}
 ==================
 `;
-}
-
-// OpenRouter APIでの翻訳
-async function translateWithOpenRouter(text, settings, requestOptions = {}) {
-  if (!settings.openrouterApiKey) {
-    throw new Error('OpenRouter APIキーが設定されていません');
-  }
-
-  const messages = [
-    { role: 'system', content: getSystemPrompt(settings) },
-    { role: 'user', content: text }
-  ];
-
-  {
-    // 直接APIにアクセス
-
-    try {
-      const data = await makeApiRequest(
-        'https://openrouter.ai/api/v1/chat/completions',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${settings.openrouterApiKey}`,
-            ...OPENROUTER_HEADERS_BASE
-          },
-          body: JSON.stringify({
-            model: settings.openrouterModel,
-            messages: messages
-          }),
-          timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
-          signal: requestOptions.signal
-        },
-        'OpenRouter API リクエスト中にエラーが発生'
-      );
-
-      return data.choices[0].message.content.trim();
-    } catch (error) {
-      throw error;
-    }
-  }
-}
-
-// Z-AI (OpenAI互換) での翻訳
-async function translateWithZai(text, settings, requestOptions = {}) {
-  if (!settings.zaiApiKey) {
-    throw new Error('Z-AI APIキーが設定されていません');
-  }
-  if (!settings.zaiModel) {
-    throw new Error('Z-AIのモデルが選択されていません');
-  }
-
-  const apiUrl = 'https://api.z.ai/api/paas/v4/chat/completions';
-  const messages = [
-    { role: 'system', content: getSystemPrompt(settings) },
-    { role: 'user', content: text }
-  ];
-
-  const data = await makeApiRequest(
-    apiUrl,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.zaiApiKey}`,
-        'Accept-Language': 'en-US,en'
-      },
-      body: JSON.stringify({
-        model: settings.zaiModel,
-        messages,
-        temperature: 0.2,
-        stream: false
-      }),
-      timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
-      signal: requestOptions.signal
-    },
-    'Z-AI API リクエスト中にエラーが発生'
-  );
-
-  return (data.choices?.[0]?.message?.content || '').trim();
 }
 
 // Ollama (local server) での翻訳
@@ -444,11 +317,11 @@ async function translateImageWithLmStudio(imageInput, settings, requestOptions =
 // テキスト翻訳関数
 export async function translateText(text, settings, requestOptions = {}) {
   if (settings.apiProvider === 'openrouter') {
-    return await translateWithOpenRouter(text, settings, requestOptions);
+    return await openrouterProvider.translate(text, settings, requestOptions);
   } else if (settings.apiProvider === 'cerebras') {
     return await cerebrasProvider.translate(text, settings, requestOptions);
   } else if (settings.apiProvider === 'zai') {
-    return await translateWithZai(text, settings, requestOptions);
+    return await zaiProvider.translate(text, settings, requestOptions);
   } else if (settings.apiProvider === 'ollama') {
     return await translateWithOllama(text, settings, requestOptions);
   } else if (settings.apiProvider === 'lmstudio') {
@@ -502,7 +375,7 @@ async function translateBatchStructuredOpenAICompatible(texts, settings, request
     }
   ];
 
-  const formats = getOpenAICompatibleResponseFormatCandidates(settings);
+  const formats = getOpenAICompatibleResponseFormatCandidates();
   let lastError = null;
 
   for (let i = 0; i < formats.length; i++) {
@@ -595,7 +468,13 @@ export async function translateBatchStructured(texts, settings, requestOptions =
   if (provider === 'cerebras') {
     return cerebrasProvider.translateBatchStructured(texts, settings, requestOptions);
   }
-  if (provider === 'openrouter' || provider === 'zai' || provider === 'lmstudio') {
+  if (provider === 'openrouter') {
+    return openrouterProvider.translateBatchStructured(texts, settings, requestOptions);
+  }
+  if (provider === 'zai') {
+    return zaiProvider.translateBatchStructured(texts, settings, requestOptions);
+  }
+  if (provider === 'lmstudio') {
     return translateBatchStructuredOpenAICompatible(texts, settings, requestOptions);
   }
   if (provider === 'ollama') {
