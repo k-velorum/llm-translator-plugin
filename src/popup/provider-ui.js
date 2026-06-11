@@ -5,6 +5,7 @@ export const PROVIDER_ORDER = [
   'gemini',
   'cerebras',
   'zai',
+  'dummy',
   'ollama',
   'lmstudio',
   'chromePrompt'
@@ -115,6 +116,32 @@ export const PROVIDER_UI = {
       { key: 'zaiModel', message: 'Z-AI のモデルが設定されていません' }
     ],
     defaultModels: DEFAULT_PROVIDER_MODELS.zai
+  },
+  dummy: {
+    label: 'Dummy',
+    heading: 'Dummy API設定',
+    needsApiKey: true,
+    staticModelsOnly: true,
+    elements: {
+      section: 'dummySection',
+      apiKey: 'dummyApiKeyInput',
+      model: 'dummyModelSelect',
+      modelInfo: 'dummyModelInfo'
+    },
+    settingsKeys: {
+      apiKey: 'dummyApiKey',
+      model: 'dummyModel'
+    },
+    validationMessage: 'Dummy APIキーを入力してください',
+    fields: [
+      { kind: 'text', element: 'apiKey', label: 'Dummy APIキー', placeholder: 'dummy-key' },
+      { kind: 'model', element: 'model', label: 'モデル' }
+    ],
+    testRequired: [
+      { key: 'dummyApiKey', message: 'Dummy APIキーが設定されていません' },
+      { key: 'dummyModel', message: 'Dummy のモデルが設定されていません' }
+    ],
+    defaultModels: DEFAULT_PROVIDER_MODELS.dummy
   },
   ollama: {
     label: 'Ollama',

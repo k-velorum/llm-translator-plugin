@@ -21,5 +21,8 @@ export const DEFAULT_PROVIDER_MODELS = {
     { id: 'glm-4.5-airx', name: 'glm-4.5-airx' },
     { id: 'glm-4.5-flash', name: 'glm-4.5-flash' },
     { id: 'glm-4-32b-0414-128k', name: 'glm-4-32b-0414-128k' }
+  ],
+  dummy: [
+    { id: 'dummy-model', name: 'Dummy Model' }
   ]
 };

@@ -13,6 +13,7 @@ describe('provider registry', () => {
       'gemini',
       'cerebras',
       'zai',
+      'dummy',
       'ollama',
       'lmstudio',
       'chromePrompt'
