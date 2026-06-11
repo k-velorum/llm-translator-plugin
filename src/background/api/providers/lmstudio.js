@@ -76,9 +76,10 @@ async function translateImage(imageInput, settings, requestOptions = {}) {
       body: JSON.stringify({
         model: settings.lmstudioModel,
         system_prompt: getSystemPrompt(settings),
+        // リクエストの input はレスポンス output と型名が非対称で、テキストは 'message' ではなく 'text'
         input: [
           {
-            type: 'message',
+            type: 'text',
             content: buildImageTranslationPrompt()
           },
           {
@@ -87,7 +88,9 @@ async function translateImage(imageInput, settings, requestOptions = {}) {
           }
         ],
         temperature: 0.2,
-        stream: false
+        stream: false,
+        // 翻訳は使い捨てのため、LM Studio 側に stateful chat を蓄積させない
+        store: false
       }),
       timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
       signal: requestOptions.signal

@@ -93,7 +93,7 @@ describe('lmstudio provider', () => {
     });
   });
 
-  it('keeps the existing image translation REST shape', async () => {
+  it('sends the image translation request in the /api/v1/chat shape', async () => {
     const fetch = vi.fn(async () =>
       mockJsonResponse({
         output: [
@@ -121,11 +121,12 @@ describe('lmstudio provider', () => {
     expect(JSON.parse(options.body)).toMatchObject({
       model: 'vision-model',
       input: [
-        { type: 'message', content: expect.any(String) },
+        { type: 'text', content: expect.any(String) },
         { type: 'image', data_url: 'data:image/png;base64,xxx' }
       ],
       temperature: 0.2,
-      stream: false
+      stream: false,
+      store: false
     });
   });
 });
