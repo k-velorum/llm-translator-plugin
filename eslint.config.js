@@ -59,11 +59,9 @@ const contentSharedGlobals = {
   streamViewSessions: 'readonly',
   TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS: 'readonly',
   translationPopup: 'writable',
-  tweetObserver: 'writable',
   tweetTranslationCacheSettings: 'writable',
   updateSelectionStreamPopup: 'readonly',
-  updateTweetTranslationCacheScopeFromChanges: 'readonly',
-  ytObserver: 'writable'
+  updateTweetTranslationCacheScopeFromChanges: 'readonly'
 };
 
 export default [
@@ -93,6 +91,9 @@ export default [
         ...chromeGlobals,
         ...contentSharedGlobals
       }
+    },
+    rules: {
+      'no-implicit-globals': 'error'
     }
   },
   {
@@ -121,6 +122,8 @@ export default [
   {
     rules: {
       eqeqeq: ['error', 'always'],
+      complexity: ['warn', 15],
+      'max-lines-per-function': ['warn', { max: 80, skipBlankLines: true, skipComments: true }],
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       'no-cond-assign': 'off',
       'no-empty': ['error', { allowEmptyCatch: true }],

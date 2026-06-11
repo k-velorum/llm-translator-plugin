@@ -91,7 +91,7 @@ content scripts は classic script のため import できない。content 用�
 ### 2-5. 小物の統一と死んだコードの除去（B-4, C-6, C-7）
 
 1. `src/shared/async-utils.js` に `sleep` / `sleepWithSignal` を集約し、二重定義を削除。
-2. `OPENROUTER_HEADERS_BASE` を getOpenrouterModels でも参照させる（C-6）。
+2. `OPENROUTER_HEADERS_BASE` を OpenRouter モデル取得でも参照させる（C-6）。
 3. 「Anthropic は削除済み」等の歴史コメントを削除（C-7）。
 4. `formatErrorDetails` の else-if 連鎖に default 節を追加（到達不能分岐の明示化）。
 

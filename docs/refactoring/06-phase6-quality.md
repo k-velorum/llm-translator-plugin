@@ -16,10 +16,8 @@
 ### 6-1. 互換レイヤの撤去
 
 1. background の旧 action alias を削除:
-   - `verifyOpenrouterApiKey` / `verifyCerebrasApiKey` / `verifyGeminiApiKey` /
-     `getOpenrouterModels` / `getCerebrasModels` / `getGeminiModels` / `getOllamaModels` /
-     `getLmstudioModels`（フェーズ3で alias 化、フェーズ4で送信側を撤去済み）
-   - `translateTweet`（フェーズ5で送信側を `translateEmbeddedText` へ移行済み）
+   - provider 別の API キー検証 / モデル取得 action 群（フェーズ3で alias 化、フェーズ4で送信側を撤去済み）
+   - 旧 Twitter 専用 action（フェーズ5で送信側を `translateEmbeddedText` へ移行済み）
 2. 削除前に旧 action 名をリポジトリ全体で grep し、参照ゼロを確認。
 
 ### 6-2. ユニットテストの拡充
@@ -83,3 +81,13 @@ UI 層（popup/content）の DOM テストは費用対効果が低いため**ス
 - content scripts のバンドル化（フェーズ5の IIFE は ESM へ機械変換可能な形にしてある）
 - twitter/youtube content script の manifest レベル分離（フェーズ5の調査結果に従う)
 - GitHub Actions 等での lint/test 自動実行
+
+## 実績（2026-06-12）
+
+- 旧 action alias は source / docs とも具体名の参照を削除し、provider 操作は `verifyApiKey` / `getModels`、埋め込み翻訳は `translateEmbeddedText` に統一。
+- 追加・更新済みテストは provider registry、OpenAI互換 request shape、settings migration、chunking、logger/error 正規化を対象にし、`bun run test` は 9 files / 37 tests pass。
+- `eslint.config.js` に `no-implicit-globals` error、`complexity` / `max-lines-per-function` warning を追加。`bun run lint` は error 0、warning 66。
+- `CLAUDE.md` / `PROJECT_WIKI.md` / `README.md` は新構造に合わせて更新。
+- メトリクス: source JS 50ファイル、最大ファイル `src/background/message-handlers.js` 435行、popup 最大 291行、content 最大 425行。
+- `manifest.json` parse OK。
+- フルスモーク、全プロバイダー実 API 疎通、既存 Chrome プロファイル上書きロードは未実施。実機環境で [99-verification-checklist.md](99-verification-checklist.md) を消化する。

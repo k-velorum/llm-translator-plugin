@@ -39,14 +39,15 @@ Chrome Manifest V3 の翻訳拡張です。選択テキスト、ページ全体�
 
 1. `src/content/namespace.js`
 2. `src/content/messaging.js`
-3. `src/content/shared.js`
-4. `src/content/streaming.js`
-5. `src/content/selection.js`
-6. `src/content/page-translation.js`
-7. `src/content/twitter.js`
-8. `src/content/youtube.js`
-9. `src/content/runtime.js`
-10. `content.js`
+3. `src/content/settings.js`
+4. `src/content/ui.js`
+5. `src/content/streaming.js`
+6. `src/content/selection.js`
+7. `src/content/page-translation.js`
+8. `src/content/twitter.js`
+9. `src/content/youtube.js`
+10. `src/content/runtime.js`
+11. `content.js`
 
 content から background への送信は `safeSendMessage` / `sendBackgroundMessage` を使います。X/Twitter と YouTube の埋め込み翻訳 action は `translateEmbeddedText` です。
 
@@ -63,4 +64,4 @@ content から background への送信は `safeSendMessage` / `sendBackgroundMes
 - `bun run lint`
 - `bun run test`
 
-旧 provider 別 action alias と `translateTweet` alias は撤去済みです。互換目的で再導入する場合は、送信側が本当に必要かを grep で確認し、削除予定を docs に残してください。
+旧 provider 別 action alias と旧 Twitter 専用 alias は撤去済みです。互換目的で再導入する場合は、送信側が本当に必要かを grep で確認し、削除予定を docs に残してください。

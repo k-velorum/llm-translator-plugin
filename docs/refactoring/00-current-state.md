@@ -62,10 +62,10 @@
 |---|---|---|---|
 | C-1 | ★★★ | api.js (1263行) に7プロバイダーの実装・dispatch・SSE パース・リトライ・エラー整形・画像翻訳が同居 | `src/background/api.js` |
 | C-2 | ★★★ | プロバイダー追加に約11箇所の修正が必要: `getProviderCapabilities` / `getOpenAICompatibleStructuredConfig` / `formatErrorDetails` / `translateText` dispatch / `translateTextStream` dispatch / `translateBatchStructured` dispatch / verify ハンドラ / getModels ハンドラ / DEFAULT_SETTINGS / `logging.js getProviderMeta` / popup UI | api.js, message-handlers.js, settings.js, logging.js, popup.js/html |
-| C-3 | ★★ | メッセージ API がプロバイダーごとに増殖: `verifyOpenrouterApiKey` / `verifyCerebrasApiKey` / `verifyGeminiApiKey` / `getOpenrouterModels` / `getCerebrasModels` / `getGeminiModels` / `getOllamaModels` / `getLmstudioModels`。汎用 `verifyApiKey {provider}` / `getModels {provider}` で統合可能 | `src/background/message-handlers.js:263-431` |
+| C-3 | ★★ | メッセージ API がプロバイダーごとに増殖。汎用 `verifyApiKey {provider}` / `getModels {provider}` で統合可能 | `src/background/message-handlers.js:263-431` |
 | C-4 | ★★ | message-handlers.js (437行) が if 連鎖による単一 dispatch。翻訳系と設定検証系の責務混在 | `src/background/message-handlers.js` |
 | C-5 | ★★ | page-translation-service.js (724行) にセッション管理・チャンク分割・進捗通知・ログが混在 | `src/background/page-translation-service.js` |
-| C-6 | ★ | `OPENROUTER_HEADERS_BASE` 定数があるのに getOpenrouterModels では別途ハードコード | `src/background/api.js:28-31` |
+| C-6 | ★ | `OPENROUTER_HEADERS_BASE` 定数があるのに OpenRouter モデル取得では別途ハードコード | `src/background/api.js:28-31` |
 | C-7 | ★ | 「Anthropic は削除済み」等の死んだコメントが残存 | api.js:903 付近, message-handlers.js:289,305, settings.js:46 |
 
 ### D. popup の構造問題（→ フェーズ4）
@@ -86,7 +86,7 @@
 | E-1 | ★★★ | ファイル間共有がトップレベル `let`（`translationPopup` / `tweetObserver` / `ytObserver` / `featureSettings` 等）のグローバル暗黙依存。ロード順が壊れると無言で破綻 | `src/content/shared.js:1-15` ほか全域 |
 | E-2 | ★★ | `closePopupOnClickOutside` 等 document へのリスナーが removePopup 時に確実に解除されない疑い（リーク・多重登録） | `src/content/selection.js:250, 370, 386-389` |
 | E-3 | ★★ | ポップアップ/スピナー/ボタンの UI 生成が selection.js / page-translation.js / twitter.js / youtube.js で個別実装。SVG アイコンも二重定義 | `src/content/` 全域 |
-| E-4 | ★★ | YouTube コメント翻訳が Twitter 用の `action: 'translateTweet'` を流用。命名が実態と乖離 | `src/content/youtube.js:153` |
+| E-4 | ★★ | YouTube コメント翻訳が Twitter 用の旧 action を流用。命名が実態と乖離 | `src/content/youtube.js:153` |
 | E-5 | ★★ | Observer のライフサイクル（開始/停止/設定変更時の再構成）が分散し、disconnect 失敗が握り潰される | `src/content/shared.js:41-78`, twitter.js, youtube.js |
 | E-6 | ★★ | ツイート翻訳キャッシュの設定は shared.js、実装は twitter.js とスコープ分裂。初期化と storage.onChanged のレース懸念 | `src/content/shared.js:195`, `src/content/twitter.js:1-85` |
 | E-7 | ★ | セレクタ・マジックナンバー（`article[data-testid="tweet"]`、POPUP_MARGIN 等）の散在 | twitter.js, youtube.js, shared.js |

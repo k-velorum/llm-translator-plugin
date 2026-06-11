@@ -84,3 +84,11 @@ LLM 翻訳 Chrome 拡張（Manifest V3）の段階的リファクタリング計
 - 新機能追加・挙動変更・パフォーマンス改善
 - jQuery/Select2 の置き換え自体（フェーズ4で**判断材料の整理**までを行い、実施は任意の追加タスクとする）
 - Firefox 等の他ブラウザ対応
+
+## 実施結果（2026-06-12）
+
+- フェーズ1〜6のコードリファクタリングは完了。push は未実施。
+- provider 追加時の主な修正箇所は `src/background/api/providers/<provider>.js`、`src/background/api/registry.js`、`src/popup/provider-ui.js`、必要に応じて `src/popup/provider-default-models.js` とテスト。
+- 最大ファイルは `src/background/message-handlers.js` 435行。`src/background/page-translation-service.js` は 635行から 305行へ縮小。
+- 自動検証: `bun run lint` は error 0（warning 66）、`bun run test` は 9 files / 37 tests pass、`manifest.json` parse OK。
+- 実機 Chrome が必要なフルスモークと既存プロファイル上書きロードは、この記録時点では未実施。

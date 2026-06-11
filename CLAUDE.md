@@ -36,7 +36,7 @@
 - provider モデル取得: `getModels` + `provider`
 - 埋め込みテキスト翻訳: `translateEmbeddedText`
 - popup 翻訳テスト: `testTranslate`
-- 旧 provider 別 action alias と `translateTweet` alias は撤去済みです。再追加しないでください。
+- 旧 provider 別 action alias と旧 Twitter 専用 alias は撤去済みです。再追加しないでください。
 
 ## コメントと言語
 

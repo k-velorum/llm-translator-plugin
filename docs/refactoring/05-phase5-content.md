@@ -89,7 +89,7 @@ manifest.json の `js` 配列を新しい依存順に更新:
      `{ ok, data, error }` に正規化。コンテキスト無効化（拡張リロード後の孤児 content script）も
      ここで握って静かに失敗させる。
 2. 全 `chrome.runtime.sendMessage` 呼び出しを置換。
-3. youtube.js の `translateTweet` 利用を `translateEmbeddedText`（フェーズ3で追加済み）に変更。
+3. youtube.js の旧 Twitter 専用 action 利用を `translateEmbeddedText`（フェーズ3で追加済み）に変更。
    twitter.js も同 action へ移行し、background 側 alias 削除（フェーズ6）の前提を作る。
 
 ### 5-4. 設定購読とキャッシュの整理（E-6）
@@ -125,7 +125,7 @@ manifest.json の `js` 配列を新しい依存順に更新:
 - [ ] content 配下に IIFE 外のトップレベル宣言がない（ESLint で機械的に保証）
 - [ ] スピナー・翻訳ボタン・ポップアップ骨格・スタイル注入の実装が各1つ
 - [ ] `sendMessage` 直呼びが残っていない（messaging.js 経由のみ）
-- [ ] `translateTweet` action を送る箇所が content にない
+- [ ] 旧 Twitter 専用 action を送る箇所が content にない
 - [ ] 選択ポップアップを 20 回開閉して document のリスナーが増殖しないことを DevTools
       （`getEventListeners(document)`）で確認
 - [ ] スモークテスト全項目 PASS。特に: X のタイムライン無限スクロール中のボタン注入、
@@ -148,3 +148,13 @@ manifest.json の `js` 配列を新しい依存順に更新:
 4. `refactor(content): メッセージ送信を messaging.js に統一し translateEmbeddedText へ移行`
 5. `refactor(content): Observer とポップアップのライフサイクル管理を導入`
 6. `chore(content): 未使用ハンドラ削除・セレクタ定数集約`
+
+## 実績（2026-06-12）
+
+- `namespace.js` / `messaging.js` / `settings.js` / `ui.js` を追加し、`shared.js` を廃止。
+- content scripts は IIFE 化済み。`eslint.config.js` に `no-implicit-globals` を error として追加。
+- content からの `chrome.runtime.sendMessage` 直呼びは `src/content/messaging.js` のみ。
+- X/Twitter と YouTube の埋め込み翻訳は `translateEmbeddedText` に統一。
+- Twitter / YouTube の MutationObserver は `createObserverController` で start/stop を共通化。
+- manifest レベルでの twitter/youtube 別 content script 分離は採用せず、将来課題として維持。
+- DevTools による 20回開閉リスナー確認、X/YouTube の無限スクロール・設定 OFF/ON 実機スモークは未実施。

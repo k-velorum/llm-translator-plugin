@@ -35,7 +35,7 @@ src/background/
   ├─ handlers/
   │   ├─ index.js              # action → handler のテーブル dispatch
   │   ├─ translation.js        # startTranslationStream / cancelTranslationStream /
-  │   │                        #   translateTweet / testTranslate
+  │   │                        #   embedded text / test translation
   │   └─ providers.js          # verifyApiKey / getModels（汎用2アクション）
   ├─ page-translation/
   │   ├─ service.js            # セッション管理・進捗通知（現 page-translation-service.js の中核）
@@ -112,12 +112,12 @@ export default {
 2. 汎用アクションを新設:
    - `verifyApiKey { provider, ...credentials }` → `PROVIDERS[provider].verify()`
    - `getModels { provider, ...credentials }` → `PROVIDERS[provider].getModels()`
-3. **互換レイヤ**: 旧 action 名（`verifyOpenrouterApiKey` 等8種）を新ハンドラへの alias として
+3. **互換レイヤ**: provider 別の旧 action 群を新ハンドラへの alias として
    テーブルに残す。popup 側の置換（フェーズ4）が終わった後のフェーズ6で alias を削除する。
    ※ 拡張は background と popup/content が常に同時更新されるため互換レイヤは理論上不要だが、
    フェーズ4を独立してレビュー・revert 可能にするために残す。
-4. `translateTweet` の改名（E-4: 実態は埋め込みテキスト翻訳）はここで `translateEmbeddedText` を
-   追加し、`translateTweet` を alias 化。content 側の置換はフェーズ5。
+4. 旧 Twitter 専用 action の改名（E-4: 実態は埋め込みテキスト翻訳）はここで `translateEmbeddedText` を
+   追加し、旧 action を alias 化。content 側の置換はフェーズ5。
 
 ### 3-4. page-translation-service.js の分割（C-5）
 

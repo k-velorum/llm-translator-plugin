@@ -65,7 +65,7 @@ const PROVIDER_UI = {
    - `loadSettings` / `saveSettings` のプロバイダー項目をテーブル走査に置換。
      **storage キー名は PROVIDER_UI に書かれた既存名をそのまま使う**（互換性の生命線）。
    - `updateModelInfo` / `validateApiKey` の分岐をテーブルの `infoFormatter` / `needsApiKey` へ。
-3. 旧 action 名（`verifyOpenrouterApiKey` 等）の呼び出しが popup から消えたことを grep で確認
+3. provider 別の旧 action 呼び出しが popup から消えたことを grep で確認
    （フェーズ6の alias 削除の前提になる）。
 
 ### 4-3. popup.html のテンプレート化（D-2）
@@ -118,3 +118,11 @@ const PROVIDER_UI = {
 3. `refactor(popup): PROVIDER_UI テーブルを導入し loadProviderModels/testApi を駆動化`
 4. `refactor(popup): 設定セクションをテンプレート生成に統合`
 5. `refactor(popup): ステータス表示とログを統一`
+
+## 実績（2026-06-12）
+
+- popup は ES Module 化し、`src/popup/main.js` は 164行、popup 配下の最大は `provider-ui.js` 291行。
+- provider 設定セクションは `popup.html` のテンプレートと `src/popup/provider-ui.js` の定義から生成する構成へ移行。
+- provider API キー検証 / モデル取得は汎用 action に統一済み。
+- 自動検証は `bun run lint` error 0、`bun run test` 37 tests pass。
+- 全プロバイダーの実 API 疎通と既存プロファイル復元は実機 Chrome 確認が必要なため未実施。
