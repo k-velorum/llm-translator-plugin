@@ -1,0 +1,131 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import lmstudioProvider from '../src/background/api/providers/lmstudio.js';
+import ollamaProvider from '../src/background/api/providers/ollama.js';
+
+function mockJsonResponse(payload) {
+  return {
+    ok: true,
+    json: async () => payload
+  };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  delete globalThis.fetch;
+});
+
+describe('ollama provider', () => {
+  it('builds the current /api/generate translation request', async () => {
+    const fetch = vi.fn(async () => mockJsonResponse({ response: ' 翻訳済み ' }));
+    globalThis.fetch = fetch;
+
+    await expect(
+      ollamaProvider.translate('hello', {
+        ollamaServer: 'http://localhost:11434/',
+        ollamaModel: 'qwen'
+      })
+    ).resolves.toBe('翻訳済み');
+
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe('http://localhost:11434/api/generate');
+    expect(JSON.parse(options.body)).toMatchObject({
+      model: 'qwen',
+      stream: false
+    });
+    expect(JSON.parse(options.body).prompt).toContain('hello');
+  });
+
+  it('keeps structured batch format fallback order', async () => {
+    const fetch = vi.fn(async () =>
+      mockJsonResponse({
+        response: '{"items":[{"id":0,"translation":"一"}]}'
+      })
+    );
+    globalThis.fetch = fetch;
+
+    await expect(
+      ollamaProvider.translateBatchStructured(['one'], {
+        ollamaServer: 'http://localhost:11434',
+        ollamaModel: 'qwen'
+      })
+    ).resolves.toEqual(['一']);
+
+    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(body.format).toMatchObject({
+      type: 'object',
+      required: ['items']
+    });
+  });
+});
+
+describe('lmstudio provider', () => {
+  it('builds the OpenAI-compatible chat completion request', async () => {
+    const fetch = vi.fn(async () =>
+      mockJsonResponse({
+        choices: [{ message: { content: ' 翻訳済み ' } }]
+      })
+    );
+    globalThis.fetch = fetch;
+
+    await expect(
+      lmstudioProvider.translate('hello', {
+        lmstudioServer: 'http://localhost:1234/',
+        lmstudioModel: 'local-model',
+        lmstudioApiKey: 'optional-key'
+      })
+    ).resolves.toBe('翻訳済み');
+
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe('http://localhost:1234/v1/chat/completions');
+    expect(options.headers).toEqual({
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer optional-key'
+    });
+    expect(JSON.parse(options.body)).toMatchObject({
+      model: 'local-model',
+      temperature: 0.2,
+      stream: false,
+      messages: [
+        { role: 'system', content: expect.any(String) },
+        { role: 'user', content: 'hello' }
+      ]
+    });
+  });
+
+  it('keeps the existing image translation REST shape', async () => {
+    const fetch = vi.fn(async () =>
+      mockJsonResponse({
+        output: [
+          {
+            type: 'message',
+            content: [{ text: '画像内テキスト' }]
+          }
+        ]
+      })
+    );
+    globalThis.fetch = fetch;
+
+    await expect(
+      lmstudioProvider.translateImage(
+        { dataUrl: 'data:image/png;base64,xxx', mimeType: 'image/png' },
+        {
+          lmstudioServer: 'http://localhost:1234',
+          lmstudioModel: 'vision-model'
+        }
+      )
+    ).resolves.toBe('画像内テキスト');
+
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe('http://localhost:1234/api/v1/chat');
+    expect(JSON.parse(options.body)).toMatchObject({
+      model: 'vision-model',
+      input: [
+        { type: 'message', content: expect.any(String) },
+        { type: 'image', data_url: 'data:image/png;base64,xxx' }
+      ],
+      temperature: 0.2,
+      stream: false
+    });
+  });
+});
