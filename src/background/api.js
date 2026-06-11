@@ -12,6 +12,7 @@ import {
 import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
 import { makeApiRequest, makeStreamingApiRequest } from './api/http.js';
 import { getSystemPrompt } from './api/prompt.js';
+import cerebrasProvider from './api/providers/cerebras.js';
 import geminiProvider from './api/providers/gemini.js';
 import { getProviderCapabilities } from './api/registry.js';
 
@@ -243,80 +244,6 @@ async function translateWithOpenRouter(text, settings, requestOptions = {}) {
   }
 }
 
-// Cerebras API (OpenAI互換) での翻訳
-async function translateWithCerebras(text, settings, requestOptions = {}) {
-  if (!settings.cerebrasApiKey) {
-    throw new Error('Cerebras APIキーが設定されていません');
-  }
-  if (!settings.cerebrasModel) {
-    throw new Error('Cerebras のモデルが選択されていません');
-  }
-
-  const apiUrl = 'https://api.cerebras.ai/v1/chat/completions';
-  const messages = [
-    { role: 'system', content: getSystemPrompt(settings) },
-    { role: 'user', content: text }
-  ];
-
-  const data = await makeApiRequest(
-    apiUrl,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.cerebrasApiKey}`
-      },
-      body: JSON.stringify({
-        model: settings.cerebrasModel,
-        messages,
-        temperature: 0.2,
-        stream: false
-      }),
-      timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
-      signal: requestOptions.signal
-    },
-    'Cerebras API リクエスト中にエラーが発生'
-  );
-
-  return (data.choices?.[0]?.message?.content || '').trim();
-}
-
-async function translateWithCerebrasStream(text, settings, handlers = {}, requestOptions = {}) {
-  if (!settings.cerebrasApiKey) {
-    throw new Error('Cerebras APIキーが設定されていません');
-  }
-  if (!settings.cerebrasModel) {
-    throw new Error('Cerebras のモデルが選択されていません');
-  }
-
-  const apiUrl = 'https://api.cerebras.ai/v1/chat/completions';
-  const messages = [
-    { role: 'system', content: getSystemPrompt(settings) },
-    { role: 'user', content: text }
-  ];
-
-  return makeStreamingApiRequest(
-    apiUrl,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.cerebrasApiKey}`
-      },
-      body: JSON.stringify({
-        model: settings.cerebrasModel,
-        messages,
-        temperature: 0.2,
-        stream: true
-      }),
-      timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
-      signal: requestOptions.signal
-    },
-    handlers,
-    'Cerebras API ストリーミング中にエラーが発生'
-  );
-}
-
 // Z-AI (OpenAI互換) での翻訳
 async function translateWithZai(text, settings, requestOptions = {}) {
   if (!settings.zaiApiKey) {
@@ -519,7 +446,7 @@ export async function translateText(text, settings, requestOptions = {}) {
   if (settings.apiProvider === 'openrouter') {
     return await translateWithOpenRouter(text, settings, requestOptions);
   } else if (settings.apiProvider === 'cerebras') {
-    return await translateWithCerebras(text, settings, requestOptions);
+    return await cerebrasProvider.translate(text, settings, requestOptions);
   } else if (settings.apiProvider === 'zai') {
     return await translateWithZai(text, settings, requestOptions);
   } else if (settings.apiProvider === 'ollama') {
@@ -552,7 +479,7 @@ export async function translateTextStream(text, settings, handlers = {}, request
     throw new Error(`streaming is not supported for provider: ${settings?.apiProvider || 'unknown'}`);
   }
   if (settings.apiProvider === 'cerebras') {
-    return translateWithCerebrasStream(text, settings, handlers, requestOptions);
+    return cerebrasProvider.translateStream(text, settings, handlers, requestOptions);
   }
   if (settings.apiProvider === 'lmstudio') {
     return translateWithLmStudioStream(text, settings, handlers, requestOptions);
@@ -665,7 +592,10 @@ export async function translateBatchStructured(texts, settings, requestOptions =
   if (provider === 'gemini') {
     return geminiProvider.translateBatchStructured(texts, settings, requestOptions);
   }
-  if (provider === 'openrouter' || provider === 'cerebras' || provider === 'zai' || provider === 'lmstudio') {
+  if (provider === 'cerebras') {
+    return cerebrasProvider.translateBatchStructured(texts, settings, requestOptions);
+  }
+  if (provider === 'openrouter' || provider === 'zai' || provider === 'lmstudio') {
     return translateBatchStructuredOpenAICompatible(texts, settings, requestOptions);
   }
   if (provider === 'ollama') {
