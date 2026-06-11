@@ -72,7 +72,7 @@ export default [
   },
   js.configs.recommended,
   {
-    files: ['background.js', 'src/background/**/*.js', 'src/offscreen/**/*.js'],
+    files: ['background.js', 'src/background/**/*.js', 'src/offscreen/**/*.js', 'src/shared/**/*.js'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',

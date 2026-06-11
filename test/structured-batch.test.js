@@ -4,7 +4,7 @@ import {
   buildStructuredBatchInstruction,
   normalizeStructuredBatchResult,
   parseJsonLoose
-} from '../src/background/api.js';
+} from '../src/shared/structured-batch.js';
 import { DEFAULT_SETTINGS } from '../src/background/settings.js';
 
 describe('parseJsonLoose', () => {
