@@ -1,0 +1,17 @@
+{
+  "name": "llm-translater-plugin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "format": "prettier --write \"**/*.{js,json,md,html,css}\"",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.4.1",
+    "globals": "^17.6.0",
+    "prettier": "^3.8.4",
+    "vitest": "^4.1.8"
+  }
+}
