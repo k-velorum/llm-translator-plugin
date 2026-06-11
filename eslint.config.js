@@ -96,10 +96,10 @@ export default [
     }
   },
   {
-    files: ['popup.js'],
+    files: ['src/popup/**/*.js'],
     languageOptions: {
       ecmaVersion: 'latest',
-      sourceType: 'script',
+      sourceType: 'module',
       globals: {
         ...globals.browser,
         ...chromeGlobals,
