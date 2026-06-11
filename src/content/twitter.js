@@ -1,7 +1,27 @@
+(() => {
+  'use strict';
+
+const TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS = {
+  apiProvider: 'openrouter',
+  openrouterModel: 'openai/gpt-4o-mini',
+  geminiModel: 'gemini-flash-2.0',
+  cerebrasModel: 'llama3.1-8b',
+  zaiModel: 'glm-4.7',
+  ollamaModel: '',
+  lmstudioModel: '',
+  chromePromptTemperature: 0.2,
+  translationSystemPrompt: ''
+};
+
 const TWEET_TRANSLATION_CACHE_MAX_ENTRIES = 300;
 const tweetTranslationCache = new Map();
 const tweetTranslationInFlight = new Map();
+let tweetTranslationCacheSettings = {
+  ...TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS,
+  ...(window.tweetTranslationCacheSettings || {})
+};
 let tweetTranslationCacheScope = 'provider:openrouter|model:openai/gpt-4o-mini|prompt:0';
+window.tweetTranslationCacheSettings = tweetTranslationCacheSettings;
 
 function hashStringForCache(text) {
   let hash = 2166136261;
@@ -17,7 +37,7 @@ function normalizeTweetTranslationCacheKey(text) {
   let normalized = text;
   try {
     normalized = normalized.normalize('NFC');
-  } catch (_) {
+  } catch {
     // ignore normalization errors and keep original
   }
   return normalized.replace(/\s+/g, ' ').trim();
@@ -49,9 +69,10 @@ function syncTweetTranslationCacheScopeFromStorage() {
     chrome.storage?.sync?.get?.(TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS, (settings) => {
       if (!settings) return;
       tweetTranslationCacheSettings = { ...tweetTranslationCacheSettings, ...settings };
+      window.tweetTranslationCacheSettings = tweetTranslationCacheSettings;
       tweetTranslationCacheScope = computeTweetTranslationCacheScope(tweetTranslationCacheSettings);
     });
-  } catch (_) {}
+  } catch {}
 }
 
 function initializeTweetTranslationCacheScope() {
@@ -66,6 +87,7 @@ function updateTweetTranslationCacheScopeFromChanges(changes) {
     changed = true;
   });
   if (!changed) return;
+  window.tweetTranslationCacheSettings = tweetTranslationCacheSettings;
   tweetTranslationCacheScope = computeTweetTranslationCacheScope(tweetTranslationCacheSettings);
   clearAllTweetTranslationCacheEntries();
 }
@@ -410,3 +432,12 @@ function showTweetTranslation(tweetTextElement, translatedText) {
     styles.tweetTranslationError
   );
 }
+
+window.LLMT = window.LLMT || {};
+window.LLMT.twitter = {
+  initializeTweetTranslationCacheScope,
+  updateTweetTranslationCacheScopeFromChanges,
+  addTranslateButtonToTweets
+};
+Object.assign(window, window.LLMT.twitter);
+})();

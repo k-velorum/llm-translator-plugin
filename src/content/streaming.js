@@ -14,8 +14,9 @@ function createTranslationRequestId(kind = 'translate') {
 }
 
 function providerSupportsStreaming() {
-  return tweetTranslationCacheSettings.apiProvider === 'lmstudio'
-    || tweetTranslationCacheSettings.apiProvider === 'cerebras';
+  const settings = window.tweetTranslationCacheSettings || {};
+  return settings.apiProvider === 'lmstudio'
+    || settings.apiProvider === 'cerebras';
 }
 
 function cancelTranslationStream(requestId) {

@@ -73,20 +73,6 @@ const ErrorUtils = {
   }
 };
 
-const TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS = {
-  apiProvider: 'openrouter',
-  openrouterModel: 'openai/gpt-4o-mini',
-  geminiModel: 'gemini-flash-2.0',
-  cerebrasModel: 'llama3.1-8b',
-  zaiModel: 'glm-4.7',
-  ollamaModel: '',
-  lmstudioModel: '',
-  chromePromptTemperature: 0.2,
-  translationSystemPrompt: ''
-};
-
-let tweetTranslationCacheSettings = { ...TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS };
-
 const styles = {
   popup: {
     position: 'absolute',
@@ -376,7 +362,6 @@ Object.assign(window, {
   ensureEmbeddedTranslationSpinnerStyles,
   DOMUtils,
   ErrorUtils,
-  tweetTranslationCacheSettings,
   styles,
   applyStyles,
   positionPopupInViewport,
