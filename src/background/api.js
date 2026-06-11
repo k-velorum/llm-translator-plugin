@@ -10,6 +10,8 @@ import {
   normalizeStructuredBatchResult,
   parseJsonLoose
 } from '../shared/structured-batch.js';
+import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
+import { sleepWithSignal } from '../shared/async-utils.js';
 
 // 共通プロンプト取得（設定のカスタムがあれば優先）
 function getSystemPrompt(settings) {
@@ -183,42 +185,8 @@ const HTTP_429_RETRY_DELAY_MS = 500;
 const HTTP_429_MAX_RETRY_COUNT = 5;
 const TRANSIENT_HTTP_MAX_RETRIES = 3;
 
-function createAbortError() {
-  const error = new Error('The operation was aborted');
-  error.name = 'AbortError';
-  return error;
-}
-
 function isRetriableHttpStatus(status) {
   return status === 429 || (status >= 500 && status < 600);
-}
-
-async function sleepWithSignal(ms, signal) {
-  if (!(ms > 0)) return;
-  if (signal?.aborted) throw createAbortError();
-
-  await new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
-
-    const onAbort = () => {
-      cleanup();
-      reject(createAbortError());
-    };
-
-    const cleanup = () => {
-      clearTimeout(timeoutId);
-      if (signal) {
-        try { signal.removeEventListener('abort', onAbort); } catch (_) {}
-      }
-    };
-
-    if (signal) {
-      signal.addEventListener('abort', onAbort, { once: true });
-    }
-  });
 }
 
 async function waitBeforeRetry({
@@ -610,7 +578,7 @@ async function translateWithOpenRouter(text, settings, requestOptions = {}) {
             model: settings.openrouterModel,
             messages: messages
           }),
-          timeoutMs: requestOptions.timeoutMs ?? 180000,
+          timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
           signal: requestOptions.signal
         },
         'OpenRouter API リクエスト中にエラーが発生'
@@ -647,7 +615,7 @@ async function translateWithGemini(text, settings, requestOptions = {}) {
           ],
           generationConfig: { temperature: 0.2 }
         }),
-        timeoutMs: requestOptions.timeoutMs ?? 180000,
+        timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
         signal: requestOptions.signal
       },
       'Gemini API リクエスト中にエラーが発生'
@@ -691,7 +659,7 @@ async function translateWithCerebras(text, settings, requestOptions = {}) {
         temperature: 0.2,
         stream: false
       }),
-      timeoutMs: requestOptions.timeoutMs ?? 180000,
+      timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
       signal: requestOptions.signal
     },
     'Cerebras API リクエスト中にエラーが発生'
@@ -728,7 +696,7 @@ async function translateWithCerebrasStream(text, settings, handlers = {}, reques
         temperature: 0.2,
         stream: true
       }),
-      timeoutMs: requestOptions.timeoutMs ?? 180000,
+      timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
       signal: requestOptions.signal
     },
     handlers,
@@ -766,7 +734,7 @@ async function translateWithZai(text, settings, requestOptions = {}) {
         temperature: 0.2,
         stream: false
       }),
-      timeoutMs: requestOptions.timeoutMs ?? 180000,
+      timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
       signal: requestOptions.signal
     },
     'Z-AI API リクエスト中にエラーが発生'
@@ -797,7 +765,7 @@ async function translateWithOllama(text, settings, requestOptions = {}) {
           prompt,
           stream: false
         }),
-        timeoutMs: requestOptions.timeoutMs ?? 180000,
+        timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
         signal: requestOptions.signal
       },
       'Ollama API リクエスト中にエラーが発生'
@@ -835,7 +803,7 @@ async function translateWithLmStudio(text, settings, requestOptions = {}) {
   try {
     const data = await makeApiRequest(
       apiUrl,
-      { method: 'POST', headers, body, timeoutMs: requestOptions.timeoutMs ?? 180000, signal: requestOptions.signal },
+      { method: 'POST', headers, body, timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS, signal: requestOptions.signal },
       'LM Studio API リクエスト中にエラーが発生'
     );
     return (data.choices?.[0]?.message?.content || '').trim();
@@ -870,7 +838,7 @@ async function translateWithLmStudioStream(text, settings, handlers = {}, reques
         temperature: 0.2,
         stream: true
       }),
-      timeoutMs: requestOptions.timeoutMs ?? 180000,
+      timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
       signal: requestOptions.signal
     },
     handlers,
@@ -922,7 +890,7 @@ async function translateImageWithLmStudio(imageInput, settings, requestOptions =
       method: 'POST',
       headers,
       body,
-      timeoutMs: requestOptions.timeoutMs ?? 180000,
+      timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
       signal: requestOptions.signal
     },
     'LM Studio 画像翻訳 API リクエスト中にエラーが発生'
@@ -1010,7 +978,7 @@ async function translateBatchStructuredGemini(texts, settings, requestOptions = 
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      timeoutMs: requestOptions.timeoutMs ?? 180000,
+      timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
       signal: requestOptions.signal
     },
     'Gemini API (structured batch) リクエスト中にエラーが発生'
@@ -1053,7 +1021,7 @@ async function translateBatchStructuredOpenAICompatible(texts, settings, request
             stream: false,
             response_format: responseFormat
           }),
-          timeoutMs: requestOptions.timeoutMs ?? 180000,
+          timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
           signal: requestOptions.signal
         },
         `${cfg.providerLabel} API (structured batch) リクエスト中にエラーが発生`
@@ -1098,7 +1066,7 @@ async function translateBatchStructuredOllama(texts, settings, requestOptions = 
             stream: false,
             format
           }),
-          timeoutMs: requestOptions.timeoutMs ?? 180000,
+          timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
           signal: requestOptions.signal
         },
         'Ollama API (structured batch) リクエスト中にエラーが発生'

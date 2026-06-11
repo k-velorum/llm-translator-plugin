@@ -1,3 +1,8 @@
+import {
+  PROVIDER_AVAILABILITY_TIMEOUT_MS,
+  TRANSLATION_TIMEOUT_MS
+} from '../shared/constants.js';
+
 const OFFSCREEN_DOCUMENT_PATH = 'offscreen.html';
 const TARGET = 'chromePromptRuntime';
 
@@ -48,7 +53,7 @@ export async function callChromePromptRuntime(action, payload = {}, requestOptio
   await ensureChromePromptOffscreenDocument();
 
   const requestId = `chromePrompt:${Date.now()}:${++requestSeq}`;
-  const timeoutMs = requestOptions.timeoutMs ?? 180000;
+  const timeoutMs = requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS;
   const externalSignal = requestOptions.signal;
 
   return await new Promise((resolve, reject) => {
@@ -135,7 +140,7 @@ export async function callChromePromptRuntime(action, payload = {}, requestOptio
 }
 
 export async function getChromePromptAvailability(settings = {}) {
-  return callChromePromptRuntime('availability', { settings }, { timeoutMs: 30000 });
+  return callChromePromptRuntime('availability', { settings }, { timeoutMs: PROVIDER_AVAILABILITY_TIMEOUT_MS });
 }
 
 export async function translateWithChromePromptRuntime(text, settings, requestOptions = {}) {

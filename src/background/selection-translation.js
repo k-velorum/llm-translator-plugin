@@ -10,6 +10,7 @@ import {
   createStreamEventEmitter,
   sendMessageToFrame
 } from './streaming.js';
+import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
 
 const selectionStreamSessions = new Map();
 
@@ -260,7 +261,7 @@ export async function translateAndNotify(tabId, text, frameId = 0) {
             await emitter.pushDelta(deltaText);
           }
         },
-        { signal: abortController.signal, timeoutMs: 180000 }
+        { signal: abortController.signal, timeoutMs: TRANSLATION_TIMEOUT_MS }
       );
 
       await emitter.complete(translatedText);

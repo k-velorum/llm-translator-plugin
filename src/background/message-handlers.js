@@ -11,8 +11,9 @@ import {
   createStreamEventEmitter,
   normalizeStreamError
 } from './streaming.js';
+import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
 
-const STREAM_TIMEOUT_MS = 180000;
+const STREAM_TIMEOUT_MS = TRANSLATION_TIMEOUT_MS;
 const activeStreams = new Map();
 
 async function cleanupActiveStream(requestId, { notifyCancelled = false } = {}) {
@@ -211,7 +212,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
   if (message.action === 'translateTweet') {
       loadSettings()
       .then(settings => {
-        return translateText(message.text, settings, { timeoutMs: 180000 })
+        return translateText(message.text, settings, { timeoutMs: TRANSLATION_TIMEOUT_MS })
           .then(translatedText => {
             sendResponse({ translatedText: translatedText });
           })
@@ -239,7 +240,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
       .then(currentSettings => {
         // popupからの設定で上書きする（APIキーやモデルなど）
         const testSettings = { ...currentSettings, ...message.settings };
-        return translateText(message.text, testSettings, { timeoutMs: 180000 })
+        return translateText(message.text, testSettings, { timeoutMs: TRANSLATION_TIMEOUT_MS })
           .then(result => {
             sendResponse({ result: result });
           })

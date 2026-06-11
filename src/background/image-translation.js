@@ -2,9 +2,11 @@ import { loadSettings } from './settings.js';
 import { appendLog, getProviderMeta } from './logging.js';
 import { formatErrorDetails, getProviderCapabilities, translateImage } from './api.js';
 import { sendMessageToFrame } from './streaming.js';
-
-const IMAGE_FETCH_TIMEOUT_MS = 30000;
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+import {
+  IMAGE_FETCH_TIMEOUT_MS,
+  MAX_IMAGE_BYTES,
+  TRANSLATION_TIMEOUT_MS
+} from '../shared/constants.js';
 
 function isSerializableRect(rect) {
   return Number.isFinite(rect?.left)
@@ -233,7 +235,7 @@ export async function translateImageAndNotify(tabId, srcUrl, frameId = 0) {
   let translatedText;
   try {
     const imageInput = await normalizeImageInput(srcUrl, { tabId, frameId });
-    translatedText = await translateImage(imageInput, settings, { timeoutMs: 180000 });
+    translatedText = await translateImage(imageInput, settings, { timeoutMs: TRANSLATION_TIMEOUT_MS });
   } catch (error) {
     console.error('画像翻訳処理中のエラー:', error);
     await appendLog({

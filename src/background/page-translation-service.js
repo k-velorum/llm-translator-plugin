@@ -6,17 +6,13 @@ import {
 } from './settings.js';
 import { translateText, translateBatchStructured } from './api.js';
 import { appendLog, getProviderMeta } from './logging.js';
+import {
+  PAGE_TRANSLATION_TIMEOUT_LONG_MS,
+  PAGE_TRANSLATION_TIMEOUT_LONG_THRESHOLD_CHARS,
+  PAGE_TRANSLATION_TIMEOUT_SHORT_MS
+} from '../shared/constants.js';
+import { sleep } from '../shared/async-utils.js';
 
-const PAGE_TRANSLATION_SEPARATOR = '[[[SEP]]]';
-const PAGE_TRANSLATION_MAX_CHARS = 3500;
-const PAGE_TRANSLATION_MAX_ITEMS_PER_CHUNK = 50;
-const PAGE_TRANSLATION_CHUNKS_PER_PASS = 6;
-const PAGE_TRANSLATION_DELAY_MS = 400;
-const PAGE_TRANSLATION_CONCURRENCY = 4;
-
-const PAGE_TRANSLATION_TIMEOUT_SHORT_MS = 120000;
-const PAGE_TRANSLATION_TIMEOUT_LONG_MS = 180000;
-const PAGE_TRANSLATION_TIMEOUT_LONG_THRESHOLD_CHARS = 6000;
 const STRUCTURED_RESPONSE_BUDGET_MULTIPLIER = 2.2;
 const STRUCTURED_ITEMS_MULTIPLIER = 4;
 const STRUCTURED_MAX_ITEMS_CAP = 500;
@@ -27,10 +23,6 @@ function getTimeoutMsForPromptLen(len) {
   return len > PAGE_TRANSLATION_TIMEOUT_LONG_THRESHOLD_CHARS
     ? PAGE_TRANSLATION_TIMEOUT_LONG_MS
     : PAGE_TRANSLATION_TIMEOUT_SHORT_MS;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function clampInt(value, min, max, fallback) {
@@ -167,9 +159,11 @@ function chunkByEstimatedOutputAndItems(items, maxChars, maxItems, sep, useStruc
 }
 
 async function translateJoinedOrSplit(chunk, settings, params, depth = 0, requestOptions = {}) {
-  const sep = params?.sep || PAGE_TRANSLATION_SEPARATOR;
-  const delayMs = typeof params?.delayMs === 'number' ? params.delayMs : PAGE_TRANSLATION_DELAY_MS;
-  const maxChars = typeof params?.maxChars === 'number' ? params.maxChars : PAGE_TRANSLATION_MAX_CHARS;
+  const sep = params?.sep || DEFAULT_SETTINGS.pageTranslationSeparator;
+  const delayMs =
+    typeof params?.delayMs === 'number' ? params.delayMs : DEFAULT_SETTINGS.pageTranslationDelayMs;
+  const maxChars =
+    typeof params?.maxChars === 'number' ? params.maxChars : DEFAULT_SETTINGS.pageTranslationMaxChars;
   const structuredDisabled = params?.runtime?.structuredDisabled === true;
   const useStructuredOutput = params?.useStructuredOutput !== false && !structuredDisabled;
   const separatorSystemPrompt = (params?.separatorSystemPrompt || '').trim();
@@ -340,9 +334,9 @@ async function processPageTranslationPass(session, chunksPerPass) {
   const { tabId, snapshotId, settings, chunks } = session;
   const delayMs = typeof session.params?.delayMs === 'number'
     ? session.params.delayMs
-    : PAGE_TRANSLATION_DELAY_MS;
-  const concurrency = clampInt(session.params?.concurrency, 1, 20, PAGE_TRANSLATION_CONCURRENCY);
-  const sep = session.params?.sep || PAGE_TRANSLATION_SEPARATOR;
+    : DEFAULT_SETTINGS.pageTranslationDelayMs;
+  const concurrency = clampInt(session.params?.concurrency, 1, 20, DEFAULT_SETTINGS.pageTranslationConcurrency);
+  const sep = session.params?.sep || DEFAULT_SETTINGS.pageTranslationSeparator;
 
   let processed = 0;
 
@@ -522,23 +516,38 @@ export async function startPageTranslation(tabId) {
     const snapshotId = response.snapshotId;
     const settings = await loadSettings();
 
-    const sep = (settings.pageTranslationSeparator || PAGE_TRANSLATION_SEPARATOR).toString();
+    const sep = (settings.pageTranslationSeparator || DEFAULT_SETTINGS.pageTranslationSeparator).toString();
     const separatorSystemPrompt = buildSeparatorFallbackPrompt(settings);
-    const maxChars = clampInt(settings.pageTranslationMaxChars, 500, 32000, PAGE_TRANSLATION_MAX_CHARS);
+    const maxChars = clampInt(
+      settings.pageTranslationMaxChars,
+      500,
+      32000,
+      DEFAULT_SETTINGS.pageTranslationMaxChars
+    );
     const maxItems = clampInt(
       settings.pageTranslationMaxItemsPerChunk,
       5,
       500,
-      PAGE_TRANSLATION_MAX_ITEMS_PER_CHUNK
+      DEFAULT_SETTINGS.pageTranslationMaxItemsPerChunk
     );
     const chunksPerPass = clampInt(
       settings.pageTranslationChunksPerPass,
       1,
       100,
-      PAGE_TRANSLATION_CHUNKS_PER_PASS
+      DEFAULT_SETTINGS.pageTranslationChunksPerPass
     );
-    const delayMs = clampInt(settings.pageTranslationDelayMs, 0, 60000, PAGE_TRANSLATION_DELAY_MS);
-    const concurrency = clampInt(settings.pageTranslationConcurrency, 1, 20, PAGE_TRANSLATION_CONCURRENCY);
+    const delayMs = clampInt(
+      settings.pageTranslationDelayMs,
+      0,
+      60000,
+      DEFAULT_SETTINGS.pageTranslationDelayMs
+    );
+    const concurrency = clampInt(
+      settings.pageTranslationConcurrency,
+      1,
+      20,
+      DEFAULT_SETTINGS.pageTranslationConcurrency
+    );
     const useStructuredOutput = settings.pageTranslationUseStructuredOutput !== false;
 
     const chunks = chunkByEstimatedOutputAndItems(pageTexts, maxChars, maxItems, sep, useStructuredOutput);
@@ -654,7 +663,7 @@ export function handlePageTranslationRuntimeMessage(message, sender, sendRespons
         try {
           await processPageTranslationPass(
             session,
-            session.params?.chunksPerPass || PAGE_TRANSLATION_CHUNKS_PER_PASS
+            session.params?.chunksPerPass || DEFAULT_SETTINGS.pageTranslationChunksPerPass
           );
         } catch (e) {
           await logPassFailed(session, tabId, snapshotId, e);
