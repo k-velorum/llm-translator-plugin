@@ -193,247 +193,252 @@ async function handleModelListRequest(provider, apiKey, endpoint, headers, dataP
   );
 }
 
-
-// バックグラウンドでのメッセージ処理
-export function handleBackgroundMessage(message, sender, sendResponse) {
-  if (message.action === 'startTranslationStream') {
-    startStreamingTranslation(message, sender, sendResponse);
-    return true;
+function handleCancelTranslationStream(message, _sender, sendResponse) {
+  const requestId = typeof message?.requestId === 'string' ? message.requestId.trim() : '';
+  const session = requestId ? activeStreams.get(requestId) : null;
+  if (!session) {
+    sendResponse({ cancelled: cancelSelectionStream(requestId) });
+    return;
   }
 
-  if (message.action === 'cancelTranslationStream') {
-    const requestId = typeof message?.requestId === 'string' ? message.requestId.trim() : '';
-    const session = requestId ? activeStreams.get(requestId) : null;
-    if (!session) {
-      sendResponse({ cancelled: cancelSelectionStream(requestId) });
-      return true;
-    }
+  session.abortController.abort();
+  cleanupActiveStream(requestId, { notifyCancelled: true })
+    .then(() => sendResponse({ cancelled: true }))
+    .catch((error) => sendResponse({ cancelled: false, error: normalizeStreamError(error) }));
+}
 
-    session.abortController.abort();
-    cleanupActiveStream(requestId, { notifyCancelled: true })
-      .then(() => sendResponse({ cancelled: true }))
-      .catch((error) => sendResponse({ cancelled: false, error: normalizeStreamError(error) }));
-    return true;
+async function handleEmbeddedTextTranslation(message, sender, sendResponse, { eventName = 'tweet_failed', logLabel = 'ツイート翻訳エラー' } = {}) {
+  const settings = await loadSettings();
+  try {
+    const translatedText = await translateText(message.text, settings, { timeoutMs: TRANSLATION_TIMEOUT_MS });
+    sendResponse({ translatedText });
+  } catch (error) {
+    log.error('messageHandlers', logLabel, error);
+    appendLog({
+      level: 'error',
+      type: 'translate',
+      event: eventName,
+      ...getProviderMeta(settings),
+      tabId: sender?.tab?.id,
+      message: error?.message || String(error)
+    });
+    sendResponse({ error: normalizeError(error) });
   }
+}
 
-  // ツイート翻訳リクエストの処理
-  if (message.action === 'translateTweet') {
-      loadSettings()
-      .then(settings => {
-        return translateText(message.text, settings, { timeoutMs: TRANSLATION_TIMEOUT_MS })
-          .then(translatedText => {
-            sendResponse({ translatedText: translatedText });
-          })
-          .catch(error => {
-            log.error('messageHandlers', 'ツイート翻訳エラー', error);
-            appendLog({
-              level: 'error',
-              type: 'translate',
-              event: 'tweet_failed',
-              ...getProviderMeta(settings),
-              tabId: sender?.tab?.id,
-              message: error?.message || String(error)
-            });
-            // エラーオブジェクト全体を送るのではなく、必要な情報だけ送る
-            sendResponse({ error: normalizeError(error) });
-          });
-      });
-    return true; // 非同期レスポンスを示すためにtrueを返す
+async function handleTestTranslate(message, sender, sendResponse) {
+  const currentSettings = await loadSettings();
+  const testSettings = { ...currentSettings, ...message.settings };
+  try {
+    const result = await translateText(message.text, testSettings, { timeoutMs: TRANSLATION_TIMEOUT_MS });
+    sendResponse({ result });
+  } catch (error) {
+    log.error('messageHandlers', 'テスト翻訳エラー', error);
+    appendLog({
+      level: 'error',
+      type: 'translate',
+      event: 'test_failed',
+      ...getProviderMeta(testSettings),
+      tabId: sender?.tab?.id,
+      message: error?.message || String(error)
+    });
+    sendResponse({ error: normalizeError(error) });
   }
+}
 
-  // テスト翻訳リクエストの処理
-  if (message.action === 'testTranslate') {
-      // message.settings を直接使うのではなく、loadSettingsで最新を取得する方が安全かもしれない
-    loadSettings()
-      .then(currentSettings => {
-        // popupからの設定で上書きする（APIキーやモデルなど）
-        const testSettings = { ...currentSettings, ...message.settings };
-        return translateText(message.text, testSettings, { timeoutMs: TRANSLATION_TIMEOUT_MS })
-          .then(result => {
-            sendResponse({ result: result });
-          })
-          .catch(error => {
-            log.error('messageHandlers', 'テスト翻訳エラー', error);
-            appendLog({
-              level: 'error',
-              type: 'translate',
-              event: 'test_failed',
-              ...getProviderMeta(testSettings),
-              tabId: sender?.tab?.id,
-              message: error?.message || String(error)
-            });
-            sendResponse({ error: normalizeError(error) });
-          });
-      });
-    return true;
-  }
-
-  // OpenRouter APIキー検証リクエストの処理
-  if (message.action === 'verifyOpenrouterApiKey') {
-    loadSettings().then(settings => {
+const PROVIDER_VERIFIERS = {
+  openrouter: async (message, sendResponse) => {
+    await loadSettings().then(settings => {
       handleApiRequest(
         'OpenRouter APIキー検証',
         message.apiKey,
         'https://openrouter.ai/api/v1/models',
         {
           'Authorization': `Bearer ${message.apiKey}`,
-          'HTTP-Referer': 'chrome-extension://llm-translator', // 適切な値に変更
-          'X-Title': 'LLM Translation Plugin' // 適切な値に変更
+          ...OPENROUTER_HEADERS_BASE
         },
         (result) => {
           sendResponse({
             result: {
               success: true,
-              models: result.data // モデルデータも返す
+              models: result.data
             }
           });
         },
-        (error) => sendResponse({ error: error }),
+        (error) => sendResponse({ error }),
         settings
       );
     });
-    return true;
-  }
-
-  // OpenRouterモデル一覧取得リクエストの処理
-  if (message.action === 'getOpenrouterModels') {
-    loadSettings().then(settings => {
-      const key = message.apiKey || settings.openrouterApiKey;
-      const headers = { ...OPENROUTER_HEADERS_BASE };
-      if (key) headers['Authorization'] = `Bearer ${key}`;
-      handleModelListRequest('OpenRouter', key, 'https://openrouter.ai/api/v1/models', headers, (result) => result.data, sendResponse, settings);
-    });
-    return true;
-  }
-
-  // Cerebras APIキー検証
-  if (message.action === 'verifyCerebrasApiKey') {
+  },
+  cerebras: async (message, sendResponse) => {
     const apiKey = message.apiKey;
     if (!apiKey) {
       sendResponse({ error: normalizeError('Cerebras APIキーが未指定です') });
-      return true;
+      return;
     }
-    const endpoint = 'https://api.cerebras.ai/v1/models';
     makeApiRequest(
-      endpoint,
+      'https://api.cerebras.ai/v1/models',
       { method: 'GET', headers: { 'Authorization': `Bearer ${apiKey}` } },
       'Cerebras APIキー検証中にエラーが発生'
     )
       .then(() => sendResponse({ result: { success: true } }))
       .catch((error) => sendResponse({ error: normalizeError(error) }));
-    return true;
-  }
-
-  // Cerebras モデル一覧取得
-  if (message.action === 'getCerebrasModels') {
-    loadSettings().then((settings) => {
-      const apiKey = message.apiKey || settings.cerebrasApiKey;
-      const endpoint = apiKey
-        ? 'https://api.cerebras.ai/v1/models'
-        : 'https://api.cerebras.ai/public/v1/models?format=openrouter';
-      const headers = apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {};
-      makeApiRequest(endpoint, { method: 'GET', headers }, 'Cerebras モデル一覧取得中にエラーが発生')
-        .then((result) => {
-          const arr = Array.isArray(result?.data)
-            ? result.data
-            : (Array.isArray(result?.models) ? result.models : []);
-          const models = arr.map((m) => ({
-            id: m.id,
-            name: m.name || m.id,
-            context_length: m.context_length,
-            pricing: m.pricing
-          }));
-          sendResponse({ models });
-        })
-        .catch((error) => sendResponse({ error: normalizeError(error) }));
-    });
-    return true;
-  }
-
-  // Gemini APIキー検証
-  if (message.action === 'verifyGeminiApiKey') {
+  },
+  gemini: async (message, sendResponse) => {
     const apiKey = message.apiKey;
     if (!apiKey) {
       sendResponse({ error: normalizeError('Gemini APIキーが未指定です') });
-      return true;
+      return;
     }
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-    makeApiRequest(endpoint, { method: 'GET' }, 'Gemini APIキー検証中にエラーが発生')
+    makeApiRequest(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+      { method: 'GET' },
+      'Gemini APIキー検証中にエラーが発生'
+    )
       .then(() => sendResponse({ result: { success: true } }))
       .catch((error) => sendResponse({ error: normalizeError(error) }));
-    return true;
   }
+};
 
-  // Gemini モデル一覧取得
-  if (message.action === 'getGeminiModels') {
+const PROVIDER_MODEL_LOADERS = {
+  openrouter: async (message, sendResponse) => {
+    const settings = await loadSettings();
+    const key = message.apiKey || settings.openrouterApiKey;
+    const headers = { ...OPENROUTER_HEADERS_BASE };
+    if (key) headers.Authorization = `Bearer ${key}`;
+    await handleModelListRequest('OpenRouter', key, 'https://openrouter.ai/api/v1/models', headers, (result) => result.data, sendResponse, settings);
+  },
+  cerebras: async (message, sendResponse) => {
+    const settings = await loadSettings();
+    const apiKey = message.apiKey || settings.cerebrasApiKey;
+    const endpoint = apiKey
+      ? 'https://api.cerebras.ai/v1/models'
+      : 'https://api.cerebras.ai/public/v1/models?format=openrouter';
+    const headers = apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {};
+    makeApiRequest(endpoint, { method: 'GET', headers }, 'Cerebras モデル一覧取得中にエラーが発生')
+      .then((result) => {
+        const arr = Array.isArray(result?.data)
+          ? result.data
+          : (Array.isArray(result?.models) ? result.models : []);
+        const models = arr.map((m) => ({
+          id: m.id,
+          name: m.name || m.id,
+          context_length: m.context_length,
+          pricing: m.pricing
+        }));
+        sendResponse({ models });
+      })
+      .catch((error) => sendResponse({ error: normalizeError(error) }));
+  },
+  gemini: async (message, sendResponse) => {
     const apiKey = message.apiKey;
     if (!apiKey) {
       sendResponse({ error: normalizeError('Gemini APIキーが未指定です') });
-      return true;
+      return;
     }
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
-    makeApiRequest(endpoint, { method: 'GET' }, 'Gemini モデル一覧取得中にエラーが発生')
+    makeApiRequest(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
+      { method: 'GET' },
+      'Gemini モデル一覧取得中にエラーが発生'
+    )
       .then((result) => {
         const modelsArr = result.models || [];
         const models = modelsArr.map(m => ({ id: (m.name || '').replace('models/', ''), name: m.displayName || m.name, context_length: m.inputTokenLimit }));
         sendResponse({ models });
       })
       .catch((error) => sendResponse({ error: normalizeError(error) }));
-    return true;
-  }
-
-  // Ollama モデル一覧取得
-  if (message.action === 'getOllamaModels') {
-    loadSettings().then(settings => {
-      const server = (message.server || settings.ollamaServer || 'http://localhost:11434').replace(/\/$/, '');
-      const endpoint = `${server}/api/tags`;
-      makeApiRequest(endpoint, { method: 'GET' }, 'Ollama モデル一覧取得中にエラーが発生', 'info')
-        .then((result) => {
-          const arr = result.models || [];
-          const models = arr.map(m => ({ id: m.name, name: m.name }));
-          sendResponse({ models });
-        })
-        .catch((error) => sendResponse({ error: normalizeError(error) }));
+  },
+  ollama: async (message, sendResponse) => {
+    const settings = await loadSettings();
+    const server = (message.server || settings.ollamaServer || 'http://localhost:11434').replace(/\/$/, '');
+    makeApiRequest(`${server}/api/tags`, { method: 'GET' }, 'Ollama モデル一覧取得中にエラーが発生', 'info')
+      .then((result) => {
+        const arr = result.models || [];
+        const models = arr.map(m => ({ id: m.name, name: m.name }));
+        sendResponse({ models });
+      })
+      .catch((error) => sendResponse({ error: normalizeError(error) }));
+  },
+  lmstudio: async (message, sendResponse) => {
+    const settings = await loadSettings();
+    const server = (message.server || settings.lmstudioServer || 'http://localhost:1234').replace(/\/$/, '');
+    const endpoint = `${server}/v1/models`;
+    const headers = {};
+    const apiKey = message.apiKey || settings.lmstudioApiKey;
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    log.info('messageHandlers', 'getLmstudioModels:start', {
+      server,
+      endpoint,
+      hasApiKey: Boolean(apiKey)
     });
-    return true;
-  }
-
-  // LM Studio モデル一覧取得 (OpenAI互換)
-  if (message.action === 'getLmstudioModels') {
-    loadSettings().then(settings => {
-      const server = (message.server || settings.lmstudioServer || 'http://localhost:1234').replace(/\/$/, '');
-      const endpoint = `${server}/v1/models`;
-      const headers = {};
-      const apiKey = message.apiKey || settings.lmstudioApiKey;
-      if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
-      log.info('messageHandlers', 'getLmstudioModels:start', {
-        server,
-        endpoint,
-        hasApiKey: Boolean(apiKey)
-      });
-      makeApiRequest(endpoint, { method: 'GET', headers }, 'LM Studio モデル一覧取得中にエラーが発生', 'info')
-        .then((result) => {
-          const arr = result.data || [];
-          const models = arr.map(m => ({ id: m.id, name: m.id }));
-          log.info('messageHandlers', 'getLmstudioModels:response', {
-            server,
-            rawModelCount: Array.isArray(arr) ? arr.length : null,
-            modelCount: models.length
-          });
-          sendResponse({ models });
-        })
-        .catch((error) => {
-          log.warn('messageHandlers', 'getLmstudioModels:error', {
-            server,
-            message: error.message
-          });
-          sendResponse({ error: normalizeError(error) });
+    makeApiRequest(endpoint, { method: 'GET', headers }, 'LM Studio モデル一覧取得中にエラーが発生', 'info')
+      .then((result) => {
+        const arr = result.data || [];
+        const models = arr.map(m => ({ id: m.id, name: m.id }));
+        log.info('messageHandlers', 'getLmstudioModels:response', {
+          server,
+          rawModelCount: Array.isArray(arr) ? arr.length : null,
+          modelCount: models.length
         });
-    });
-    return true;
+        sendResponse({ models });
+      })
+      .catch((error) => {
+        log.warn('messageHandlers', 'getLmstudioModels:error', {
+          server,
+          message: error.message
+        });
+        sendResponse({ error: normalizeError(error) });
+      });
   }
+};
 
-  // 他のメッセージタイプがあればここに追加
+function handleVerifyApiKey(message, _sender, sendResponse, providerOverride) {
+  const provider = providerOverride || message.provider;
+  const verifier = PROVIDER_VERIFIERS[provider];
+  if (!verifier) {
+    sendResponse({ error: normalizeError(`APIキー検証は未対応のプロバイダーです: ${provider || 'unknown'}`) });
+    return;
+  }
+  verifier(message, sendResponse).catch((error) => sendResponse({ error: normalizeError(error) }));
+}
 
-  return false; // 同期的に処理が完了したか、処理するハンドラがなかった場合
+function handleGetModels(message, _sender, sendResponse, providerOverride) {
+  const provider = providerOverride || message.provider;
+  const loader = PROVIDER_MODEL_LOADERS[provider];
+  if (!loader) {
+    sendResponse({ error: normalizeError(`モデル一覧取得は未対応のプロバイダーです: ${provider || 'unknown'}`) });
+    return;
+  }
+  loader(message, sendResponse).catch((error) => sendResponse({ error: normalizeError(error) }));
+}
+
+const ACTION_HANDLERS = {
+  startTranslationStream: (message, sender, sendResponse) => startStreamingTranslation(message, sender, sendResponse),
+  cancelTranslationStream: handleCancelTranslationStream,
+  translateTweet: (message, sender, sendResponse) => handleEmbeddedTextTranslation(message, sender, sendResponse),
+  translateEmbeddedText: (message, sender, sendResponse) =>
+    handleEmbeddedTextTranslation(message, sender, sendResponse, {
+      eventName: 'embedded_text_failed',
+      logLabel: '埋め込みテキスト翻訳エラー'
+    }),
+  testTranslate: handleTestTranslate,
+  verifyApiKey: (message, sender, sendResponse) => handleVerifyApiKey(message, sender, sendResponse),
+  getModels: (message, sender, sendResponse) => handleGetModels(message, sender, sendResponse),
+  verifyOpenrouterApiKey: (message, sender, sendResponse) => handleVerifyApiKey(message, sender, sendResponse, 'openrouter'),
+  getOpenrouterModels: (message, sender, sendResponse) => handleGetModels(message, sender, sendResponse, 'openrouter'),
+  verifyCerebrasApiKey: (message, sender, sendResponse) => handleVerifyApiKey(message, sender, sendResponse, 'cerebras'),
+  getCerebrasModels: (message, sender, sendResponse) => handleGetModels(message, sender, sendResponse, 'cerebras'),
+  verifyGeminiApiKey: (message, sender, sendResponse) => handleVerifyApiKey(message, sender, sendResponse, 'gemini'),
+  getGeminiModels: (message, sender, sendResponse) => handleGetModels(message, sender, sendResponse, 'gemini'),
+  getOllamaModels: (message, sender, sendResponse) => handleGetModels(message, sender, sendResponse, 'ollama'),
+  getLmstudioModels: (message, sender, sendResponse) => handleGetModels(message, sender, sendResponse, 'lmstudio')
+};
+
+
+// バックグラウンドでのメッセージ処理
+export function handleBackgroundMessage(message, sender, sendResponse) {
+  const handler = ACTION_HANDLERS[message?.action];
+  if (!handler) return false;
+  handler(message, sender, sendResponse);
+  return true;
 }
