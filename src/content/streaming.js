@@ -1,3 +1,6 @@
+(() => {
+  'use strict';
+
 const STREAM_RENDER_INTERVAL_MS = 50;
 const streamViewSessions = new Map();
 
@@ -6,7 +9,7 @@ function createTranslationRequestId(kind = 'translate') {
     if (typeof crypto?.randomUUID === 'function') {
       return `${kind}-${crypto.randomUUID()}`;
     }
-  } catch (_) {}
+  } catch {}
   return `${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
@@ -165,3 +168,20 @@ function startEmbeddedTranslationStream({ kind, text, render, element, meta }) {
     promise: session.promise
   };
 }
+
+window.LLMT = window.LLMT || {};
+window.LLMT.streaming = {
+  createTranslationRequestId,
+  providerSupportsStreaming,
+  cancelTranslationStream,
+  registerStreamSession,
+  discardStreamSession,
+  findStreamSessionByElement,
+  appendStreamSessionDelta,
+  completeStreamSession,
+  failStreamSession,
+  cancelLocalStreamSession,
+  startEmbeddedTranslationStream
+};
+Object.assign(window, window.LLMT.streaming);
+})();
