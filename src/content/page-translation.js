@@ -1,3 +1,6 @@
+(() => {
+  'use strict';
+
 let pageTranslationSnapshot = { id: 0, nodes: [] };
 let pageTranslationControls = null;
 let pageTranslationControlsSnapshotId = null;
@@ -235,3 +238,14 @@ function hidePageTranslationControls() {
   pageTranslationControls = null;
   pageTranslationControlsSnapshotId = null;
 }
+
+window.LLMT = window.LLMT || {};
+window.LLMT.pageTranslation = {
+  capturePageTextSnapshot,
+  applyPageTranslation,
+  applyPageTranslationChunk,
+  showPageTranslationControls,
+  hidePageTranslationControls
+};
+Object.assign(window, window.LLMT.pageTranslation);
+})();
