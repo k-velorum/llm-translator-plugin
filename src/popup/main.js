@@ -1,9 +1,10 @@
-document.addEventListener('DOMContentLoaded', init);
+import {
+  DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT,
+  DEFAULT_TRANSLATION_SYSTEM_PROMPT,
+  LEGACY_COMBINED_TRANSLATION_SYSTEM_PROMPT
+} from '../background/settings.js';
 
-const DEFAULT_TRANSLATION_SYSTEM_PROMPT =
-  '指示された文章を日本語に翻訳してください。翻訳結果のみを出力してください。';
-const DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT =
-  '特殊区切りトークン [[[SEP]]] が含まれる場合、それらは絶対に削除・翻訳・変更せず、そのまま出力に保持してください。トークンの数と順序も厳密に維持してください。';
+document.addEventListener('DOMContentLoaded', init);
 
 // 共通ユーティリティ関数
 const PopupUtils = {
@@ -853,9 +854,8 @@ function loadSettings({
       // 翻訳システムプロンプトの復元
       try {
         const els = getElements();
-        const legacyCombinedPrompt =
-          `${DEFAULT_TRANSLATION_SYSTEM_PROMPT}${DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT}`;
-        const usesLegacyCombinedPrompt = settings.translationSystemPrompt === legacyCombinedPrompt;
+        const usesLegacyCombinedPrompt =
+          settings.translationSystemPrompt === LEGACY_COMBINED_TRANSLATION_SYSTEM_PROMPT;
         const translationPrompt = usesLegacyCombinedPrompt
           ? DEFAULT_TRANSLATION_SYSTEM_PROMPT
           : (settings.translationSystemPrompt || DEFAULT_TRANSLATION_SYSTEM_PROMPT);
