@@ -90,10 +90,12 @@ LLM 翻訳 Chrome 拡張（Manifest V3）の段階的リファクタリング計
 
 - フェーズ1〜6のコードリファクタリングは完了。push は未実施。
 - provider 追加時の主な修正箇所は `src/background/api/providers/<provider>.js`、`src/background/api/registry.js`、`src/popup/provider-ui.js`、必要に応じて `src/popup/provider-default-models.js` とテスト。
-- 最大ファイルは `src/background/message-handlers.js` 435行。`src/background/page-translation-service.js` は 635行から 305行へ縮小。
-- 自動検証: `bun run lint` は error 0（warning 66）、`bun run test` は 9 files / 37 tests pass、`manifest.json` parse OK。
+- 最大ファイルは `src/content/twitter.js` 425行。`src/background/message-handlers.js` は 435行から 242行へ、
+  `src/background/page-translation-service.js` は 635行から 305行へ縮小。
+- 自動検証: `bun run lint` は error 0（warning 29）、`bun run test` は 10 files / 45 tests pass、`manifest.json` parse OK。
 - 通常 Chrome の既存プロファイルで、LM Studio 設定復元・popup Test・選択翻訳（main frame / iframe）・
   ページ翻訳・X / YouTube のボタン注入と翻訳・Feature OFF/ON を確認済み。
-- フルプロバイダーマトリクス、画像翻訳、ショートカット、20回開閉 listener 確認、既存プロファイル上書きロードは未実施。
-- レビュー（2026-06-12）で確認された残課題（verify/getModels の置き場所逸脱、message-handlers 未分割、
-  lint warning 66件、残る実機検証・追加手順実証）は [07-phase7-followup.md](07-phase7-followup.md) で対応する。
+- フェーズ7で verify/getModels を provider モジュールへ移設し、追加の handlers/ 分割は不要と判断。
+- ダミープロバイダー実証により、provider 追加時の製品コード修正箇所は 4ファイル
+  （provider 実装、registry、provider UI、default models）と確認。実証コミットは revert 済み。
+- フルプロバイダーマトリクス、画像翻訳、ショートカット、20回開閉 listener 確認、既存プロファイル上書きロードは未確認として記録済み。

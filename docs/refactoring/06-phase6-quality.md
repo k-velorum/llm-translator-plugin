@@ -90,6 +90,8 @@ UI 層（popup/content）の DOM テストは費用対効果が低いため**ス
 - `CLAUDE.md` / `PROJECT_WIKI.md` / `README.md` は新構造に合わせて更新。
 - メトリクス: source JS 50ファイル、最大ファイル `src/background/message-handlers.js` 435行、popup 最大 291行、content 最大 425行。
 - `manifest.json` parse OK。
+- フェーズ7後の最終メトリクス: `bun run test` は 10 files / 45 tests pass、`bun run lint` は error 0 /
+  warning 29。`message-handlers.js` は 242行、最大ファイルは `src/content/twitter.js` 425行。
 - 通常 Chrome の既存プロファイルで、LM Studio 設定復元・popup Test・選択翻訳（main frame / iframe）・
   ページ翻訳・X / YouTube のボタン注入と翻訳・Feature OFF/ON を確認。詳細は
   [99-verification-checklist.md](99-verification-checklist.md) に記録。

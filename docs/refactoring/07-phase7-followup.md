@@ -136,14 +136,14 @@ src/background/handlers/
 
 ## 完了条件
 
-- [ ] 7-0 の基準点スモークが PASS（または発見された不具合の修正が完了）している
-- [ ] `PROVIDER_VERIFIERS` / `PROVIDER_MODEL_LOADERS` が消滅し、provider のエンドポイント
+- [x] 7-0 の基準点スモークが PASS（または発見された不具合の修正が完了）している
+- [x] `PROVIDER_VERIFIERS` / `PROVIDER_MODEL_LOADERS` が消滅し、provider のエンドポイント
       記述が `providers/*.js` 内に閉じている（grep で URL の二重記述ゼロを確認）
-- [ ] verify/getModels のフォールバック順序・応答形状の回帰テストが green
-- [ ] message-handlers.js の分割可否が判断・記録され、分割した場合は各 200 行前後
-- [ ] lint warning が 30 件以下で、残存分の内訳が実績欄に記録されている
-- [ ] ダミープロバイダー実証の結果（修正箇所数）が記録され、CLAUDE.md の手順と一致している
-- [ ] チェックリスト全項目が「PASS or 未確認（日付付き）」で埋まっている
+- [x] verify/getModels のフォールバック順序・応答形状の回帰テストが green
+- [x] message-handlers.js の分割可否が判断・記録され、分割した場合は各 200 行前後
+- [x] lint warning が 30 件以下で、残存分の内訳が実績欄に記録されている
+- [x] ダミープロバイダー実証の結果（修正箇所数）が記録され、CLAUDE.md の手順と一致している
+- [x] チェックリスト全項目が「PASS or 未確認（日付付き）」で埋まっている
 
 ## リスクと対策
 
@@ -169,8 +169,18 @@ src/background/handlers/
 - 7-0 基準点スモーク: 2026-06-12 に通常 Chrome 既存プロファイルで LM Studio 設定復元・popup Test・
   選択翻訳（main frame / iframe）・ページ翻訳・X / YouTube のボタン注入と翻訳・Feature OFF/ON を確認。
   未確認項目は [99-verification-checklist.md](99-verification-checklist.md) に日付付きで記録。
-- 7-1 移設:
-- 7-2 分割判断:
-- 7-3 lint warning 件数推移:
-- 7-4 実証結果（修正ファイル数）:
-- 7-5 最終スモーク:
+- 7-1 移設: `verify` / `getModels` を provider モジュールへ移設し、
+  `PROVIDER_VERIFIERS` / `PROVIDER_MODEL_LOADERS` を削除。OpenRouter / Gemini / Cerebras /
+  Ollama / LM Studio の URL・ヘッダ・fallback 順序を unit test で固定。grep で provider 外の
+  endpoint 二重記述なしを確認。
+- 7-2 分割判断: `message-handlers.js` は 435行から 242行へ縮小したため、追加の handlers/
+  分割は見送り。現時点では action dispatch と stream/translation handler が同居しても許容範囲。
+- 7-3 lint warning 件数推移: 66件から、provider 移設直後の 67件を経て、未使用例外・不要エスケープ・
+  追加テストの長い describe を解消して 29件。残存は complexity / max-lines-per-function のみ。
+- 7-4 実証結果（修正ファイル数）: ダミープロバイダーを履歴上で一時追加し、直後に revert。
+  追加時の修正は製品コード 4ファイル（`providers/dummy.js`、`registry.js`、`provider-ui.js`、
+  `provider-default-models.js`）+ registry test 1ファイル。`settings-form.js` / `main.js` の固定 provider
+  リストは事前に汎用化し、追加手順から外した。
+- 7-5 最終スモーク: 実機追加スモークは 7-0 の範囲から拡張していない。全プロバイダー実 API、
+  画像翻訳、ショートカット、20回 listener、アップグレード互換は未確認として
+  [99-verification-checklist.md](99-verification-checklist.md) に日付付きで残した。

@@ -13,7 +13,7 @@
 - `background.js`: service worker entry。イベント登録と message dispatch を初期化します。
 - `src/background/api.js`: provider registry を参照する薄い facade。provider 分岐をここへ戻さないでください。
 - `src/background/api/registry.js`: provider 定義、settings key、capabilities の単一ソース。
-- `src/background/api/providers/*.js`: provider 固有の translate / stream / structured batch 実装。
+- `src/background/api/providers/*.js`: provider 固有の translate / stream / structured batch / verify / getModels 実装。
 - `src/background/api/http.js`: HTTP、SSE、retry、レスポンス抽出の共通層。
 - `src/background/message-handlers.js`: runtime action table。provider 操作は `verifyApiKey { provider }` / `getModels { provider }` に統一済みです。
 - `src/background/page-translation/`: ページ翻訳の純粋処理。`chunking.js` はユニットテスト対象です。
@@ -23,12 +23,14 @@
 
 ## Provider 追加手順
 
-1. `src/background/api/providers/<provider>.js` を追加し、最低限 `translate` と `translateBatchStructured` を実装します。streaming 対応なら `translateStream` も実装します。
+1. `src/background/api/providers/<provider>.js` を追加し、最低限 `translate` と `translateBatchStructured` を実装します。streaming 対応なら `translateStream`、APIキー検証やモデル一覧が必要なら `verify` / `getModels` も同じ provider モジュールに置きます。
 2. `src/background/api/registry.js` に provider を登録します。`settingsKeys` は既存 storage key と同じ命名規則にし、`capabilities.supportsStreaming` と `translateStream` の整合を崩さないでください。
 3. popup 表示が必要なら `src/popup/provider-ui.js` に provider entry を追加します。既存設定との互換のため、`settingsKeys` の key 名は保存済み設定を読める値にします。
 4. デフォルトモデルが必要なら `src/popup/provider-default-models.js` に追加します。
 5. `test/provider-registry.test.js` と provider request shape のテストを追加または更新します。
 6. `bun run lint && bun run test` を通します。
+
+2026-06-12 のダミープロバイダー実証では、製品コードの修正箇所は provider 実装、registry、provider UI、default models の 4ファイルでした。証跡コミットは revert 済みです。
 
 ## Message Action 方針
 

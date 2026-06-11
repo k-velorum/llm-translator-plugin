@@ -52,13 +52,13 @@
 
 | プロバイダー | キー検証 | モデル一覧 | 翻訳 | ストリーミング | 備考 |
 |---|---|---|---|---|---|
-| OpenRouter | | | | | |
-| Gemini | | | | | |
-| Cerebras | | | | | |
-| Z-AI | | | | | |
-| Ollama | | | | — | ローカルサーバ要 |
-| LM Studio | | | | | ローカルサーバ要。**Tailscale 経由 URL でも確認**（d437a77 回帰防止） |
-| Chrome Gemini Nano | —（キー不要） | | | | offscreen 経由。Nano 有効環境要 |
+| OpenRouter | 未確認 (2026-06-12) | unit で request shape 固定 | 未確認 (2026-06-12) | 未対応 | |
+| Gemini | 未確認 (2026-06-12) | unit で request shape 固定 | 未確認 (2026-06-12) | 未対応 | |
+| Cerebras | 未確認 (2026-06-12) | unit で private/public fallback 固定 | 未確認 (2026-06-12) | 未確認 (2026-06-12) | |
+| Z-AI | — | 静的モデル | 未確認 (2026-06-12) | 未対応 | |
+| Ollama | — | unit で request server 優先順を固定 | 未確認 (2026-06-12) | — | ローカルサーバ要 |
+| LM Studio | — | unit で Tailscale URL を固定 / 実機 popup で保存済み server 復元 | PASS (popup Test / 選択翻訳 / ページ翻訳, 2026-06-12) | 未確認 (2026-06-12) | ローカルサーバ要。**Tailscale 経由 URL でも確認**（d437a77 回帰防止） |
+| Chrome Gemini Nano | —（キー不要） | — | 未確認 (2026-06-12) | 未対応 | offscreen 経由。Nano 有効環境要 |
 
 実機が用意できない項目は「未確認」と日付付きで記録し、用意でき次第消化する。
 
@@ -77,6 +77,8 @@
 ## 実施記録
 
 - 2026-06-12: 自動検証のみ実施。`bun run lint` error 0、`bun run test` 37 tests pass、`manifest.json` parse OK。
+- 2026-06-12: フェーズ7後の自動検証を実施。`bun run lint` error 0 / warning 29、`bun run test`
+  10 files / 45 tests pass、`manifest.json` parse OK。
 - 2026-06-12: 通常 Chrome の既存プロファイルで拡張 popup を開き、設定 tab で保存済み LM Studio 設定
   （server `http://100.115.98.13:1234`）が復元されることを確認。Test tab で LM Studio を選択し、
   既定テスト文の日本語翻訳が返ることを確認。
