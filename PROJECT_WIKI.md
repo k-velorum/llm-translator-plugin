@@ -9,11 +9,13 @@
 *   **テキスト選択翻訳:** ウェブページ上の任意のテキストを選択し、右クリックメニューまたはキーボードショートカット (`Ctrl+Shift+T` / `Command+Shift+T`) で翻訳を実行できます。
 *   **Twitter/X.com 翻訳:** Twitter/X.comのツイートの下部に表示される翻訳ボタンをクリックすることで、ツイート内容を翻訳します。
 *   **ページ全体翻訳:** ページを右クリックして「LLMページ全体翻訳」を選ぶと、ページ内のテキストノードを収集し、一括で翻訳してページ上に置き換えて表示します。
-*   **複数LLMプロバイダー対応:** OpenRouter API, Google Gemini API, Ollama, LM Studio のいずれかを選択して利用できます。
+*   **複数LLMプロバイダー対応:** OpenRouter API, Google Gemini API, Cerebras API, Z-AI, Ollama, LM Studio, Chrome Gemini Nano のいずれかを選択して利用できます。
 *   **モデル選択:** 各APIプロバイダーが提供するモデルの中から、好みのモデルを選択できます（すべてのプロバイダーで動的にモデル一覧を取得）。
 *   **設定画面:** 拡張機能のアイコンからアクセスできるポップアップ画面で、APIキーや使用モデルなどを構成できます。
 *   **APIテスト機能:** 設定画面から、選択したAPIプロバイダーとの接続をテストできます。
-*   **ローカルLLMサポート:** Ollama、LM Studioなどのローカルで動作するLLMサーバーとの連携が可能です。
+*   **YouTubeコメント翻訳:** YouTubeコメントに翻訳ボタンを追加して翻訳結果を表示します。
+*   **画像翻訳:** 画像右クリックから、LM Studio の vision 対応モデルで画像内テキストを翻訳できます。
+*   **ローカルLLMサポート:** Ollama、LM Studio、Chrome Gemini Nano などローカルで動作するLLMとの連携が可能です。
 
 ## 2. アーキテクチャ
 
@@ -22,22 +24,31 @@
 *   **`manifest.json`**: 拡張機能の基本的な設定ファイル。パーミッション、バックグラウンドスクリプト (`"type": "module"` を指定)、コンテンツスクリプト、ポップアップUI、アイコンなどを定義します。
 *   **`background.js`**: バックグラウンドで動作するサービスワーカーのエントリーポイント。各バックグラウンドモジュールをインポートし、初期化処理（イベントリスナー登録など）を行います。
 *   **`src/background/`**: バックグラウンド処理のコアロジックを格納するディレクトリ。
-    *   **`api.js`**: LLM API (OpenRouter, Gemini, Ollama, LM Studio) へのリクエスト送信、レスポンス処理、エラーフォーマットを担当します。
+    *   **`api.js`**: LLM API (OpenRouter, Gemini, Cerebras, Z-AI, Ollama, LM Studio, Chrome Gemini Nano) へのリクエスト送信、レスポンス処理、エラーフォーマットを担当します。
     *   **`message-handlers.js`**: `content.js` や `popup.js` からのメッセージ (`chrome.runtime.onMessage`) を受け取り、対応する処理（翻訳実行、APIテスト、キー検証、モデル取得など）を呼び出します。
     *   **`settings.js`**: 設定 (`chrome.storage.sync`) の読み込みとデフォルト設定の初期化を担当します。
     *   **`page-translation-service.js`**: ページ全体翻訳のセッション管理、チャンク翻訳、continue/cancel のランタイムメッセージ処理を担当します。
     *   **`selection-translation.js`**: 選択テキスト翻訳の実行と、表示フォールバック（content script → script injection → new tab）を担当します。
+    *   **`image-translation.js`**: 画像右クリックから画像データを取得し、LM Studio 画像翻訳結果を表示します。
+    *   **`streaming.js`**: フレーム指定のメッセージ送信とストリーミング翻訳イベントの配送を担当します。
+    *   **`chrome-prompt-client.js`**: Chrome Gemini Nano 用の offscreen document との通信を担当します。
+    *   **`logging.js`**: ページ翻訳ログの保存とプロバイダーメタ情報を扱います。
     *   **`event-listeners.js`**: Chrome拡張イベントの登録と各サービスへのルーティングを担当します。
-*   **`content.js`**: ウェブページ上で動作するスクリプト。
-    *   ユーザーがテキストを選択した際に、バックグラウンドスクリプトからの要求 (`getSelectedText`) に応じて選択テキストを送信。
-    *   バックグラウンドスクリプトから受け取った翻訳結果 (`showTranslation`) をポップアップで表示。ポップアップにはコピーボタンも含まれる。
-    *   Twitter/X.com のページを検出し、各ツイートに翻訳ボタンを動的に追加 (`MutationObserver` を使用)。
-    *   ツイート翻訳ボタンがクリックされた際に、ツイートテキストをバックグラウンドスクリプトに送信し、返された翻訳結果をツイートの下に表示。
+*   **`src/offscreen/chrome-prompt-runtime.js`**: `offscreen.html` から ES Module として読み込まれ、Chrome Prompt API / Gemini Nano の実行環境になります。
+*   **`src/content/` と `content.js`**: ウェブページ上で動作する classic script 群。`manifest.json` の `js` 配列順に依存します。
+    *   `shared.js`: 共有グローバル、機能設定、ユーティリティ、スタイル。
+    *   `streaming.js`: content 側のストリーミング描画セッション。
+    *   `selection.js`: 選択翻訳ポップアップ、画像コンテキスト、ローディング/結果表示。
+    *   `page-translation.js`: ページテキスト収集、翻訳結果適用、進捗UI。
+    *   `twitter.js`: Twitter/X.com の翻訳ボタン、キャッシュ、結果表示。
+    *   `youtube.js`: YouTubeコメント翻訳ボタンと結果表示。
+    *   `runtime.js`: background からの runtime message dispatch。
+    *   `content.js`: 機能設定の読み込み後に Twitter/X と YouTube 連携を初期化。
 *   **`popup.html`**: 拡張機能アイコンクリック時に表示される設定画面のHTML構造。タブ（設定、テスト、詳細設定）、APIプロバイダー選択、APIキー入力欄、モデル選択ドロップダウン（Select2を使用）、テスト用テキストエリアなどが含まれる。
 *   **`popup.js`**: 設定画面 (`popup.html`) の動作を制御するJavaScript。
     *   設定の読み込みと保存 (`chrome.storage.sync`)。
     *   APIプロバイダーの選択に応じて表示セクションを切り替え。
-    *   OpenRouter, Gemini, Ollama, LM Studio のモデル一覧をAPIから動的に取得し、Select2ドロップダウンに表示。
+    *   OpenRouter, Gemini, Cerebras, Z-AI, Ollama, LM Studio のモデル一覧をAPIから動的に取得し、Select2ドロップダウンに表示。Chrome Gemini Nano は Prompt API の availability を確認します。
     *   APIキー検証機能。
     *   APIテスト機能（指定したテキストを翻訳）。
     *   UIイベント（タブ切り替え、ボタンクリックなど）のハンドリング。
@@ -103,7 +114,7 @@
 
 *   LLM APIとの通信に関するコアロジックを実装します。
 *   **`DEFAULT_SETTINGS`**: APIキーやモデル名などのデフォルト設定値をエクスポートします。
-*   **`translateText`**: 翻訳処理のメイン関数。設定された `apiProvider` に基づいて、適切な翻訳関数 (`translateWithOpenRouter`, `translateWithGemini`, `translateWithOllama`, `translateWithLMStudio`) を呼び出します。
+*   **`translateText`**: 翻訳処理のメイン関数。設定された `apiProvider` に基づいて、適切な翻訳関数 (`translateWithOpenRouter`, `translateWithGemini`, `translateWithCerebras`, `translateWithZai`, `translateWithOllama`, `translateWithLmStudio`, `translateWithChromePromptRuntime`) を呼び出します。
 *   **`translateWith[Provider]`**: 各APIプロバイダー固有の翻訳処理。
     *   APIキーの存在チェック。
     *   APIリクエストに必要なパラメータ（プロンプト、モデル名など）を構築。
@@ -149,7 +160,7 @@
 *   **初期化 (`init`)**: ページ読み込み完了時に実行され、各種初期化関数を呼び出します。
 *   **要素取得 (`getElements`)**: ポップアップ内の主要なDOM要素への参照を取得します。
 *   **タブ制御 (`initTabs`)**: 「設定」「テスト」「詳細設定」タブの切り替えロジックを初期化します。
-*   **APIプロバイダー切り替え (`setupApiProviderToggle`)**: APIプロバイダー選択ドロップダウンの変更に応じて、対応する設定セクション（OpenRouter, Gemini, Ollama, LM Studio）の表示/非表示を切り替えます。
+*   **APIプロバイダー切り替え (`setupApiProviderToggle`)**: APIプロバイダー選択ドロップダウンの変更に応じて、対応する設定セクション（OpenRouter, Gemini, Cerebras, Z-AI, Ollama, LM Studio, Chrome Gemini Nano）の表示/非表示を切り替えます。
 *   **設定管理 (`loadSettings`, `saveSettings`)**:
     *   `loadSettings`: `chrome.storage.sync` から保存されている設定値を読み込み、フォーム要素に反映させます。
     *   `saveSettings`: 「設定」タブのフォーム要素から値を取得し、`chrome.storage.sync` に保存します。
@@ -163,7 +174,7 @@
     *   各APIキー入力欄の隣に「APIキーを検証」ボタンとステータス表示欄を動的に作成します。
     *   検証ボタンクリック時に、入力されたAPIキーを使用して、バックグラウンド経由 (`verifyApiKeyViaBackground`) または直接APIアクセス (`verifyApiKey`) で実際にAPI（モデル一覧取得など）を呼び出し、キーの有効性を確認します。
     *   検証結果（成功/失敗/検証中）をステータス欄に表示します。
-    *   検証成功時には、そのAPIキーで対象プロバイダー（OpenRouter, Gemini）のモデル一覧も再取得・更新します。ローカルLLM（Ollama、LM Studio）の場合はサーバー接続を確認します。
+    *   検証成功時には、そのAPIキーで対象プロバイダー（OpenRouter, Gemini, Cerebras, Z-AI）のモデル一覧も再取得・更新します。ローカルLLM（Ollama、LM Studio）の場合はサーバー接続を確認します。
 *   **APIテスト (`testApi`)**:
     *   「テスト」タブで選択されたAPIプロバイダー、モデル、入力テキストを使用して、バックグラウンドに `testTranslate` メッセージを送信し、翻訳を実行します。
     *   実行結果（翻訳テキストまたはエラーメッセージ）を結果表示エリアに表示します。
@@ -191,5 +202,8 @@
 *   **LLM API**:
     *   OpenRouter API
     *   Google Gemini API
+    *   Cerebras API
+    *   Z-AI API
     *   Ollama (ローカルLLM)
     *   LM Studio (OpenAI互換ローカルサーバー)
+    *   Chrome Built-in Prompt API / Gemini Nano

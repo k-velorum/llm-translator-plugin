@@ -308,29 +308,19 @@ mcp__serena__delete_memory(memory_file_name="obsolete.md")
 
 ## Project Overview
 
-This is a Chrome browser extension (Manifest V3) that translates selected text and Twitter/X.com tweets using Large Language Models (LLMs). The extension supports multiple LLM providers: OpenRouter API and Google Gemini API.
+This is a Chrome browser extension (Manifest V3) that translates selected text, full pages, images, Twitter/X.com tweets, and YouTube comments using Large Language Models (LLMs). The extension currently supports OpenRouter, Google Gemini, Cerebras, Z-AI, Ollama, LM Studio, and Chrome Gemini Nano.
 
 ## Development Setup
 
-### Icons Required
-Before loading the extension in Chrome, you must generate the required PNG icons:
+Install development tools with Bun:
 
 ```bash
-# Generate base SVG icon
-chmod +x create_icons.sh
-./create_icons.sh
-
-# Convert SVG to PNG icons (choose one method)
-# Using Inkscape:
-inkscape icons/icon.svg --export-filename=icons/icon16.png --export-width=16 --export-height=16
-inkscape icons/icon.svg --export-filename=icons/icon48.png --export-width=48 --export-height=48
-inkscape icons/icon.svg --export-filename=icons/icon128.png --export-width=128 --export-height=128
-
-# Using ImageMagick:
-convert icons/icon.svg -resize 16x16 icons/icon16.png
-convert icons/icon.svg -resize 48x48 icons/icon48.png
-convert icons/icon.svg -resize 128x128 icons/icon128.png
+bun install
+bun run lint
+bun run test
 ```
+
+Required PNG icons are already committed under `icons/`. Run `scripts/create_icons.sh` only when regenerating icons from `icons/icon.svg`.
 
 ## Architecture
 
@@ -341,17 +331,32 @@ convert icons/icon.svg -resize 128x128 icons/icon128.png
   - `message-handlers.js` - Chrome runtime message processing
   - `settings.js` - Settings management with chrome.storage.sync
   - `event-listeners.js` - Chrome extension event handlers (install, context menu, commands)
-- **`content.js`** - Injected into web pages, handles:
-  - Text selection and translation popups
-  - Twitter/X.com tweet translation buttons
-  - Page-wide translation functionality
+  - `page-translation-service.js` - Page-wide translation sessions, chunking, progress, continue/cancel handling
+  - `selection-translation.js` - Selected text translation and result delivery fallbacks
+  - `image-translation.js` - Context-menu image capture and LM Studio image translation flow
+  - `streaming.js` - Frame-scoped streaming message delivery helpers
+  - `chrome-prompt-client.js` - Offscreen document bridge for Chrome Gemini Nano
+  - `logging.js` - Page translation log storage and provider metadata helpers
+- **`src/offscreen/`** - Offscreen document runtime:
+  - `chrome-prompt-runtime.js` - Chrome Prompt API / Gemini Nano execution environment, loaded by `offscreen.html` as an ES module
+- **`src/content/`** - Classic content scripts loaded in `manifest.json` order:
+  - `shared.js` - Shared globals, feature settings, utilities, styles
+  - `streaming.js` - Content-side stream session rendering
+  - `selection.js` - Selection popup, image context capture, loading/result UI
+  - `page-translation.js` - Page text snapshot, replacement, progress controls
+  - `twitter.js` - Twitter/X button injection, cache, translation rendering
+  - `youtube.js` - YouTube comment button injection and rendering
+  - `runtime.js` - Runtime message dispatch from background
+- **`content.js`** - Content entry point that initializes Twitter/X and YouTube integrations after feature settings load
 - **`popup.js`** - Settings UI logic with jQuery/Select2 for model selection
 
 ### Key Features
 - **Text Selection Translation**: Right-click context menu + keyboard shortcut (Ctrl+Shift+T / Cmd+Shift+T)
 - **Twitter Integration**: Auto-injected translation buttons on tweets using MutationObserver
-- **Page Translation**: Full page text node translation via context menu
-- **Multi-provider Support**: Dynamic model loading from OpenRouter, Gemini APIs
+- **YouTube Integration**: Translation buttons for YouTube comments
+- **Page Translation**: Full page text node translation via context menu with progress controls
+- **Image Translation**: Image context menu flow for LM Studio vision-capable models
+- **Multi-provider Support**: OpenRouter, Google Gemini, Cerebras, Z-AI, Ollama, LM Studio, and Chrome Gemini Nano
 - **Settings Management**: chrome.storage.sync with fallback defaults and validation
 - **CORS Workaround**: Direct API calls for supported providers
 
