@@ -1,3 +1,6 @@
+(() => {
+  'use strict';
+
 function canUseExtensionRuntime() {
   try {
     return !!(chrome?.runtime?.id && chrome?.runtime?.sendMessage);
@@ -67,3 +70,4 @@ window.LLMT.messaging = {
 };
 window.canUseExtensionRuntime = canUseExtensionRuntime;
 window.safeSendMessage = safeSendMessage;
+})();

@@ -1,3 +1,6 @@
+(() => {
+  'use strict';
+
 let translationPopup = null;
 
 const POPUP_MARGIN = 8;
@@ -354,3 +357,30 @@ function extractTranslatedTextFromResponse(response) {
     ? `翻訳エラー: ${message}`
     : (response?.translatedText ?? '翻訳エラー: 拡張機能との通信に失敗しました');
 }
+
+window.LLMT = window.LLMT || {};
+window.LLMT.ui = {
+  ensureSelectionLoadingSpinnerStyles,
+  ensureEmbeddedTranslationSpinnerStyles,
+  DOMUtils,
+  ErrorUtils,
+  styles,
+  applyStyles,
+  positionPopupInViewport,
+  applyTranslationTextState,
+  extractTranslatedTextFromResponse
+};
+Object.assign(window, {
+  translationPopup,
+  ensureSelectionLoadingSpinnerStyles,
+  ensureEmbeddedTranslationSpinnerStyles,
+  DOMUtils,
+  ErrorUtils,
+  tweetTranslationCacheSettings,
+  styles,
+  applyStyles,
+  positionPopupInViewport,
+  applyTranslationTextState,
+  extractTranslatedTextFromResponse
+});
+})();

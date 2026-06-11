@@ -1,6 +1,8 @@
-// content scripts は classic script の読み込み順で動くため、既存コード互換の global lexical binding も維持する。
-let tweetObserver = null;
-let ytObserver = null;
+(() => {
+  'use strict';
+
+window.tweetObserver = window.tweetObserver || null;
+window.ytObserver = window.ytObserver || null;
 
 const featureSettings = {
   enableTwitterTranslation: true,
@@ -57,8 +59,8 @@ function registerFeatureSettingsListener() {
 
       if (twitterChanged) {
         if (!featureSettings.enableTwitterTranslation) {
-          try { tweetObserver?.disconnect(); } catch {}
-          tweetObserver = null;
+          try { window.tweetObserver?.disconnect(); } catch {}
+          window.tweetObserver = null;
           document.querySelectorAll('.llm-translate-button, .llm-tweet-translation').forEach((node) => node.remove());
         } else {
           addTranslateButtonToTweets();
@@ -67,8 +69,8 @@ function registerFeatureSettingsListener() {
 
       if (youtubeChanged) {
         if (!featureSettings.enableYoutubeTranslation) {
-          try { ytObserver?.disconnect(); } catch {}
-          ytObserver = null;
+          try { window.ytObserver?.disconnect(); } catch {}
+          window.ytObserver = null;
           document.querySelectorAll('.llm-yt-translate-button, .llm-yt-translation').forEach((node) => node.remove());
         } else {
           addTranslateButtonToYouTubeComments();
@@ -87,3 +89,7 @@ window.LLMT.settings = {
   registerFeatureSettingsListener,
   ready: loadFeatureSettings
 };
+window.featureSettings = featureSettings;
+window.loadFeatureSettings = loadFeatureSettings;
+window.registerFeatureSettingsListener = registerFeatureSettingsListener;
+})();
