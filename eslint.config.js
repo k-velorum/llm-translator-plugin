@@ -124,7 +124,7 @@ export default [
       eqeqeq: ['error', 'always'],
       complexity: ['warn', 15],
       'max-lines-per-function': ['warn', { max: 80, skipBlankLines: true, skipComments: true }],
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       'no-cond-assign': 'off',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'no-redeclare': 'off',

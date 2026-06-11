@@ -103,7 +103,9 @@ describe('lmstudio provider', () => {
       ]
     });
   });
+});
 
+describe('lmstudio provider image and model endpoints', () => {
   it('sends the image translation request in the /api/v1/chat shape', async () => {
     const fetch = vi.fn(async () =>
       mockJsonResponse({

@@ -91,7 +91,9 @@ describe('cerebras provider', () => {
       }
     });
   });
+});
 
+describe('cerebras provider model endpoints', () => {
   it('verifies API keys against the authenticated models endpoint', async () => {
     const fetch = vi.fn(async () => mockJsonResponse({ data: [] }));
     globalThis.fetch = fetch;

@@ -131,11 +131,11 @@ export async function makeApiRequest(url, options = {}, errorMessage, logLevel =
           errorText = JSON.stringify(errorData);
           log.error('api', 'エラーレスポンス', errorData);
           throw new Error(`API Error: ${errorData.error?.message || response.statusText} (${response.status})`);
-        } catch (parseError) {
+        } catch (_parseError) {
           try {
             errorText = await response.text();
             log.error('api', 'エラーテキスト', { errorText });
-          } catch (textError) {
+          } catch (_textError) {
             errorText = 'レスポンステキストを取得できませんでした';
           }
           throw new Error(`API Error: ${response.statusText} (${response.status}) - ${errorText}`);
@@ -233,7 +233,7 @@ export async function makeStreamingApiRequest(url, options = {}, handlers = {}, 
           const errorData = await response.json();
           errorText = JSON.stringify(errorData);
           throw new Error(`API Error: ${errorData.error?.message || response.statusText} (${response.status})`);
-        } catch (parseError) {
+        } catch (_parseError) {
           try {
             errorText = await response.text();
           } catch (_) {

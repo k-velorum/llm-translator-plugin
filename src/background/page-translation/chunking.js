@@ -24,7 +24,7 @@ export function splitTextByNaturalBoundaries(text, maxChars) {
   const findBoundary = (src, start, end) => {
     const segment = src.slice(start, end);
     const patterns = [
-      /[\.\!\?。！？]+\s*/g,
+      /[.!?。！？]+\s*/g,
       /\n{2,}/g,
       /[,，;；:：、]\s*/g,
       /\s+/g
