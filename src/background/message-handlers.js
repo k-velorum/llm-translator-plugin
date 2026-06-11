@@ -3,7 +3,8 @@ import {
   translateText,
   translateTextStream,
   makeApiRequest,
-  getProviderCapabilities
+  getProviderCapabilities,
+  OPENROUTER_HEADERS_BASE
 } from './api.js';
 import { appendLog, getProviderMeta } from './logging.js';
 import { cancelSelectionStream } from './selection-translation.js';
@@ -294,23 +295,16 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
     return true;
   }
 
-  // Anthropic は削除済み
-
   // OpenRouterモデル一覧取得リクエストの処理
   if (message.action === 'getOpenrouterModels') {
     loadSettings().then(settings => {
       const key = message.apiKey || settings.openrouterApiKey;
-      const headers = {
-        'HTTP-Referer': 'chrome-extension://llm-translator',
-        'X-Title': 'LLM Translation Plugin'
-      };
+      const headers = { ...OPENROUTER_HEADERS_BASE };
       if (key) headers['Authorization'] = `Bearer ${key}`;
       handleModelListRequest('OpenRouter', key, 'https://openrouter.ai/api/v1/models', headers, (result) => result.data, sendResponse, settings);
     });
     return true;
   }
-
-  // Anthropic は削除済み
 
   // Cerebras APIキー検証
   if (message.action === 'verifyCerebrasApiKey') {

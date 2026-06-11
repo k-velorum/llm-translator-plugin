@@ -43,7 +43,6 @@ export const DEFAULT_SETTINGS = {
   pageTranslationConcurrency: 4,
   // ページ全体翻訳: 構造化出力を優先利用（失敗時はセパレータ方式へフォールバック）
   pageTranslationUseStructuredOutput: true,
-  // Anthropic / プロキシ機能は削除済み
 };
 
 // 設定の読み込み

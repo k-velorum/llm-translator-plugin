@@ -35,7 +35,7 @@ export function getProviderCapabilities(settings = {}) {
     supportsImageTranslation: false
   };
 }
-const OPENROUTER_HEADERS_BASE = {
+export const OPENROUTER_HEADERS_BASE = {
   'HTTP-Referer': 'chrome-extension://llm-translator',
   'X-Title': 'LLM Translation Plugin'
 };
@@ -264,6 +264,10 @@ export function formatErrorDetails(error, settings) {
     apiProvider = 'Chrome Gemini Nano';
     modelName = 'Gemini Nano';
     maskedApiKey = '不要';
+  } else {
+    apiProvider = settings?.apiProvider || '不明';
+    modelName = '不明';
+    maskedApiKey = '不明';
   }
 
   return `
@@ -745,8 +749,6 @@ async function translateWithZai(text, settings, requestOptions = {}) {
 
   return (data.choices?.[0]?.message?.content || '').trim();
 }
-
-// Anthropic は削除済み
 
 // Ollama (local server) での翻訳
 async function translateWithOllama(text, settings, requestOptions = {}) {
