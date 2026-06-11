@@ -179,7 +179,7 @@ function requestTweetTranslationWithCache({ tweetElement, tweetTextElement, text
   }
 
   const requestPromise = new Promise((resolve) => {
-    safeSendMessage({ action: 'translateTweet', text }, (response) => {
+    safeSendMessage({ action: 'translateEmbeddedText', text }, (response) => {
       resolve(extractTranslatedTextFromResponse(response));
     });
   })

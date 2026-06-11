@@ -150,7 +150,7 @@ function addButtonToYouTubeComment(contentTextEl) {
       return;
     }
 
-    safeSendMessage({ action: 'translateTweet', text }, (response) => {
+    safeSendMessage({ action: 'translateEmbeddedText', text }, (response) => {
       showYouTubeCommentTranslation(contentTextEl, extractTranslatedTextFromResponse(response));
       onFinally();
     });

@@ -142,44 +142,6 @@ const ErrorUtils = {
   }
 };
 
-function canUseExtensionRuntime() {
-  try {
-    return !!(chrome?.runtime?.id && chrome?.runtime?.sendMessage);
-  } catch (_) {
-    return false;
-  }
-}
-
-function safeSendMessage(payload, callback) {
-  if (!canUseExtensionRuntime()) {
-    if (typeof callback === 'function') {
-      try { callback({ error: { message: 'Extension context invalidated' } }); } catch (_) {}
-    }
-    return false;
-  }
-
-  try {
-    chrome.runtime.sendMessage(payload, (response) => {
-      if (chrome.runtime?.lastError) {
-        const message = chrome.runtime.lastError.message || 'sendMessage failed';
-        console.warn('sendMessage failed:', chrome.runtime.lastError);
-        if (typeof callback === 'function') {
-          callback({ error: { message } });
-        }
-        return;
-      }
-      if (typeof callback === 'function') callback(response);
-    });
-    return true;
-  } catch (error) {
-    console.warn('sendMessage failed:', error);
-    if (typeof callback === 'function') {
-      callback({ error: { message: error?.message || 'sendMessage failed' } });
-    }
-    return false;
-  }
-}
-
 const TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS = {
   apiProvider: 'openrouter',
   openrouterModel: 'openai/gpt-4o-mini',

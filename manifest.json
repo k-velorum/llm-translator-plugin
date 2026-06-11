@@ -34,8 +34,10 @@
     {
       "matches": ["<all_urls>"],
       "all_frames": true,
-      "js": [
-        "src/content/shared.js",
+    "js": [
+      "src/content/namespace.js",
+      "src/content/messaging.js",
+      "src/content/shared.js",
         "src/content/streaming.js",
         "src/content/selection.js",
         "src/content/page-translation.js",
