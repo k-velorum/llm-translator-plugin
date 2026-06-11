@@ -12,6 +12,7 @@ import {
   normalizeStreamError
 } from './streaming.js';
 import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
+import { normalizeError } from '../shared/errors.js';
 
 const STREAM_TIMEOUT_MS = TRANSLATION_TIMEOUT_MS;
 const activeStreams = new Map();
@@ -42,19 +43,19 @@ async function startStreamingTranslation(message, sender, sendResponse) {
   const frameId = Number.isInteger(sender?.frameId) ? sender.frameId : 0;
 
   if (!requestId) {
-    sendResponse({ accepted: false, error: { message: 'requestId が未指定です' } });
+    sendResponse({ accepted: false, error: normalizeError('requestId が未指定です') });
     return;
   }
   if (!text) {
-    sendResponse({ accepted: false, error: { message: '翻訳対象テキストが空です' } });
+    sendResponse({ accepted: false, error: normalizeError('翻訳対象テキストが空です') });
     return;
   }
   if (!tabId) {
-    sendResponse({ accepted: false, error: { message: '送信元タブが特定できません' } });
+    sendResponse({ accepted: false, error: normalizeError('送信元タブが特定できません') });
     return;
   }
   if (activeStreams.has(requestId)) {
-    sendResponse({ accepted: false, error: { message: '同じ requestId のストリームが既に存在します' } });
+    sendResponse({ accepted: false, error: normalizeError('同じ requestId のストリームが既に存在します') });
     return;
   }
 
@@ -142,7 +143,7 @@ async function handleApiRequest(action, apiKey, endpoint, headers, successCallba
       successCallback(result);
   } catch (error) {
     console.error(`${action}エラー:`, error);
-    errorCallback({ message: error.message, details: error.stack || '' });
+    errorCallback(normalizeError(error));
   }
 }
 
@@ -176,9 +177,14 @@ async function handleModelListRequest(provider, apiKey, endpoint, headers, dataP
          console.warn('OpenRouter APIキー未設定のため、公開モデル一覧を取得します。');
          // ここで公開モデル取得のロジックを再度呼ぶか、デフォルトを返す
          // 今回は簡略化のため、エラーを返しつつ、popup.js側でデフォルトを使う想定
-         sendResponse({ error: { message: 'APIキー未設定ですが、処理は継続します。', details: error.details } });
+         sendResponse({
+           error: normalizeError({
+             message: 'APIキー未設定ですが、処理は継続します。',
+             details: error.details
+           })
+         });
       } else {
-        sendResponse({ error: error });
+        sendResponse({ error: normalizeError(error) });
       }
     },
     settings
@@ -227,7 +233,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
               message: error?.message || String(error)
             });
             // エラーオブジェクト全体を送るのではなく、必要な情報だけ送る
-            sendResponse({ error: { message: error.message, details: error.stack || '' } });
+            sendResponse({ error: normalizeError(error) });
           });
       });
     return true; // 非同期レスポンスを示すためにtrueを返す
@@ -254,7 +260,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
               tabId: sender?.tab?.id,
               message: error?.message || String(error)
             });
-            sendResponse({ error: { message: error.message, details: error.stack || '' } });
+            sendResponse({ error: normalizeError(error) });
           });
       });
     return true;
@@ -309,7 +315,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
   if (message.action === 'verifyCerebrasApiKey') {
     const apiKey = message.apiKey;
     if (!apiKey) {
-      sendResponse({ error: { message: 'Cerebras APIキーが未指定です' } });
+      sendResponse({ error: normalizeError('Cerebras APIキーが未指定です') });
       return true;
     }
     const endpoint = 'https://api.cerebras.ai/v1/models';
@@ -319,7 +325,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
       'Cerebras APIキー検証中にエラーが発生'
     )
       .then(() => sendResponse({ result: { success: true } }))
-      .catch((error) => sendResponse({ error: { message: error.message, details: error.stack || '' } }));
+      .catch((error) => sendResponse({ error: normalizeError(error) }));
     return true;
   }
 
@@ -344,7 +350,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
           }));
           sendResponse({ models });
         })
-        .catch((error) => sendResponse({ error: { message: error.message, details: error.stack || '' } }));
+        .catch((error) => sendResponse({ error: normalizeError(error) }));
     });
     return true;
   }
@@ -353,13 +359,13 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
   if (message.action === 'verifyGeminiApiKey') {
     const apiKey = message.apiKey;
     if (!apiKey) {
-      sendResponse({ error: { message: 'Gemini APIキーが未指定です' } });
+      sendResponse({ error: normalizeError('Gemini APIキーが未指定です') });
       return true;
     }
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
     makeApiRequest(endpoint, { method: 'GET' }, 'Gemini APIキー検証中にエラーが発生')
       .then(() => sendResponse({ result: { success: true } }))
-      .catch((error) => sendResponse({ error: { message: error.message, details: error.stack || '' } }));
+      .catch((error) => sendResponse({ error: normalizeError(error) }));
     return true;
   }
 
@@ -367,7 +373,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
   if (message.action === 'getGeminiModels') {
     const apiKey = message.apiKey;
     if (!apiKey) {
-      sendResponse({ error: { message: 'Gemini APIキーが未指定です' } });
+      sendResponse({ error: normalizeError('Gemini APIキーが未指定です') });
       return true;
     }
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
@@ -377,7 +383,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
         const models = modelsArr.map(m => ({ id: (m.name || '').replace('models/', ''), name: m.displayName || m.name, context_length: m.inputTokenLimit }));
         sendResponse({ models });
       })
-      .catch((error) => sendResponse({ error: { message: error.message, details: error.stack || '' } }));
+      .catch((error) => sendResponse({ error: normalizeError(error) }));
     return true;
   }
 
@@ -392,7 +398,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
           const models = arr.map(m => ({ id: m.name, name: m.name }));
           sendResponse({ models });
         })
-        .catch((error) => sendResponse({ error: { message: error.message, details: error.stack || '' } }));
+        .catch((error) => sendResponse({ error: normalizeError(error) }));
     });
     return true;
   }
@@ -426,7 +432,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
             server,
             message: error.message
           });
-          sendResponse({ error: { message: error.message, details: error.stack || '' } });
+          sendResponse({ error: normalizeError(error) });
         });
     });
     return true;

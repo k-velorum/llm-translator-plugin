@@ -5,6 +5,7 @@ import {
   normalizeStructuredBatchResult,
   parseJsonLoose
 } from '../shared/structured-batch.js';
+import { serializeError } from '../shared/errors.js';
 
 const TARGET = 'chromePromptRuntime';
 
@@ -71,14 +72,6 @@ function abortRequest(requestId) {
   const controller = activeAbortControllers.get(requestId);
   if (!controller) return;
   controller.abort();
-}
-
-function serializeError(error) {
-  return {
-    name: error?.name || 'Error',
-    message: error?.message || String(error),
-    details: error?.stack || ''
-  };
 }
 
 function assertLanguageModelAvailable() {

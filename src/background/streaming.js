@@ -1,3 +1,5 @@
+import { normalizeError } from '../shared/errors.js';
+
 function buildFrameSendOptions(frameId) {
   return Number.isInteger(frameId) && frameId >= 0 ? { frameId } : undefined;
 }
@@ -7,10 +9,7 @@ export async function sendMessageToFrame(tabId, frameId, payload) {
 }
 
 export function normalizeStreamError(error) {
-  return {
-    message: error?.message || String(error || 'unknown error'),
-    details: error?.stack || ''
-  };
+  return normalizeError(error);
 }
 
 export function createStreamEventEmitter({
