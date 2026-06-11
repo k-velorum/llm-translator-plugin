@@ -9,7 +9,11 @@ import {
   initSelect2,
   loadModels
 } from './models.js';
-import { getProviderSections } from './provider-ui.js';
+import {
+  getProviderElementRefs,
+  getProviderSections,
+  renderProviderSections
+} from './provider-ui.js';
 import {
   loadSettings,
   saveFeatureSettings,
@@ -20,6 +24,7 @@ import { testApi } from './test-api.js';
 document.addEventListener('DOMContentLoaded', init);
 
 function init() {
+  renderProviderSections(document.getElementById('provider-sections'));
   const elements = getElements();
   initTabs(elements);
   setupApiProviderToggle(elements);
@@ -35,28 +40,8 @@ function init() {
 
 function getElements() {
   return {
+    ...getProviderElementRefs(),
     apiProviderSelect: document.getElementById('api-provider'),
-    openrouterSection: document.getElementById('openrouter-section'),
-    geminiSection: document.getElementById('gemini-section'),
-    cerebrasSection: document.getElementById('cerebras-section'),
-    zaiSection: document.getElementById('zai-section'),
-    ollamaSection: document.getElementById('ollama-section'),
-    lmstudioSection: document.getElementById('lmstudio-section'),
-    chromePromptSection: document.getElementById('chromePrompt-section'),
-    openrouterApiKeyInput: document.getElementById('openrouter-api-key'),
-    openrouterModelSelect: document.getElementById('openrouter-model'),
-    geminiApiKeyInput: document.getElementById('gemini-api-key'),
-    geminiModelSelect: document.getElementById('gemini-model'),
-    cerebrasApiKeyInput: document.getElementById('cerebras-api-key'),
-    cerebrasModelSelect: document.getElementById('cerebras-model'),
-    zaiApiKeyInput: document.getElementById('zai-api-key'),
-    zaiModelSelect: document.getElementById('zai-model'),
-    ollamaServerInput: document.getElementById('ollama-server'),
-    ollamaModelSelect: document.getElementById('ollama-model'),
-    lmstudioServerInput: document.getElementById('lmstudio-server'),
-    lmstudioApiKeyInput: document.getElementById('lmstudio-api-key'),
-    lmstudioModelSelect: document.getElementById('lmstudio-model'),
-    chromePromptTemperatureInput: document.getElementById('chromePrompt-temperature'),
     saveButton: document.getElementById('save-button'),
     statusMessage: document.getElementById('status-message'),
     featureStatusMessage: document.getElementById('feature-status-message'),

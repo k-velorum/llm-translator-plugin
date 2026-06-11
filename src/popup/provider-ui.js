@@ -1,3 +1,5 @@
+import { DEFAULT_PROVIDER_MODELS } from './provider-default-models.js';
+
 export const PROVIDER_ORDER = [
   'openrouter',
   'gemini',
@@ -13,6 +15,7 @@ export const MODEL_PROVIDER_IDS = PROVIDER_ORDER.filter((provider) => provider !
 export const PROVIDER_UI = {
   openrouter: {
     label: 'OpenRouter',
+    heading: 'OpenRouter API設定',
     needsApiKey: true,
     supportsVerification: true,
     publicModelsWithoutApiKey: true,
@@ -27,17 +30,18 @@ export const PROVIDER_UI = {
       model: 'openrouterModel'
     },
     validationMessage: 'OpenRouter APIキーを入力してください',
+    fields: [
+      { kind: 'text', element: 'apiKey', label: 'OpenRouter APIキー', placeholder: 'sk-or-...' },
+      { kind: 'model', element: 'model', label: 'モデル' }
+    ],
     testRequired: [
       { key: 'openrouterApiKey', message: 'OpenRouter APIキーが設定されていません' }
     ],
-    defaultModels: [
-      { id: 'openai/gpt-4o-mini', name: 'GPT 4o mini' },
-      { id: 'anthropic/claude-3.5-haiku', name: 'Claude 3.5 Haiku' },
-      { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet' }
-    ]
+    defaultModels: DEFAULT_PROVIDER_MODELS.openrouter
   },
   gemini: {
     label: 'Google Gemini',
+    heading: 'Google Gemini API設定',
     needsApiKey: true,
     supportsVerification: true,
     elements: {
@@ -51,12 +55,17 @@ export const PROVIDER_UI = {
       model: 'geminiModel'
     },
     validationMessage: 'Gemini APIキーを入力してください',
+    fields: [
+      { kind: 'text', element: 'apiKey', label: 'Gemini APIキー', placeholder: 'AIza...' },
+      { kind: 'model', element: 'model', label: 'モデル' }
+    ],
     testRequired: [
       { key: 'geminiApiKey', message: 'Gemini APIキーが設定されていません' }
     ]
   },
   cerebras: {
     label: 'Cerebras',
+    heading: 'Cerebras API設定',
     needsApiKey: true,
     supportsVerification: true,
     publicModelsWithoutApiKey: true,
@@ -71,19 +80,19 @@ export const PROVIDER_UI = {
       model: 'cerebrasModel'
     },
     validationMessage: 'Cerebras APIキーを入力してください',
+    fields: [
+      { kind: 'text', element: 'apiKey', label: 'Cerebras APIキー', placeholder: 'your-cerebras-api-key' },
+      { kind: 'model', element: 'model', label: 'モデル' }
+    ],
     testRequired: [
       { key: 'cerebrasApiKey', message: 'Cerebras APIキーが設定されていません' },
       { key: 'cerebrasModel', message: 'Cerebras のモデルが設定されていません' }
     ],
-    defaultModels: [
-      { id: 'llama3.1-8b', name: 'llama3.1-8b' },
-      { id: 'llama-3.3-70b', name: 'llama-3.3-70b' },
-      { id: 'qwen-3-32b', name: 'qwen-3-32b' },
-      { id: 'qwen-3-coder-480b', name: 'qwen-3-coder-480b' }
-    ]
+    defaultModels: DEFAULT_PROVIDER_MODELS.cerebras
   },
   zai: {
     label: 'Z-AI',
+    heading: 'Z-AI 設定',
     needsApiKey: true,
     staticModelsOnly: true,
     elements: {
@@ -97,25 +106,19 @@ export const PROVIDER_UI = {
       model: 'zaiModel'
     },
     validationMessage: 'Z-AI APIキーを入力してください',
+    fields: [
+      { kind: 'text', element: 'apiKey', label: 'Z-AI APIキー', placeholder: 'your-api-key' },
+      { kind: 'model', element: 'model', label: 'モデル' }
+    ],
     testRequired: [
       { key: 'zaiApiKey', message: 'Z-AI APIキーが設定されていません' },
       { key: 'zaiModel', message: 'Z-AI のモデルが設定されていません' }
     ],
-    defaultModels: [
-      { id: 'glm-4.7', name: 'glm-4.7' },
-      { id: 'glm-4.7-flash', name: 'glm-4.7-flash' },
-      { id: 'glm-4.7-flashx', name: 'glm-4.7-flashx' },
-      { id: 'glm-4.6', name: 'glm-4.6' },
-      { id: 'glm-4.5', name: 'glm-4.5' },
-      { id: 'glm-4.5-air', name: 'glm-4.5-air' },
-      { id: 'glm-4.5-x', name: 'glm-4.5-x' },
-      { id: 'glm-4.5-airx', name: 'glm-4.5-airx' },
-      { id: 'glm-4.5-flash', name: 'glm-4.5-flash' },
-      { id: 'glm-4-32b-0414-128k', name: 'glm-4-32b-0414-128k' }
-    ]
+    defaultModels: DEFAULT_PROVIDER_MODELS.zai
   },
   ollama: {
     label: 'Ollama',
+    heading: 'Ollama ローカルサーバー設定',
     elements: {
       section: 'ollamaSection',
       server: 'ollamaServerInput',
@@ -127,12 +130,17 @@ export const PROVIDER_UI = {
       model: 'ollamaModel'
     },
     defaultServer: 'http://localhost:11434',
+    fields: [
+      { kind: 'text', element: 'server', label: 'サーバーアドレス', placeholder: 'http://localhost:11434' },
+      { kind: 'model', element: 'model', label: 'モデル' }
+    ],
     testRequired: [
       { key: 'ollamaModel', message: 'Ollamaのモデルが設定されていません' }
     ]
   },
   lmstudio: {
     label: 'LM Studio',
+    heading: 'LM Studio ローカルサーバー設定',
     elements: {
       section: 'lmstudioSection',
       server: 'lmstudioServerInput',
@@ -146,12 +154,18 @@ export const PROVIDER_UI = {
       model: 'lmstudioModel'
     },
     defaultServer: 'http://localhost:1234',
+    fields: [
+      { kind: 'text', element: 'server', label: 'サーバーアドレス', placeholder: 'http://localhost:1234' },
+      { kind: 'text', element: 'apiKey', label: 'APIキー（任意）', placeholder: '(必要な場合のみ)' },
+      { kind: 'model', element: 'model', label: 'モデル' }
+    ],
     testRequired: [
       { key: 'lmstudioModel', message: 'LM Studio のモデルが設定されていません' }
     ]
   },
   chromePrompt: {
     label: 'Chrome Gemini Nano',
+    heading: 'Chrome Gemini Nano 設定',
     elements: {
       section: 'chromePromptSection',
       temperature: 'chromePromptTemperatureInput'
@@ -159,7 +173,19 @@ export const PROVIDER_UI = {
     settingsKeys: {
       temperature: 'chromePromptTemperature'
     },
-    defaultTemperature: 0.2
+    defaultTemperature: 0.2,
+    fields: [
+      {
+        kind: 'number',
+        element: 'temperature',
+        label: 'temperature（0〜2、既定: 0.2）',
+        placeholder: '0.2',
+        min: '0',
+        max: '2',
+        step: '0.1',
+        note: 'Chrome の Built-in Prompt API / Gemini Nano を使用します。APIキー、モデル選択、外部HTTP通信は不要です。'
+      }
+    ]
   }
 };
 
@@ -174,4 +200,92 @@ export function getProviderSections(elements) {
       elements[PROVIDER_UI[provider].elements.section]
     ])
   );
+}
+
+export function getProviderElementRefs(root = document) {
+  return Object.fromEntries(
+    PROVIDER_ORDER.flatMap((provider) => {
+      const config = PROVIDER_UI[provider];
+      return Object.entries(config.elements)
+        .filter(([, elementName]) => Boolean(elementName))
+        .map(([elementType, elementName]) => [
+          elementName,
+          root.getElementById(getProviderElementId(provider, elementType))
+        ]);
+    })
+  );
+}
+
+export function renderProviderSections(container, template = document.getElementById('provider-section-template')) {
+  if (!container || !template) return;
+  container.innerHTML = '';
+
+  PROVIDER_ORDER.forEach((provider, index) => {
+    const config = PROVIDER_UI[provider];
+    const fragment = template.content.cloneNode(true);
+    const section = fragment.querySelector('.api-section');
+    const heading = fragment.querySelector('.api-heading');
+    section.id = getProviderElementId(provider, 'section');
+    section.classList.toggle('hidden', index !== 0);
+    heading.textContent = config.heading || `${config.label} 設定`;
+
+    (config.fields || []).forEach((field) => {
+      section.appendChild(createProviderField(provider, field));
+    });
+
+    container.appendChild(fragment);
+  });
+}
+
+function createProviderField(provider, field) {
+  const group = document.createElement('div');
+  group.className = 'form-group';
+
+  const id = getProviderElementId(provider, field.element);
+  const label = document.createElement('label');
+  label.htmlFor = id;
+  label.textContent = field.label;
+  group.appendChild(label);
+
+  if (field.kind === 'model') {
+    const select = document.createElement('select');
+    select.id = id;
+    select.className = 'model-select';
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'モデルを読み込み中...';
+    select.appendChild(option);
+    group.appendChild(select);
+
+    const info = document.createElement('div');
+    info.id = getProviderElementId(provider, 'modelInfo');
+    info.className = 'model-info';
+    group.appendChild(info);
+    return group;
+  }
+
+  const input = document.createElement('input');
+  input.type = field.kind;
+  input.id = id;
+  input.placeholder = field.placeholder || '';
+  if (field.min !== undefined) input.min = field.min;
+  if (field.max !== undefined) input.max = field.max;
+  if (field.step !== undefined) input.step = field.step;
+  group.appendChild(input);
+
+  if (field.note) {
+    const note = document.createElement('div');
+    note.className = 'note';
+    note.textContent = field.note;
+    group.appendChild(note);
+  }
+
+  return group;
+}
+
+function getProviderElementId(provider, elementType) {
+  if (elementType === 'section') return `${provider}-section`;
+  if (elementType === 'apiKey') return `${provider}-api-key`;
+  if (elementType === 'modelInfo') return `${provider}-model-info`;
+  return `${provider}-${elementType}`;
 }
