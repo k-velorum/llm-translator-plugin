@@ -283,31 +283,13 @@ function addTranslateButtonToTweets() {
   }
   if (!featureSettings.enableTwitterTranslation) return;
 
-  console.log('Twitter/X.comページを検出しました。翻訳ボタンを追加します。');
-
   const tweetSelector = 'article[data-testid="tweet"]';
-  document.querySelectorAll(tweetSelector).forEach(addButtonToTweet);
-
-  if (tweetObserver) return;
-  tweetObserver = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (!mutation.addedNodes || mutation.addedNodes.length === 0) return;
-      mutation.addedNodes.forEach((node) => {
-        if (node.nodeType !== Node.ELEMENT_NODE) return;
-        if (node.matches && node.matches(tweetSelector)) {
-          addButtonToTweet(node);
-        }
-        node.querySelectorAll(tweetSelector).forEach(addButtonToTweet);
-      });
-    });
+  window.twitterObserverController = window.twitterObserverController || window.createObserverController({
+    selector: tweetSelector,
+    onElement: addButtonToTweet,
+    isEnabled: () => featureSettings.enableTwitterTranslation
   });
-
-  tweetObserver.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-
-  console.log('ツイート監視を開始しました');
+  window.twitterObserverController.start();
 }
 
 function addButtonToTweet(tweetElement) {

@@ -54,23 +54,12 @@ function addTranslateButtonToYouTubeComments() {
   ensureEmbeddedTranslationSpinnerStyles();
   ensureYouTubeTranslationStyles();
 
-  document.querySelectorAll(commentTextSelector).forEach(addButtonToYouTubeComment);
-
-  if (ytObserver) return;
-  ytObserver = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes || []) {
-        if (node.nodeType !== Node.ELEMENT_NODE) continue;
-        if (node.matches && node.matches(commentTextSelector)) {
-          addButtonToYouTubeComment(node);
-        } else {
-          const targets = node.querySelectorAll?.(commentTextSelector);
-          targets && targets.forEach(addButtonToYouTubeComment);
-        }
-      }
-    }
+  window.youtubeObserverController = window.youtubeObserverController || window.createObserverController({
+    selector: commentTextSelector,
+    onElement: addButtonToYouTubeComment,
+    isEnabled: () => featureSettings.enableYoutubeTranslation
   });
-  ytObserver.observe(document.body, { childList: true, subtree: true });
+  window.youtubeObserverController.start();
 }
 
 function addButtonToYouTubeComment(contentTextEl) {

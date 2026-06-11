@@ -1,8 +1,8 @@
 (() => {
   'use strict';
 
-window.tweetObserver = window.tweetObserver || null;
-window.ytObserver = window.ytObserver || null;
+window.twitterObserverController = window.twitterObserverController || null;
+window.youtubeObserverController = window.youtubeObserverController || null;
 
 const featureSettings = {
   enableTwitterTranslation: true,
@@ -59,27 +59,57 @@ function registerFeatureSettingsListener() {
 
       if (twitterChanged) {
         if (!featureSettings.enableTwitterTranslation) {
-          try { window.tweetObserver?.disconnect(); } catch {}
-          window.tweetObserver = null;
+          window.twitterObserverController?.stop();
           document.querySelectorAll('.llm-translate-button, .llm-tweet-translation').forEach((node) => node.remove());
         } else {
-          addTranslateButtonToTweets();
+          window.addTranslateButtonToTweets();
         }
       }
 
       if (youtubeChanged) {
         if (!featureSettings.enableYoutubeTranslation) {
-          try { window.ytObserver?.disconnect(); } catch {}
-          window.ytObserver = null;
+          window.youtubeObserverController?.stop();
           document.querySelectorAll('.llm-yt-translate-button, .llm-yt-translation').forEach((node) => node.remove());
         } else {
-          addTranslateButtonToYouTubeComments();
+          window.addTranslateButtonToYouTubeComments();
         }
       }
 
-      updateTweetTranslationCacheScopeFromChanges(changes);
+      window.updateTweetTranslationCacheScopeFromChanges(changes);
     });
   } catch {}
+}
+
+function createObserverController({ selector, onElement, isEnabled }) {
+  let observer = null;
+
+  const applyToNode = (node) => {
+    if (!(node instanceof Element)) return;
+    if (node.matches?.(selector)) {
+      onElement(node);
+    }
+    node.querySelectorAll?.(selector).forEach(onElement);
+  };
+
+  return {
+    start() {
+      if (!isEnabled()) return;
+      document.querySelectorAll(selector).forEach(onElement);
+      if (observer || !document.body) return;
+      observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+          for (const node of mutation.addedNodes || []) {
+            applyToNode(node);
+          }
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    },
+    stop() {
+      observer?.disconnect();
+      observer = null;
+    }
+  };
 }
 
 window.LLMT = window.LLMT || {};
@@ -87,9 +117,11 @@ window.LLMT.settings = {
   featureSettings,
   loadFeatureSettings,
   registerFeatureSettingsListener,
+  createObserverController,
   ready: loadFeatureSettings
 };
 window.featureSettings = featureSettings;
 window.loadFeatureSettings = loadFeatureSettings;
 window.registerFeatureSettingsListener = registerFeatureSettingsListener;
+window.createObserverController = createObserverController;
 })();
