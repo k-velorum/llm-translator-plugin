@@ -537,97 +537,99 @@ export async function startPageTranslation(tabId) {
   }
 }
 
+async function continuePageTranslation(message, sender, sendResponse) {
+  try {
+    const tabId = await resolveTabIdFromSenderOrActive(sender);
+    if (!tabId) return sendResponse && sendResponse({ ok: false, error: 'tab not found' });
+
+    const { snapshotId } = message;
+    const session = getPageTranslationSession(tabId, snapshotId);
+    if (!session) return sendResponse && sendResponse({ ok: false, error: 'session not found' });
+
+    try {
+      await showControls(tabId, snapshotId, {
+        remainingChunks: session.chunks.length - session.nextIndex,
+        processedItems: session.offset,
+        totalItems: session.totalItems,
+        totalChunks: session.chunks.length,
+        canContinue: false
+      });
+    } catch (_) {
+      // no-op
+    }
+
+    try {
+      await processPageTranslationPass(
+        session,
+        session.params?.chunksPerPass || DEFAULT_SETTINGS.pageTranslationChunksPerPass
+      );
+    } catch (e) {
+      await logPassFailed(session, tabId, snapshotId, e);
+    }
+
+    if (!session.canceled && session.nextIndex < session.chunks.length) {
+      await showControls(tabId, snapshotId, {
+        remainingChunks: session.chunks.length - session.nextIndex,
+        processedItems: session.offset,
+        totalItems: session.totalItems,
+        totalChunks: session.chunks.length,
+        canContinue: true
+      });
+    } else {
+      await hideControls(tabId, snapshotId);
+    }
+
+    await logStoppedWithError(session, tabId, snapshotId);
+
+    sendResponse && sendResponse({ ok: true });
+  } catch (e) {
+    log.error('pageTranslation', 'continuePageTranslation エラー', e);
+    sendResponse && sendResponse({ ok: false, error: e?.message || String(e) });
+  }
+}
+
+async function cancelPageTranslation(message, sender, sendResponse) {
+  try {
+    const tabId = await resolveTabIdFromSenderOrActive(sender);
+    if (!tabId) return sendResponse && sendResponse({ ok: false, error: 'tab not found' });
+
+    const { snapshotId } = message;
+    const session = getPageTranslationSession(tabId, snapshotId);
+    if (!session) return sendResponse && sendResponse({ ok: true });
+
+    session.canceled = true;
+    try {
+      session.abortController?.abort();
+    } catch (_) {
+      // no-op
+    }
+    deletePageTranslationSession(tabId, snapshotId);
+
+    await appendLog({
+      level: 'info',
+      type: 'page-translation',
+      event: 'canceled',
+      ...getProviderMeta(session.settings),
+      tabId,
+      snapshotId
+    });
+
+    await hideControls(tabId, snapshotId);
+    sendResponse && sendResponse({ ok: true });
+  } catch (e) {
+    log.error('pageTranslation', 'cancelPageTranslation エラー', e);
+    sendResponse && sendResponse({ ok: false, error: e?.message || String(e) });
+  }
+}
+
+const PAGE_TRANSLATION_RUNTIME_HANDLERS = {
+  continuePageTranslation,
+  cancelPageTranslation
+};
+
 export function handlePageTranslationRuntimeMessage(message, sender, sendResponse) {
-  if (message && message.action === 'continuePageTranslation') {
-    (async () => {
-      try {
-        const tabId = await resolveTabIdFromSenderOrActive(sender);
-        if (!tabId) return sendResponse && sendResponse({ ok: false, error: 'tab not found' });
-
-        const { snapshotId } = message;
-        const session = getPageTranslationSession(tabId, snapshotId);
-        if (!session) return sendResponse && sendResponse({ ok: false, error: 'session not found' });
-
-        try {
-          await showControls(tabId, snapshotId, {
-            remainingChunks: session.chunks.length - session.nextIndex,
-            processedItems: session.offset,
-            totalItems: session.totalItems,
-            totalChunks: session.chunks.length,
-            canContinue: false
-          });
-        } catch (_) {
-          // no-op
-        }
-
-        try {
-          await processPageTranslationPass(
-            session,
-            session.params?.chunksPerPass || DEFAULT_SETTINGS.pageTranslationChunksPerPass
-          );
-        } catch (e) {
-          await logPassFailed(session, tabId, snapshotId, e);
-        }
-
-        if (!session.canceled && session.nextIndex < session.chunks.length) {
-          await showControls(tabId, snapshotId, {
-            remainingChunks: session.chunks.length - session.nextIndex,
-            processedItems: session.offset,
-            totalItems: session.totalItems,
-            totalChunks: session.chunks.length,
-            canContinue: true
-          });
-        } else {
-          await hideControls(tabId, snapshotId);
-        }
-
-        await logStoppedWithError(session, tabId, snapshotId);
-
-        sendResponse && sendResponse({ ok: true });
-      } catch (e) {
-        log.error('pageTranslation', 'continuePageTranslation エラー', e);
-        sendResponse && sendResponse({ ok: false, error: e?.message || String(e) });
-      }
-    })();
-    return true;
-  }
-
-  if (message && message.action === 'cancelPageTranslation') {
-    (async () => {
-      try {
-        const tabId = await resolveTabIdFromSenderOrActive(sender);
-        if (!tabId) return sendResponse && sendResponse({ ok: false, error: 'tab not found' });
-
-        const { snapshotId } = message;
-        const session = getPageTranslationSession(tabId, snapshotId);
-        if (!session) return sendResponse && sendResponse({ ok: true });
-
-        session.canceled = true;
-        try {
-          session.abortController?.abort();
-        } catch (_) {
-          // no-op
-        }
-        deletePageTranslationSession(tabId, snapshotId);
-
-        await appendLog({
-          level: 'info',
-          type: 'page-translation',
-          event: 'canceled',
-          ...getProviderMeta(session.settings),
-          tabId,
-          snapshotId
-        });
-
-        await hideControls(tabId, snapshotId);
-        sendResponse && sendResponse({ ok: true });
-      } catch (e) {
-        log.error('pageTranslation', 'cancelPageTranslation エラー', e);
-        sendResponse && sendResponse({ ok: false, error: e?.message || String(e) });
-      }
-    })();
-    return true;
-  }
-
-  return false;
+  const handler = PAGE_TRANSLATION_RUNTIME_HANDLERS[message?.action];
+  if (!handler) return false;
+  handler(message, sender, sendResponse);
+  return true;
 }
