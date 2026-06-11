@@ -171,6 +171,7 @@ function startEmbeddedTranslationStream({ kind, text, render, element, meta }) {
 
 window.LLMT = window.LLMT || {};
 window.LLMT.streaming = {
+  streamViewSessions,
   createTranslationRequestId,
   providerSupportsStreaming,
   cancelTranslationStream,

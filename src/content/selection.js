@@ -1,3 +1,6 @@
+(() => {
+  'use strict';
+
 function getSelectionAnchorRect() {
   const selection = window.getSelection();
   if (!selection?.rangeCount) return null;
@@ -23,7 +26,7 @@ function serializeRect(rect) {
 function normalizeUrlForComparison(url) {
   try {
     return new URL(url, window.location.href).href;
-  } catch (_) {
+  } catch {
     return url || '';
   }
 }
@@ -388,3 +391,17 @@ function closePopupOnClickOutside(event) {
     removePopup();
   }
 }
+
+window.LLMT = window.LLMT || {};
+window.LLMT.selection = {
+  getSelectionAnchorRect,
+  rememberImageContextFromEvent,
+  resolveImageDataUrl,
+  prepareSelectionTranslationStream,
+  showLoadingPopup,
+  showTranslationPopup,
+  resolveImageAnchorRect,
+  removePopup
+};
+Object.assign(window, window.LLMT.selection);
+})();
