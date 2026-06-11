@@ -54,7 +54,7 @@ function buildStructuredBatchItems(texts) {
   return texts.map((t, i) => ({ id: i, text: t }));
 }
 
-function buildStructuredBatchInstruction(settings) {
+export function buildStructuredBatchInstruction(settings) {
   const defaultPrompt = DEFAULT_SETTINGS.translationSystemPrompt;
   const customPrompt = (settings?.translationSystemPrompt || '').trim();
   const policy = (customPrompt && customPrompt !== defaultPrompt)
@@ -69,7 +69,7 @@ function buildStructuredBatchInstruction(settings) {
   ].join('\n');
 }
 
-function parseJsonLoose(s) {
+export function parseJsonLoose(s) {
   if (typeof s !== 'string') return null;
   const input = s.trim();
   if (!input) return null;
@@ -177,7 +177,7 @@ function normalizeOpenAICompatibleDeltaText(content) {
   return '';
 }
 
-function normalizeStructuredBatchResult(parsed, texts) {
+export function normalizeStructuredBatchResult(parsed, texts) {
   const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.items) ? parsed.items : null);
   if (!arr) {
     throw new Error('構造化出力に配列(items)が見つかりません');
