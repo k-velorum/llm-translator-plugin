@@ -1,21 +1,24 @@
+(() => {
+  'use strict';
+
 const runtimeMessageHandlers = {
   showLoading(message) {
-    showLoadingPopup(message?.anchorRect || null);
+    window.showLoadingPopup(message?.anchorRect || null);
     return false;
   },
 
   showTranslation(message) {
-    showTranslationPopup(message.translatedText, message?.anchorRect || null);
+    window.showTranslationPopup(message.translatedText, message?.anchorRect || null);
     return false;
   },
 
   getImageAnchorRect(message, sender, sendResponse) {
-    sendResponse({ anchorRect: resolveImageAnchorRect(message?.srcUrl || '') });
+    sendResponse({ anchorRect: window.resolveImageAnchorRect(message?.srcUrl || '') });
     return true;
   },
 
   getImageDataUrl(message, sender, sendResponse) {
-    resolveImageDataUrl(message?.srcUrl || '')
+    window.resolveImageDataUrl(message?.srcUrl || '')
       .then((dataUrl) => {
         sendResponse({ dataUrl });
       })
@@ -26,7 +29,7 @@ const runtimeMessageHandlers = {
   },
 
   prepareSelectionTranslationStream(message, sender, sendResponse) {
-    sendResponse({ requestId: prepareSelectionTranslationStream() });
+    sendResponse({ requestId: window.prepareSelectionTranslationStream() });
     return true;
   },
 
@@ -35,26 +38,26 @@ const runtimeMessageHandlers = {
   },
 
   translationStreamDelta(message) {
-    appendStreamSessionDelta(message.requestId, message.deltaText || '');
+    window.appendStreamSessionDelta(message.requestId, message.deltaText || '');
     return false;
   },
 
   translationStreamComplete(message) {
-    completeStreamSession(message.requestId, message.finalText || '');
+    window.completeStreamSession(message.requestId, message.finalText || '');
     return false;
   },
 
   translationStreamError(message) {
-    failStreamSession(message.requestId, message.error || { message: 'ストリーム翻訳エラー' });
+    window.failStreamSession(message.requestId, message.error || { message: 'ストリーム翻訳エラー' });
     return false;
   },
 
   translationStreamCancelled(message) {
     const requestId = message.requestId || '';
-    if (translationPopup?.dataset?.requestId === requestId) {
-      removePopup({ suppressCancel: true });
+    if (window.translationPopup?.dataset?.requestId === requestId) {
+      window.removePopup({ suppressCancel: true });
     }
-    cancelLocalStreamSession(requestId);
+    window.cancelLocalStreamSession(requestId);
     return false;
   },
 
@@ -65,28 +68,28 @@ const runtimeMessageHandlers = {
   },
 
   getPageTexts(message, sender, sendResponse) {
-    sendResponse(capturePageTextSnapshot());
+    sendResponse(window.capturePageTextSnapshot());
     return true;
   },
 
   applyPageTranslation(message) {
-    applyPageTranslation(message.translations, message.snapshotId);
+    window.applyPageTranslation(message.translations, message.snapshotId);
     return false;
   },
 
   applyPageTranslationChunk(message) {
-    applyPageTranslationChunk(message.snapshotId, message.offset || 0, message.translations || []);
+    window.applyPageTranslationChunk(message.snapshotId, message.offset || 0, message.translations || []);
     return false;
   },
 
   showPageTranslationControls(message) {
     const { snapshotId, remainingChunks, processedItems, totalItems, totalChunks, canContinue } = message;
-    showPageTranslationControls(snapshotId, remainingChunks, processedItems, totalItems, totalChunks, canContinue);
+    window.showPageTranslationControls(snapshotId, remainingChunks, processedItems, totalItems, totalChunks, canContinue);
     return false;
   },
 
   hidePageTranslationControls() {
-    hidePageTranslationControls();
+    window.hidePageTranslationControls();
     return false;
   }
 };
@@ -96,3 +99,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!handler) return false;
   return handler(message, sender, sendResponse);
 });
+
+window.LLMT = window.LLMT || {};
+window.LLMT.runtime = {
+  runtimeMessageHandlers
+};
+})();
