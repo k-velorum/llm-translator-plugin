@@ -16,7 +16,7 @@
 - `src/background/api/providers/*.js`: provider 固有の translate / stream / structured batch / verify / getModels 実装。
 - `src/background/api/http.js`: HTTP、SSE、retry、レスポンス抽出の共通層。
 - `src/background/message-handlers.js`: runtime action table。provider 操作は `verifyApiKey { provider }` / `getModels { provider }` に統一済みです。
-- `src/background/page-translation/`: ページ翻訳の純粋処理。`chunking.js` はユニットテスト対象です。
+- `src/background/page-translation/`: ページ翻訳の処理本体。`chunking.js`（分割）、`translator.js`（チャンク翻訳。構造化 → セパレータ → 分割 → item 単位の段階フォールバックで、失敗 item は null=原文維持）、`runner.js`(worker pool で連続実行、失敗チャンクの記録と再試行)。3つともユニットテスト対象です。チャンク失敗でページ全体翻訳を止めない設計を維持してください。
 - `src/shared/`: background / popup から使うエラー、logger、定数、batch 正規化。
 - `src/popup/`: popup は ES Module。`main.js` は初期化とイベント結線だけにし、provider UI は `provider-ui.js` のテーブルから生成します。
 - `src/content/`: classic content scripts。`namespace.js` / `messaging.js` を先頭に読み込み、content から background への送信は `safeSendMessage` / `sendBackgroundMessage` に寄せています。
@@ -38,6 +38,7 @@
 - provider モデル取得: `getModels` + `provider`
 - 埋め込みテキスト翻訳: `translateEmbeddedText`
 - popup 翻訳テスト: `testTranslate`
+- ページ全体翻訳の制御: `continuePageTranslation`（失敗チャンクの再試行）/ `cancelPageTranslation`。background は受理時点で即 sendResponse し、進捗・完了は `showPageTranslationControls` の push（`status: running|completed|partial`）で通知します。完了まで sendResponse を待たせる実装に戻さないでください。
 - 旧 provider 別 action alias と旧 Twitter 専用 alias は撤去済みです。再追加しないでください。
 
 ## コメントと言語

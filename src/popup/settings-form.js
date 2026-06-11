@@ -40,7 +40,6 @@ export function loadSettings(elements) {
     pageTranslationSeparatorPromptTextarea,
     pageTranslationMaxCharsInput,
     pageTranslationMaxItemsInput,
-    pageTranslationChunksPerPassInput,
     pageTranslationDelayMsInput,
     pageTranslationConcurrencyInput,
     pageTranslationSeparatorInput
@@ -80,7 +79,6 @@ export function loadSettings(elements) {
     if (pageTranslationSeparatorPromptTextarea) pageTranslationSeparatorPromptTextarea.value = separatorPrompt;
     if (pageTranslationMaxCharsInput) pageTranslationMaxCharsInput.value = (settings.pageTranslationMaxChars ?? 3500);
     if (pageTranslationMaxItemsInput) pageTranslationMaxItemsInput.value = (settings.pageTranslationMaxItemsPerChunk ?? 50);
-    if (pageTranslationChunksPerPassInput) pageTranslationChunksPerPassInput.value = (settings.pageTranslationChunksPerPass ?? 6);
     if (pageTranslationDelayMsInput) pageTranslationDelayMsInput.value = (settings.pageTranslationDelayMs ?? 400);
     if (pageTranslationConcurrencyInput) pageTranslationConcurrencyInput.value = (settings.pageTranslationConcurrency ?? 4);
     if (pageTranslationSeparatorInput) pageTranslationSeparatorInput.value = (settings.pageTranslationSeparator ?? '[[[SEP]]]');
@@ -157,7 +155,6 @@ export function saveFeatureSettings(elements) {
     ).trim(),
     pageTranslationMaxChars: readNumberInput(elements.pageTranslationMaxCharsInput, 3500, 500, 32000),
     pageTranslationMaxItemsPerChunk: readNumberInput(elements.pageTranslationMaxItemsInput, 50, 5, 500),
-    pageTranslationChunksPerPass: readNumberInput(elements.pageTranslationChunksPerPassInput, 6, 1, 100),
     pageTranslationDelayMs: readNumberInput(elements.pageTranslationDelayMsInput, 400, 0, 60000),
     pageTranslationConcurrency: readNumberInput(elements.pageTranslationConcurrencyInput, 4, 1, 20),
     pageTranslationSeparator: ((elements.pageTranslationSeparatorInput?.value || '[[[SEP]]]').trim() || '[[[SEP]]]')

@@ -58,7 +58,6 @@ function getElements() {
     advancedBody: document.getElementById('advanced-settings-body'),
     pageTranslationMaxCharsInput: document.getElementById('page-translation-max-chars'),
     pageTranslationMaxItemsInput: document.getElementById('page-translation-max-items'),
-    pageTranslationChunksPerPassInput: document.getElementById('page-translation-chunks-per-pass'),
     pageTranslationDelayMsInput: document.getElementById('page-translation-delay-ms'),
     pageTranslationConcurrencyInput: document.getElementById('page-translation-concurrency'),
     pageTranslationSeparatorInput: document.getElementById('page-translation-separator'),

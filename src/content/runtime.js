@@ -83,8 +83,7 @@ const runtimeMessageHandlers = {
   },
 
   showPageTranslationControls(message) {
-    const { snapshotId, remainingChunks, processedItems, totalItems, totalChunks, canContinue } = message;
-    window.showPageTranslationControls(snapshotId, remainingChunks, processedItems, totalItems, totalChunks, canContinue);
+    window.showPageTranslationControls(message);
     return false;
   },
 

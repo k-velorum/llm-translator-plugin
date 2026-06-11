@@ -37,6 +37,7 @@ export const DEFAULT_SETTINGS = {
   pageTranslationSeparatorPrompt: DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT,
   pageTranslationMaxChars: 3500,
   pageTranslationMaxItemsPerChunk: 50,
+  // 旧パス方式の互換用に残置（連続実行方式へ移行したため現在は未使用）
   pageTranslationChunksPerPass: 6,
   pageTranslationDelayMs: 400,
   // ページ全体翻訳: 同時リクエスト数（並列）
