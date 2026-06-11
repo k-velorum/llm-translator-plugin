@@ -1,81 +1,9 @@
-// 共通状態
 let translationPopup = null;
-let tweetObserver = null;
-let ytObserver = null;
-
-// プラットフォーム別機能設定（デフォルト: 有効）
-let featureSettings = {
-  enableTwitterTranslation: true,
-  enableYoutubeTranslation: true
-};
 
 const POPUP_MARGIN = 8;
 const POPUP_GAP = 10;
 const POPUP_MAX_WIDTH = 420;
 const SHARED_SPINNER_STYLE_ID = 'llm-translator-styles';
-
-function loadFeatureSettings(callback) {
-  try {
-    chrome.storage?.sync?.get?.(null, (settings) => {
-      if (!settings) return;
-      if (typeof settings.enableTwitterTranslation === 'boolean') featureSettings.enableTwitterTranslation = settings.enableTwitterTranslation;
-      if (typeof settings.enableYoutubeTranslation === 'boolean') featureSettings.enableYoutubeTranslation = settings.enableYoutubeTranslation;
-      if (typeof callback === 'function') {
-        try { callback(); } catch (_) {}
-      }
-    });
-  } catch (_) {
-    if (typeof callback === 'function') {
-      try { callback(); } catch (__) {}
-    }
-  }
-}
-
-let featureSettingsListenerRegistered = false;
-
-function registerFeatureSettingsListener() {
-  if (featureSettingsListenerRegistered) return;
-  featureSettingsListenerRegistered = true;
-
-  try {
-    chrome.storage?.onChanged?.addListener?.((changes, area) => {
-      if (area !== 'sync') return;
-      let twitterChanged = false;
-      let youtubeChanged = false;
-
-      if (Object.prototype.hasOwnProperty.call(changes, 'enableTwitterTranslation')) {
-        featureSettings.enableTwitterTranslation = !!changes.enableTwitterTranslation.newValue;
-        twitterChanged = true;
-      }
-      if (Object.prototype.hasOwnProperty.call(changes, 'enableYoutubeTranslation')) {
-        featureSettings.enableYoutubeTranslation = !!changes.enableYoutubeTranslation.newValue;
-        youtubeChanged = true;
-      }
-
-      if (twitterChanged) {
-        if (!featureSettings.enableTwitterTranslation) {
-          try { tweetObserver?.disconnect(); } catch (_) {}
-          tweetObserver = null;
-          document.querySelectorAll('.llm-translate-button, .llm-tweet-translation').forEach((node) => node.remove());
-        } else {
-          addTranslateButtonToTweets();
-        }
-      }
-
-      if (youtubeChanged) {
-        if (!featureSettings.enableYoutubeTranslation) {
-          try { ytObserver?.disconnect(); } catch (_) {}
-          ytObserver = null;
-          document.querySelectorAll('.llm-yt-translate-button, .llm-yt-translation').forEach((node) => node.remove());
-        } else {
-          addTranslateButtonToYouTubeComments();
-        }
-      }
-
-      updateTweetTranslationCacheScopeFromChanges(changes);
-    });
-  } catch (_) {}
-}
 
 function ensureSelectionLoadingSpinnerStyles() {
   if (document.getElementById('llm-selection-loading-spinner-style')) return;

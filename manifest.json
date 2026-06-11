@@ -37,6 +37,7 @@
     "js": [
       "src/content/namespace.js",
       "src/content/messaging.js",
+      "src/content/settings.js",
       "src/content/shared.js",
         "src/content/streaming.js",
         "src/content/selection.js",
