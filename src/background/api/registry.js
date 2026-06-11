@@ -21,6 +21,8 @@ const DEFAULT_CAPABILITIES = {
  * @property {string} [defaultServer]
  * @property {string} [fixedModel]
  * @property {{supportsStreaming: boolean, streamProtocol: string|null, supportsImageTranslation: boolean}} capabilities
+ * @property {(message: Object, settings: Object) => Promise<{success: boolean, models?: Array}>} [verify]
+ * @property {(message: Object, settings: Object) => Promise<Array>} [getModels]
  */
 
 /** @type {Record<string, ProviderDefinition>} */

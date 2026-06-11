@@ -57,6 +57,17 @@ describe('ollama provider', () => {
       required: ['items']
     });
   });
+
+  it('loads models from the requested server before falling back to settings', async () => {
+    const fetch = vi.fn(async () => mockJsonResponse({ models: [{ name: 'qwen3' }] }));
+    globalThis.fetch = fetch;
+
+    await expect(
+      ollamaProvider.getModels({ server: 'http://192.0.2.10:11434/' }, { ollamaServer: 'http://localhost:11434' })
+    ).resolves.toEqual([{ id: 'qwen3', name: 'qwen3' }]);
+
+    expect(fetch.mock.calls[0][0]).toBe('http://192.0.2.10:11434/api/tags');
+  });
 });
 
 describe('lmstudio provider', () => {
@@ -127,6 +138,28 @@ describe('lmstudio provider', () => {
       temperature: 0.2,
       stream: false,
       store: false
+    });
+  });
+
+  it('loads models from a Tailscale LM Studio server with an optional key', async () => {
+    const fetch = vi.fn(async () =>
+      mockJsonResponse({
+        data: [{ id: 'local-model' }]
+      })
+    );
+    globalThis.fetch = fetch;
+
+    await expect(
+      lmstudioProvider.getModels(
+        { server: 'http://100.115.98.13:1234', apiKey: 'message-key' },
+        { lmstudioServer: 'http://localhost:1234', lmstudioApiKey: 'saved-key' }
+      )
+    ).resolves.toEqual([{ id: 'local-model', name: 'local-model' }]);
+
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe('http://100.115.98.13:1234/v1/models');
+    expect(options.headers).toEqual({
+      'Authorization': 'Bearer message-key'
     });
   });
 });

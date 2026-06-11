@@ -91,4 +91,48 @@ describe('cerebras provider', () => {
       }
     });
   });
+
+  it('verifies API keys against the authenticated models endpoint', async () => {
+    const fetch = vi.fn(async () => mockJsonResponse({ data: [] }));
+    globalThis.fetch = fetch;
+
+    await expect(
+      cerebrasProvider.verify({ apiKey: 'test-cerebras-key' }, {})
+    ).resolves.toEqual({ success: true });
+
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe('https://api.cerebras.ai/v1/models');
+    expect(options.headers).toEqual({
+      'Authorization': 'Bearer test-cerebras-key'
+    });
+  });
+
+  it('loads public OpenRouter-shaped models when no Cerebras key is available', async () => {
+    const fetch = vi.fn(async () =>
+      mockJsonResponse({
+        data: [
+          {
+            id: 'llama3.1-8b',
+            name: 'Llama 3.1 8B',
+            context_length: 8192,
+            pricing: { prompt: '0' }
+          }
+        ]
+      })
+    );
+    globalThis.fetch = fetch;
+
+    await expect(cerebrasProvider.getModels({}, {})).resolves.toEqual([
+      {
+        id: 'llama3.1-8b',
+        name: 'Llama 3.1 8B',
+        context_length: 8192,
+        pricing: { prompt: '0' }
+      }
+    ]);
+
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe('https://api.cerebras.ai/public/v1/models?format=openrouter');
+    expect(options.headers).toEqual({});
+  });
 });

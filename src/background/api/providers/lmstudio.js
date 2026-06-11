@@ -105,10 +105,28 @@ async function translateImage(imageInput, settings, requestOptions = {}) {
   return text;
 }
 
+async function getModels(message, settings) {
+  const server = (message.server || settings.lmstudioServer || 'http://localhost:1234').replace(/\/$/, '');
+  const endpoint = `${server}/v1/models`;
+  const headers = {};
+  const apiKey = message.apiKey || settings.lmstudioApiKey;
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  const result = await makeApiRequest(
+    endpoint,
+    { method: 'GET', headers },
+    'LM Studio モデル一覧取得中にエラーが発生',
+    'info'
+  );
+  const arr = result.data || [];
+  return arr.map((model) => ({ id: model.id, name: model.id }));
+}
+
 export default {
   ...createOpenAICompatibleProvider({
     providerLabel: 'LM Studio',
     getConfig
   }),
-  translateImage
+  translateImage,
+  getModels
 };

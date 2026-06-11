@@ -13,6 +13,10 @@ function buildGeminiGenerateContentUrl(settings) {
   return `https://generativelanguage.googleapis.com/v1beta/models/${settings.geminiModel}:generateContent?key=${settings.geminiApiKey}`;
 }
 
+function buildGeminiModelsUrl(apiKey) {
+  return `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+}
+
 function parseStructuredBatchResponse(text, texts) {
   const parsed = parseJsonLoose(text);
   if (!parsed) {
@@ -100,7 +104,40 @@ async function translateBatchStructured(texts, settings, requestOptions = {}) {
   return parseStructuredBatchResponse(responseText, texts);
 }
 
+async function verify(message) {
+  const apiKey = message.apiKey;
+  if (!apiKey) {
+    throw new Error('Gemini APIキーが未指定です');
+  }
+  await makeApiRequest(
+    buildGeminiModelsUrl(apiKey),
+    { method: 'GET' },
+    'Gemini APIキー検証中にエラーが発生'
+  );
+  return { success: true };
+}
+
+async function getModels(message) {
+  const apiKey = message.apiKey;
+  if (!apiKey) {
+    throw new Error('Gemini APIキーが未指定です');
+  }
+  const result = await makeApiRequest(
+    buildGeminiModelsUrl(apiKey),
+    { method: 'GET' },
+    'Gemini モデル一覧取得中にエラーが発生'
+  );
+  const modelsArr = result.models || [];
+  return modelsArr.map((model) => ({
+    id: (model.name || '').replace('models/', ''),
+    name: model.displayName || model.name,
+    context_length: model.inputTokenLimit
+  }));
+}
+
 export default {
   translate,
-  translateBatchStructured
+  translateBatchStructured,
+  verify,
+  getModels
 };

@@ -90,7 +90,20 @@ async function translateBatchStructured(texts, settings, requestOptions = {}) {
   throw lastError || new Error('Ollama structured batch translation failed');
 }
 
+async function getModels(message, settings) {
+  const server = (message.server || settings.ollamaServer || 'http://localhost:11434').replace(/\/$/, '');
+  const result = await makeApiRequest(
+    `${server}/api/tags`,
+    { method: 'GET' },
+    'Ollama モデル一覧取得中にエラーが発生',
+    'info'
+  );
+  const arr = result.models || [];
+  return arr.map((model) => ({ id: model.name, name: model.name }));
+}
+
 export default {
   translate,
-  translateBatchStructured
+  translateBatchStructured,
+  getModels
 };

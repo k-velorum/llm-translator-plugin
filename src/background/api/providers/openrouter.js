@@ -1,3 +1,4 @@
+import { makeApiRequest } from '../http.js';
 import { createOpenAICompatibleProvider } from '../openai-compatible.js';
 
 export const OPENROUTER_HEADERS_BASE = {
@@ -24,11 +25,50 @@ function getConfig(settings) {
   };
 }
 
+const MODELS_URL = 'https://openrouter.ai/api/v1/models';
+
+function getModelHeaders(apiKey) {
+  const headers = { ...OPENROUTER_HEADERS_BASE };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  return headers;
+}
+
+async function verify(message) {
+  const result = await makeApiRequest(
+    MODELS_URL,
+    {
+      method: 'GET',
+      headers: getModelHeaders(message.apiKey)
+    },
+    'OpenRouter APIキー検証中にエラーが発生'
+  );
+
+  return {
+    success: true,
+    models: result.data
+  };
+}
+
+async function getModels(message, settings) {
+  const key = message.apiKey || settings.openrouterApiKey;
+  const result = await makeApiRequest(
+    MODELS_URL,
+    {
+      method: 'GET',
+      headers: getModelHeaders(key)
+    },
+    'OpenRouter モデル一覧取得中にエラーが発生'
+  );
+  return result.data;
+}
+
 export default createOpenAICompatibleProvider({
   providerLabel: 'OpenRouter',
   getConfig,
   buildTranslateBody: ({ cfg, messages }) => ({
     model: cfg.model,
     messages
-  })
+  }),
+  verify,
+  getModels
 });

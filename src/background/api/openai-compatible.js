@@ -54,7 +54,8 @@ export function createOpenAICompatibleProvider({
     temperature: 0.2,
     stream: false
   }),
-  responseFormatCandidates = getDefaultResponseFormatCandidates
+  responseFormatCandidates = getDefaultResponseFormatCandidates,
+  ...extras
 }) {
   async function translate(text, settings, requestOptions = {}) {
     const cfg = getConfig(settings);
@@ -157,6 +158,7 @@ export function createOpenAICompatibleProvider({
   return {
     translate,
     translateStream,
-    translateBatchStructured
+    translateBatchStructured,
+    ...extras
   };
 }

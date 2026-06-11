@@ -49,6 +49,41 @@ describe('openrouter provider', () => {
       ]
     });
   });
+
+  it('verifies API keys through the provider models endpoint', async () => {
+    const fetch = vi.fn(async () => mockJsonResponse({ data: [{ id: 'openai/gpt-4o-mini' }] }));
+    globalThis.fetch = fetch;
+
+    await expect(
+      openrouterProvider.verify({ apiKey: 'test-openrouter-key' }, {})
+    ).resolves.toEqual({
+      success: true,
+      models: [{ id: 'openai/gpt-4o-mini' }]
+    });
+
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe('https://openrouter.ai/api/v1/models');
+    expect(options.headers).toEqual({
+      'Authorization': 'Bearer test-openrouter-key',
+      ...OPENROUTER_HEADERS_BASE
+    });
+  });
+
+  it('loads models with the saved OpenRouter key when the message has no key', async () => {
+    const fetch = vi.fn(async () => mockJsonResponse({ data: [{ id: 'anthropic/claude-haiku' }] }));
+    globalThis.fetch = fetch;
+
+    await expect(
+      openrouterProvider.getModels({}, { openrouterApiKey: 'saved-openrouter-key' })
+    ).resolves.toEqual([{ id: 'anthropic/claude-haiku' }]);
+
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe('https://openrouter.ai/api/v1/models');
+    expect(options.headers).toEqual({
+      'Authorization': 'Bearer saved-openrouter-key',
+      ...OPENROUTER_HEADERS_BASE
+    });
+  });
 });
 
 describe('zai provider', () => {
