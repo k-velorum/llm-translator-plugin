@@ -62,12 +62,6 @@
   "content_security_policy": {
     "extension_pages": "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http://*:* https://*:* https://openrouter.ai https://generativelanguage.googleapis.com https://api.z.ai https://api.cerebras.ai http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:*"
   },
-  "web_accessible_resources": [
-    {
-      "resources": ["lib/*"],
-      "matches": ["<all_urls>"]
-    }
-  ],
   "commands": {
     "translate-selection": {
       "suggested_key": {
