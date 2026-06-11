@@ -13,8 +13,10 @@ import {
 import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
 import { log } from '../shared/logger.js';
 import { makeApiRequest, makeStreamingApiRequest } from './api/http.js';
+import { getProviderCapabilities } from './api/registry.js';
 
 export { makeApiRequest, makeStreamingApiRequest, readOpenAICompatibleSSE } from './api/http.js';
+export { getProviderCapabilities } from './api/registry.js';
 
 // 共通プロンプト取得（設定のカスタムがあれば優先）
 function getSystemPrompt(settings) {
@@ -22,21 +24,6 @@ function getSystemPrompt(settings) {
   return (typeof v === 'string' && v.trim().length) ? v : DEFAULT_SETTINGS.translationSystemPrompt;
 }
 
-export function getProviderCapabilities(settings = {}) {
-  const provider = settings?.apiProvider || 'gemini';
-  if (provider === 'lmstudio' || provider === 'cerebras') {
-    return {
-      supportsStreaming: true,
-      streamProtocol: 'openai-chat-sse',
-      supportsImageTranslation: provider === 'lmstudio'
-    };
-  }
-  return {
-    supportsStreaming: false,
-    streamProtocol: null,
-    supportsImageTranslation: false
-  };
-}
 export const OPENROUTER_HEADERS_BASE = {
   'HTTP-Referer': 'chrome-extension://llm-translator',
   'X-Title': 'LLM Translation Plugin'
