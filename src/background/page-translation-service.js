@@ -12,6 +12,7 @@ import {
   PAGE_TRANSLATION_TIMEOUT_SHORT_MS
 } from '../shared/constants.js';
 import { sleep } from '../shared/async-utils.js';
+import { log } from '../shared/logger.js';
 
 const STRUCTURED_RESPONSE_BUDGET_MULTIPLIER = 2.2;
 const STRUCTURED_ITEMS_MULTIPLIER = 4;
@@ -255,7 +256,7 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
         if (params && !params.runtime) params.runtime = {};
         if (params?.runtime) params.runtime.structuredDisabled = true;
       }
-      console.warn('構造化バッチ翻訳が失敗したため連結方式にフォールバックします:', e?.message || e);
+      log.warn('pageTranslation', '構造化バッチ翻訳が失敗したため連結方式にフォールバックします', e);
       await appendLog({
         level: 'warn',
         type: 'page-translation',
@@ -292,9 +293,11 @@ async function translateJoinedOrSplit(chunk, settings, params, depth = 0, reques
   const parts = translated.split(sep);
   if (parts.length === chunk.length) return parts;
 
-  console.warn(
-    `区切り数不一致のためサブ分割を試行: expected=${chunk.length} actual=${parts.length} depth=${depth}`
-  );
+  log.warn('pageTranslation', '区切り数不一致のためサブ分割を試行', {
+    expected: chunk.length,
+    actual: parts.length,
+    depth
+  });
 
   if (depth >= 3 || chunk.length <= 1) {
     const perItem = [];
@@ -410,7 +413,7 @@ async function processPageTranslationPass(session, chunksPerPass) {
           translations: r.parts
         });
       } catch (e) {
-        console.warn('applyPageTranslationChunk 送信に失敗しました:', e);
+        log.warn('pageTranslation', 'applyPageTranslationChunk 送信に失敗しました', e);
       }
 
       session.offset += r.chunk.length;
@@ -509,7 +512,7 @@ async function logStoppedWithError(session, tabId, snapshotId) {
 }
 
 export async function startPageTranslation(tabId) {
-  console.log('ページ全体翻訳リクエストを受信');
+  log.info('pageTranslation', 'ページ全体翻訳リクエストを受信');
   try {
     const response = await chrome.tabs.sendMessage(tabId, { action: 'getPageTexts' });
     const pageTexts = response.texts || [];
@@ -602,7 +605,7 @@ export async function startPageTranslation(tabId) {
         canContinue: false
       });
     } catch (e) {
-      console.warn('初期コントロール表示に失敗:', e);
+      log.warn('pageTranslation', '初期コントロール表示に失敗', e);
     }
 
     try {
@@ -625,7 +628,7 @@ export async function startPageTranslation(tabId) {
 
     await logStoppedWithError(session, tabId, snapshotId);
   } catch (error) {
-    console.error('ページ全体翻訳エラー:', error);
+    log.error('pageTranslation', 'ページ全体翻訳エラー', error);
     await appendLog({
       level: 'error',
       type: 'page-translation',
@@ -685,7 +688,7 @@ export function handlePageTranslationRuntimeMessage(message, sender, sendRespons
 
         sendResponse && sendResponse({ ok: true });
       } catch (e) {
-        console.error('continuePageTranslation エラー:', e);
+        log.error('pageTranslation', 'continuePageTranslation エラー', e);
         sendResponse && sendResponse({ ok: false, error: e?.message || String(e) });
       }
     })();
@@ -722,7 +725,7 @@ export function handlePageTranslationRuntimeMessage(message, sender, sendRespons
         await hideControls(tabId, snapshotId);
         sendResponse && sendResponse({ ok: true });
       } catch (e) {
-        console.error('cancelPageTranslation エラー:', e);
+        log.error('pageTranslation', 'cancelPageTranslation エラー', e);
         sendResponse && sendResponse({ ok: false, error: e?.message || String(e) });
       }
     })();

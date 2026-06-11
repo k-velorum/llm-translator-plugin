@@ -7,6 +7,7 @@ import {
   MAX_IMAGE_BYTES,
   TRANSLATION_TIMEOUT_MS
 } from '../shared/constants.js';
+import { log } from '../shared/logger.js';
 
 function isSerializableRect(rect) {
   return Number.isFinite(rect?.left)
@@ -237,7 +238,7 @@ export async function translateImageAndNotify(tabId, srcUrl, frameId = 0) {
     const imageInput = await normalizeImageInput(srcUrl, { tabId, frameId });
     translatedText = await translateImage(imageInput, settings, { timeoutMs: TRANSLATION_TIMEOUT_MS });
   } catch (error) {
-    console.error('画像翻訳処理中のエラー:', error);
+    log.error('imageTranslation', '画像翻訳処理中のエラー', error);
     await appendLog({
       level: 'error',
       type: 'translate',
@@ -253,14 +254,14 @@ export async function translateImageAndNotify(tabId, srcUrl, frameId = 0) {
     await sendMessageToFrame(tabId, frameId, { action: 'showTranslation', translatedText, anchorRect });
     return;
   } catch (sendMessageError) {
-    console.warn('コンテンツスクリプトへの送信に失敗 (画像翻訳):', sendMessageError);
+    log.warn('imageTranslation', 'コンテンツスクリプトへの送信に失敗 (画像翻訳)', sendMessageError);
   }
 
   try {
     await injectFallbackPopup(tabId, translatedText);
     return;
   } catch (injectErr) {
-    console.warn('fallback ポップアップ注入に失敗 (画像翻訳):', injectErr);
+    log.warn('imageTranslation', 'fallback ポップアップ注入に失敗 (画像翻訳)', injectErr);
   }
 
   await openInNewTab(translatedText);

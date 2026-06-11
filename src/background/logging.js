@@ -33,8 +33,7 @@ export async function appendLog(entry) {
     while (arr.length > LOG_MAX) arr.shift();
     await storageLocalSet({ [LOG_KEY]: arr });
   } catch (e) {
-    // ログ失敗は処理を止めない
-    console.debug('appendLog failed:', e);
+    // ログ失敗は処理を止めない。logger から呼ばれるためここでは再ログしない。
   }
 }
 

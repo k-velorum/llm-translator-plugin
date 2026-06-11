@@ -1,3 +1,5 @@
+import { log } from './logger.js';
+
 const DEFAULT_TRANSLATION_SYSTEM_PROMPT =
   '指示された文章を日本語に翻訳してください。翻訳結果のみを出力してください。';
 
@@ -142,7 +144,7 @@ export function normalizeStructuredBatchResult(parsed, texts, options = {}) {
       throw new Error(messages.tooManyMissingIds(missing.length, texts.length));
     }
     if (warnOnMissingIds) {
-      console.warn(messages.missingIdsWarning(missing, missingRatio));
+      log.warn('structuredBatch', messages.missingIdsWarning(missing, missingRatio));
     }
   }
 

@@ -5,6 +5,7 @@ import {
 } from './page-translation-service.js';
 import { translateAndNotify } from './selection-translation.js';
 import { translateImageAndNotify } from './image-translation.js';
+import { log } from '../shared/logger.js';
 
 let setupContextMenuPromise = null;
 
@@ -19,7 +20,9 @@ async function setupContextMenu() {
     await new Promise((resolve) => {
       chrome.contextMenus.removeAll(() => {
         if (chrome.runtime.lastError) {
-          console.debug(`コンテキストメニュー全削除時の情報: ${chrome.runtime.lastError.message}`);
+          log.debug('eventListeners', 'コンテキストメニュー全削除時の情報', {
+            message: chrome.runtime.lastError.message
+          });
         }
         resolve();
       });
@@ -35,7 +38,7 @@ async function setupContextMenu() {
         () => {
           if (chrome.runtime.lastError) {
             const errorMessage = chrome.runtime.lastError.message || '詳細不明のエラー';
-            console.error('コンテキストメニュー作成エラー:', errorMessage);
+            log.error('eventListeners', 'コンテキストメニュー作成エラー', { errorMessage });
             reject(new Error(errorMessage));
           } else {
             resolve();
@@ -54,7 +57,7 @@ async function setupContextMenu() {
         () => {
           if (chrome.runtime.lastError) {
             const errorMessage = chrome.runtime.lastError.message || '詳細不明のエラー';
-            console.error('ページ全体翻訳メニュー作成エラー:', errorMessage);
+            log.error('eventListeners', 'ページ全体翻訳メニュー作成エラー', { errorMessage });
             reject(new Error(errorMessage));
           } else {
             resolve();
@@ -73,7 +76,7 @@ async function setupContextMenu() {
         () => {
           if (chrome.runtime.lastError) {
             const errorMessage = chrome.runtime.lastError.message || '詳細不明のエラー';
-            console.error('画像翻訳メニュー作成エラー:', errorMessage);
+            log.error('eventListeners', '画像翻訳メニュー作成エラー', { errorMessage });
             reject(new Error(errorMessage));
           } else {
             resolve();
@@ -83,7 +86,7 @@ async function setupContextMenu() {
     });
   })()
     .catch((error) => {
-      console.error('コンテキストメニュー設定中に予期せぬエラー:', error);
+      log.error('eventListeners', 'コンテキストメニュー設定中に予期せぬエラー', error);
       throw error;
     })
     .finally(() => {
@@ -102,12 +105,12 @@ async function handleContextMenuClick(info, tab) {
 
   if (info.menuItemId === 'translate-with-llm' && info.selectionText) {
     const selectedText = info.selectionText;
-    console.log('コンテキストメニューから翻訳:', selectedText);
+    log.info('eventListeners', 'コンテキストメニューから翻訳', { selectedText });
     try {
       await chrome.tabs.get(tab.id);
       await translateAndNotify(tab.id, selectedText, Number.isInteger(info?.frameId) ? info.frameId : 0);
     } catch (tabError) {
-      console.error('タブへのアクセスエラー (コンテキストメニュー):', tabError);
+      log.error('eventListeners', 'タブへのアクセスエラー (コンテキストメニュー)', tabError);
     }
   }
 
@@ -116,7 +119,7 @@ async function handleContextMenuClick(info, tab) {
       await chrome.tabs.get(tab.id);
       await translateImageAndNotify(tab.id, info.srcUrl, Number.isInteger(info?.frameId) ? info.frameId : 0);
     } catch (tabError) {
-      console.error('タブへのアクセスエラー (画像コンテキストメニュー):', tabError);
+      log.error('eventListeners', 'タブへのアクセスエラー (画像コンテキストメニュー)', tabError);
     }
   }
 }
@@ -124,11 +127,11 @@ async function handleContextMenuClick(info, tab) {
 // キーボードショートカット処理
 async function handleCommand(command) {
   if (command === 'translate-selection') {
-    console.log('翻訳ショートカットが押されました');
+    log.info('eventListeners', '翻訳ショートカットが押されました');
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab || !tab.id) {
-        console.error('アクティブなタブが見つからないか、IDがありません');
+        log.error('eventListeners', 'アクティブなタブが見つからないか、IDがありません');
         return;
       }
 
@@ -142,18 +145,18 @@ async function handleCommand(command) {
       });
 
       if (!response || !response.selectedText) {
-        console.log('選択されたテキストがありません (ショートカット)');
+        log.info('eventListeners', '選択されたテキストがありません (ショートカット)');
         return;
       }
 
       const selectedText = response.selectedText;
-      console.log('選択テキスト (ショートカット):', selectedText);
+      log.info('eventListeners', '選択テキスト (ショートカット)', { selectedText });
       await translateAndNotify(tab.id, selectedText, 0);
     } catch (error) {
       if (error.message && error.message.includes('Could not establish connection')) {
-        console.warn('コンテンツスクリプトとの接続確立失敗 (ショートカット):', error.message);
+        log.warn('eventListeners', 'コンテンツスクリプトとの接続確立失敗 (ショートカット)', error);
       } else {
-        console.error('ショートカット処理中に予期せぬエラー:', error);
+        log.error('eventListeners', 'ショートカット処理中に予期せぬエラー', error);
       }
     }
   }
@@ -162,17 +165,17 @@ async function handleCommand(command) {
 // イベントリスナーの登録
 export function registerEventListeners() {
   chrome.runtime.onInstalled.addListener((details) => {
-    console.log(`拡張機能が ${details.reason} されました。`);
+    log.info('eventListeners', `拡張機能が ${details.reason} されました。`);
     initializeDefaultSettings();
     setupContextMenu().catch((error) => {
-      console.error('onInstalled でのコンテキストメニュー設定に失敗:', error);
+      log.error('eventListeners', 'onInstalled でのコンテキストメニュー設定に失敗', error);
     });
   });
 
   // Unpacked の再読み込み直後など onInstalled が発火しない場合に備えて、
   // 起動時にもコンテキストメニューを再作成する。
   setupContextMenu().catch((error) => {
-    console.error('起動時のコンテキストメニュー設定に失敗:', error);
+    log.error('eventListeners', '起動時のコンテキストメニュー設定に失敗', error);
   });
 
   if (!chrome.contextMenus.onClicked.hasListener(handleContextMenuClick)) {
@@ -187,5 +190,5 @@ export function registerEventListeners() {
     return handlePageTranslationRuntimeMessage(message, sender, sendResponse);
   });
 
-  console.log('イベントリスナーが登録されました。');
+  log.info('eventListeners', 'イベントリスナーが登録されました。');
 }

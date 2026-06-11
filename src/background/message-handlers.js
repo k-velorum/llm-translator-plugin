@@ -13,6 +13,7 @@ import {
 } from './streaming.js';
 import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
 import { normalizeError } from '../shared/errors.js';
+import { log } from '../shared/logger.js';
 
 const STREAM_TIMEOUT_MS = TRANSLATION_TIMEOUT_MS;
 const activeStreams = new Map();
@@ -142,7 +143,7 @@ async function handleApiRequest(action, apiKey, endpoint, headers, successCallba
     result = await handleDirectRequest(endpoint, headers);
       successCallback(result);
   } catch (error) {
-    console.error(`${action}エラー:`, error);
+    log.error('messageHandlers', `${action}エラー`, error);
     errorCallback(normalizeError(error));
   }
 }
@@ -174,7 +175,7 @@ async function handleModelListRequest(provider, apiKey, endpoint, headers, dataP
     (error) => {
       // APIキーなしでも取得できるOpenRouterの場合はエラーを無視してデフォルトを返す
       if (provider === 'OpenRouter' && !apiKey) {
-         console.warn('OpenRouter APIキー未設定のため、公開モデル一覧を取得します。');
+         log.warn('messageHandlers', 'OpenRouter APIキー未設定のため、公開モデル一覧を取得します。');
          // ここで公開モデル取得のロジックを再度呼ぶか、デフォルトを返す
          // 今回は簡略化のため、エラーを返しつつ、popup.js側でデフォルトを使う想定
          sendResponse({
@@ -223,7 +224,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
             sendResponse({ translatedText: translatedText });
           })
           .catch(error => {
-            console.error('ツイート翻訳エラー:', error);
+            log.error('messageHandlers', 'ツイート翻訳エラー', error);
             appendLog({
               level: 'error',
               type: 'translate',
@@ -251,7 +252,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
             sendResponse({ result: result });
           })
           .catch(error => {
-            console.error('テスト翻訳エラー:', error);
+            log.error('messageHandlers', 'テスト翻訳エラー', error);
             appendLog({
               level: 'error',
               type: 'translate',
@@ -411,7 +412,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
       const headers = {};
       const apiKey = message.apiKey || settings.lmstudioApiKey;
       if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
-      console.info('[background] getLmstudioModels:start', {
+      log.info('messageHandlers', 'getLmstudioModels:start', {
         server,
         endpoint,
         hasApiKey: Boolean(apiKey)
@@ -420,7 +421,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
         .then((result) => {
           const arr = result.data || [];
           const models = arr.map(m => ({ id: m.id, name: m.id }));
-          console.info('[background] getLmstudioModels:response', {
+          log.info('messageHandlers', 'getLmstudioModels:response', {
             server,
             rawModelCount: Array.isArray(arr) ? arr.length : null,
             modelCount: models.length
@@ -428,7 +429,7 @@ export function handleBackgroundMessage(message, sender, sendResponse) {
           sendResponse({ models });
         })
         .catch((error) => {
-          console.warn('[background] getLmstudioModels:error', {
+          log.warn('messageHandlers', 'getLmstudioModels:error', {
             server,
             message: error.message
           });

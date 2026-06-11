@@ -12,6 +12,7 @@ import {
 } from '../shared/structured-batch.js';
 import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
 import { sleepWithSignal } from '../shared/async-utils.js';
+import { createScopedLogger, log } from '../shared/logger.js';
 
 // 共通プロンプト取得（設定のカスタムがあれば優先）
 function getSystemPrompt(settings) {
@@ -278,7 +279,7 @@ ${error.stack ? '\nスタックトレース:\n' + error.stack : ''}
 
 // APIリクエスト共通処理
 export async function makeApiRequest(url, options = {}, errorMessage, logLevel = 'error') {
-  const logger = (console[logLevel] || console.error).bind(console);
+  const logger = createScopedLogger('api', logLevel);
 
   const timeoutMs = Number.isFinite(options?.timeoutMs) ? options.timeoutMs : null;
   const externalSignal = options?.signal;
@@ -344,12 +345,12 @@ export async function makeApiRequest(url, options = {}, errorMessage, logLevel =
         try {
           const errorData = await response.json();
           errorText = JSON.stringify(errorData);
-          console.error('エラーレスポンス:', errorData);
+          log.error('api', 'エラーレスポンス', errorData);
           throw new Error(`API Error: ${errorData.error?.message || response.statusText} (${response.status})`);
         } catch (parseError) {
           try {
             errorText = await response.text();
-            console.error('エラーテキスト:', errorText);
+            log.error('api', 'エラーテキスト', { errorText });
           } catch (textError) {
             errorText = 'レスポンステキストを取得できませんでした';
           }
@@ -396,7 +397,7 @@ export async function makeApiRequest(url, options = {}, errorMessage, logLevel =
 }
 
 export async function makeStreamingApiRequest(url, options = {}, handlers = {}, errorMessage, logLevel = 'error') {
-  const logger = (console[logLevel] || console.error).bind(console);
+  const logger = createScopedLogger('api', logLevel);
   const timeoutMs = Number.isFinite(options?.timeoutMs) ? options.timeoutMs : null;
   const externalSignal = options?.signal;
 
@@ -597,7 +598,9 @@ async function translateWithGemini(text, settings, requestOptions = {}) {
     throw new Error('Gemini APIキーが設定されていません');
   }
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${settings.geminiModel}:generateContent?key=${settings.geminiApiKey}`;
-  console.log(`Gemini API リクエスト開始: ${apiUrl.replace(settings.geminiApiKey, '***API_KEY***')}`);
+  log.info('api', 'Gemini API リクエスト開始', {
+    apiUrl: apiUrl.replace(settings.geminiApiKey, '[redacted]')
+  });
 
   try {
     const data = await makeApiRequest(

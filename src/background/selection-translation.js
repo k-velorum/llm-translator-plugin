@@ -11,6 +11,7 @@ import {
   sendMessageToFrame
 } from './streaming.js';
 import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
+import { log } from '../shared/logger.js';
 
 const selectionStreamSessions = new Map();
 
@@ -199,7 +200,7 @@ async function injectFallbackPopup(tabId, translatedText) {
         };
         setTimeout(() => document.addEventListener('click', onDocClick, true), 0);
       } catch (e) {
-        console.error('fallback popup injection error', e);
+        log.error('selectionTranslation', 'fallback popup injection error', e);
       }
     },
     args: [translatedText]
@@ -277,9 +278,9 @@ export async function translateAndNotify(tabId, text, frameId = 0) {
       } else if (abortController.signal.aborted && selectionSession?.cancelled) {
         return;
       } else if (abortController.signal.aborted && streamSendFailed) {
-        console.warn('選択翻訳ストリームの表示先フレーム送信に失敗:', error);
+        log.warn('selectionTranslation', '選択翻訳ストリームの表示先フレーム送信に失敗', error);
       } else {
-        console.error('選択翻訳ストリーム中のエラー:', error);
+        log.error('selectionTranslation', '選択翻訳ストリーム中のエラー', error);
       }
 
       if (requestId) {
@@ -320,7 +321,7 @@ export async function translateAndNotify(tabId, text, frameId = 0) {
     try {
       translatedText = await translateText(text, settings);
     } catch (error) {
-      console.error('翻訳処理中のエラー:', error);
+      log.error('selectionTranslation', '翻訳処理中のエラー', error);
       await appendLog({
         level: 'error',
         type: 'translate',
@@ -337,19 +338,19 @@ export async function translateAndNotify(tabId, text, frameId = 0) {
     await sendToContentScript(tabId, translatedText, frameId);
     return;
   } catch (sendMessageError) {
-    console.warn('コンテンツスクリプトへの送信に失敗:', sendMessageError);
+    log.warn('selectionTranslation', 'コンテンツスクリプトへの送信に失敗', sendMessageError);
   }
 
   try {
     await injectFallbackPopup(tabId, translatedText);
     return;
   } catch (injectErr) {
-    console.warn('fallback ポップアップ注入に失敗:', injectErr);
+    log.warn('selectionTranslation', 'fallback ポップアップ注入に失敗', injectErr);
   }
 
   try {
     await openInNewTab(translatedText);
   } catch (openErr) {
-    console.error('翻訳結果の表示に完全に失敗しました:', openErr);
+    log.error('selectionTranslation', '翻訳結果の表示に完全に失敗しました', openErr);
   }
 }
