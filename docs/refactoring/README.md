@@ -24,6 +24,7 @@ LLM 翻訳 Chrome 拡張（Manifest V3）の段階的リファクタリング計
 | [04-phase4-popup.md](04-phase4-popup.md) | フェーズ4: 設定 UI (popup) の再構築 |
 | [05-phase5-content.md](05-phase5-content.md) | フェーズ5: content script 層の整理 |
 | [06-phase6-quality.md](06-phase6-quality.md) | フェーズ6: テスト拡充・ドキュメント最終化 |
+| [07-phase7-followup.md](07-phase7-followup.md) | フェーズ7: 追加実装計画（レビューで確認された残課題の解消） |
 | [99-verification-checklist.md](99-verification-checklist.md) | 全フェーズ共通の手動スモークテスト手順 |
 
 ## フェーズ概要と依存関係
@@ -91,4 +92,8 @@ LLM 翻訳 Chrome 拡張（Manifest V3）の段階的リファクタリング計
 - provider 追加時の主な修正箇所は `src/background/api/providers/<provider>.js`、`src/background/api/registry.js`、`src/popup/provider-ui.js`、必要に応じて `src/popup/provider-default-models.js` とテスト。
 - 最大ファイルは `src/background/message-handlers.js` 435行。`src/background/page-translation-service.js` は 635行から 305行へ縮小。
 - 自動検証: `bun run lint` は error 0（warning 66）、`bun run test` は 9 files / 37 tests pass、`manifest.json` parse OK。
-- 実機 Chrome が必要なフルスモークと既存プロファイル上書きロードは、この記録時点では未実施。
+- 通常 Chrome の既存プロファイルで、LM Studio 設定復元・popup Test・選択翻訳（main frame / iframe）・
+  ページ翻訳・X / YouTube のボタン注入と翻訳・Feature OFF/ON を確認済み。
+- フルプロバイダーマトリクス、画像翻訳、ショートカット、20回開閉 listener 確認、既存プロファイル上書きロードは未実施。
+- レビュー（2026-06-12）で確認された残課題（verify/getModels の置き場所逸脱、message-handlers 未分割、
+  lint warning 66件、残る実機検証・追加手順実証）は [07-phase7-followup.md](07-phase7-followup.md) で対応する。
