@@ -1,5 +1,9 @@
 # Serena cache
 .serena/cache/
+.serena/
+.jj/
+node_modules/
+coverage/
 
 # Local secrets / Claude Code settings
 settings.json
