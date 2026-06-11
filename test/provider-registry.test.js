@@ -23,22 +23,26 @@ describe('provider registry', () => {
     expect(getProviderCapabilities({ apiProvider: 'cerebras' })).toEqual({
       supportsStreaming: true,
       streamProtocol: 'openai-chat-sse',
-      supportsImageTranslation: false
+      supportsImageTranslation: false,
+      maxPageTranslationConcurrency: null
     });
     expect(getProviderCapabilities({ apiProvider: 'lmstudio' })).toEqual({
       supportsStreaming: true,
       streamProtocol: 'openai-chat-sse',
-      supportsImageTranslation: true
+      supportsImageTranslation: true,
+      maxPageTranslationConcurrency: 1
     });
     expect(getProviderCapabilities({ apiProvider: 'openrouter' })).toEqual({
       supportsStreaming: false,
       streamProtocol: null,
-      supportsImageTranslation: false
+      supportsImageTranslation: false,
+      maxPageTranslationConcurrency: null
     });
     expect(getProviderCapabilities({ apiProvider: 'unknown' })).toEqual({
       supportsStreaming: false,
       streamProtocol: null,
-      supportsImageTranslation: false
+      supportsImageTranslation: false,
+      maxPageTranslationConcurrency: null
     });
   });
 
@@ -77,6 +81,16 @@ describe('provider registry', () => {
       } else {
         expect(provider.capabilities.streamProtocol).toBeNull();
       }
+    }
+  });
+});
+
+describe('page translation concurrency capability', () => {
+  it('caps page translation concurrency to 1 for local providers', () => {
+    for (const localProvider of ['ollama', 'lmstudio', 'chromePrompt']) {
+      expect(
+        getProviderCapabilities({ apiProvider: localProvider }).maxPageTranslationConcurrency
+      ).toBe(1);
     }
   });
 });

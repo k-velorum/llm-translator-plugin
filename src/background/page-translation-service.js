@@ -9,6 +9,7 @@ import {
   summarizeSession
 } from './page-translation/runner.js';
 import { buildSeparatorFallbackPrompt, clampInt } from './page-translation/translator.js';
+import { getProviderCapabilities } from './api/registry.js';
 
 const pageTranslationSessions = new Map(); // key: `${tabId}:${snapshotId}` -> session
 
@@ -91,6 +92,20 @@ async function hideControls(tabId, snapshotId) {
   });
 }
 
+function resolveConcurrency(settings) {
+  const userConcurrency = clampInt(
+    settings.pageTranslationConcurrency,
+    1,
+    20,
+    DEFAULT_SETTINGS.pageTranslationConcurrency
+  );
+  // ローカル推論サーバー（LM Studio / Ollama 等）はリクエストを逐次処理する
+  // ため、並列に投げると互いを待たせてタイムアウト連鎖を起こす。provider の
+  // 上限 capability でユーザー設定を抑える。
+  const maxConcurrency = getProviderCapabilities(settings).maxPageTranslationConcurrency;
+  return maxConcurrency ? Math.min(userConcurrency, maxConcurrency) : userConcurrency;
+}
+
 function buildSessionParams(settings) {
   const sep = (settings.pageTranslationSeparator || DEFAULT_SETTINGS.pageTranslationSeparator).toString();
   return {
@@ -104,7 +119,7 @@ function buildSessionParams(settings) {
       DEFAULT_SETTINGS.pageTranslationMaxItemsPerChunk
     ),
     delayMs: clampInt(settings.pageTranslationDelayMs, 0, 60000, DEFAULT_SETTINGS.pageTranslationDelayMs),
-    concurrency: clampInt(settings.pageTranslationConcurrency, 1, 20, DEFAULT_SETTINGS.pageTranslationConcurrency),
+    concurrency: resolveConcurrency(settings),
     useStructuredOutput: settings.pageTranslationUseStructuredOutput !== false,
     disableStructuredAfterFailure: true,
     runtime: { structuredDisabled: false }

@@ -149,7 +149,7 @@ export async function makeApiRequest(url, options = {}, errorMessage, logLevel =
       if (timedOut) {
         const timeoutError = new Error(`API Error: request timed out after ${timeoutMs}ms`);
         timeoutError.name = 'TimeoutError';
-        logger(`${errorMessage}:`, timeoutError);
+        logger(`${errorMessage}: ${timeoutError.message}`);
         throw timeoutError;
       }
 
@@ -169,7 +169,9 @@ export async function makeApiRequest(url, options = {}, errorMessage, logLevel =
         await sleepWithSignal(delay, externalSignal);
         continue;
       }
-      logger(`${errorMessage}:`, error);
+      // 拡張機能のエラー収集画面はメタ引数を "[object Object]" に潰すため、
+      // エラー本文は必ずメッセージ文字列側に含める
+      logger(`${errorMessage}: ${error?.message || String(error)}`, error);
       throw error;
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
@@ -252,13 +254,14 @@ export async function makeStreamingApiRequest(url, options = {}, handlers = {}, 
       if (timedOut) {
         const timeoutError = new Error(`API Error: request timed out after ${timeoutMs}ms`);
         timeoutError.name = 'TimeoutError';
-        logger(`${errorMessage}:`, timeoutError);
+        logger(`${errorMessage}: ${timeoutError.message}`);
         throw timeoutError;
       }
       if (error && error.name === 'AbortError') {
         throw error;
       }
-      logger(`${errorMessage}:`, error);
+      // エラー本文をメッセージ文字列側に含める（メタ引数は収集画面で潰れる）
+      logger(`${errorMessage}: ${error?.message || String(error)}`, error);
       throw error;
     } finally {
       if (timeoutId) clearTimeout(timeoutId);

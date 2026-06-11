@@ -16,7 +16,7 @@
 - `src/background/api/providers/*.js`: provider 固有の translate / stream / structured batch / verify / getModels 実装。
 - `src/background/api/http.js`: HTTP、SSE、retry、レスポンス抽出の共通層。
 - `src/background/message-handlers.js`: runtime action table。provider 操作は `verifyApiKey { provider }` / `getModels { provider }` に統一済みです。
-- `src/background/page-translation/`: ページ翻訳の処理本体。`chunking.js`（分割）、`translator.js`（チャンク翻訳。構造化 → セパレータ → 分割 → item 単位の段階フォールバックで、失敗 item は null=原文維持）、`runner.js`(worker pool で連続実行、失敗チャンクの記録と再試行)。3つともユニットテスト対象です。チャンク失敗でページ全体翻訳を止めない設計を維持してください。
+- `src/background/page-translation/`: ページ翻訳の処理本体。`chunking.js`（分割）、`translator.js`（チャンク翻訳。構造化 → セパレータ → 分割 → item 単位の段階フォールバックで、失敗 item は null=原文維持）、`runner.js`(worker pool で連続実行、失敗チャンクの記録と再試行)。3つともユニットテスト対象です。チャンク失敗でページ全体翻訳を止めない設計と、チャンク単位の時間予算（deadlineAt。フォールバック各段のタイムアウトを残り予算に丸める）を維持してください。ローカル provider の並列数は registry の `maxPageTranslationConcurrency` で制限しています。
 - `src/shared/`: background / popup から使うエラー、logger、定数、batch 正規化。
 - `src/popup/`: popup は ES Module。`main.js` は初期化とイベント結線だけにし、provider UI は `provider-ui.js` のテーブルから生成します。
 - `src/content/`: classic content scripts。`namespace.js` / `messaging.js` を先頭に読み込み、content から background への送信は `safeSendMessage` / `sendBackgroundMessage` に寄せています。

@@ -9,7 +9,11 @@ import zaiProvider from './providers/zai.js';
 const DEFAULT_CAPABILITIES = {
   supportsStreaming: false,
   streamProtocol: null,
-  supportsImageTranslation: false
+  supportsImageTranslation: false,
+  // ページ全体翻訳の並列リクエスト上限。null は無制限（ユーザー設定に従う）。
+  // ローカル推論サーバーは通常リクエストを逐次処理するため、並列に投げると
+  // 互いのタイムアウトを誘発する。該当 provider は 1 に制限する。
+  maxPageTranslationConcurrency: null
 };
 
 /**
@@ -49,9 +53,9 @@ export const PROVIDERS = {
     settingsKeys: { apiKey: 'cerebrasApiKey', model: 'cerebrasModel' },
     needsApiKey: true,
     capabilities: {
+      ...DEFAULT_CAPABILITIES,
       supportsStreaming: true,
-      streamProtocol: 'openai-chat-sse',
-      supportsImageTranslation: false
+      streamProtocol: 'openai-chat-sse'
     },
     ...cerebrasProvider
   },
@@ -69,7 +73,10 @@ export const PROVIDERS = {
     settingsKeys: { server: 'ollamaServer', model: 'ollamaModel' },
     needsApiKey: false,
     defaultServer: 'http://localhost:11434',
-    capabilities: DEFAULT_CAPABILITIES,
+    capabilities: {
+      ...DEFAULT_CAPABILITIES,
+      maxPageTranslationConcurrency: 1
+    },
     ...ollamaProvider
   },
   lmstudio: {
@@ -79,9 +86,11 @@ export const PROVIDERS = {
     needsApiKey: false,
     defaultServer: 'http://localhost:1234',
     capabilities: {
+      ...DEFAULT_CAPABILITIES,
       supportsStreaming: true,
       streamProtocol: 'openai-chat-sse',
-      supportsImageTranslation: true
+      supportsImageTranslation: true,
+      maxPageTranslationConcurrency: 1
     },
     ...lmstudioProvider
   },
@@ -91,7 +100,10 @@ export const PROVIDERS = {
     settingsKeys: {},
     needsApiKey: false,
     fixedModel: 'Gemini Nano',
-    capabilities: DEFAULT_CAPABILITIES,
+    capabilities: {
+      ...DEFAULT_CAPABILITIES,
+      maxPageTranslationConcurrency: 1
+    },
     ...chromePromptProvider
   }
 };

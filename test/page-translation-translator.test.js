@@ -82,6 +82,42 @@ describe('translateChunk', () => {
     expect(result).toEqual({ parts: [null], method: 'oversized', failedItems: 1 });
   });
 
+  it('時間予算を使い切っていたら API を呼ばず全 item を失敗(null)で返す', async () => {
+    const result = await translateChunk(['one', 'two'], settings, makeParams(), {
+      deadlineAt: Date.now() - 1
+    });
+
+    expect(result).toEqual({
+      parts: [null, null],
+      method: 'budget-exhausted',
+      failedItems: 2
+    });
+    expect(translateBatchStructured).not.toHaveBeenCalled();
+    expect(translateText).not.toHaveBeenCalled();
+  });
+
+  it('item 単位翻訳の途中で予算が切れたら残りを失敗にして打ち切る', async () => {
+    translateBatchStructured.mockRejectedValue(new Error('bad json'));
+    const deadline = { at: Date.now() + 60000 };
+    translateText.mockImplementation(async (text) => {
+      if (text.includes('|||')) return 'セパレータ消失';
+      // 最初の item 翻訳後に予算切れへ切り替える
+      deadline.at = Date.now() - 1;
+      return `${text}訳`;
+    });
+
+    const requestOptions = {
+      get deadlineAt() {
+        return deadline.at;
+      }
+    };
+    const result = await translateChunk(['one', 'two'], settings, makeParams(), requestOptions);
+
+    expect(result.parts[0]).toBe('one訳');
+    expect(result.parts[1]).toBeNull();
+    expect(result.failedItems).toBe(1);
+  });
+
   it('maxChars 超の単一ノードの分割翻訳が成功したら結合して返す', async () => {
     const longText = 'A'.repeat(30) + '. ' + 'B'.repeat(30) + '.';
     translateText.mockResolvedValue('訳');

@@ -46,6 +46,11 @@ export function getFailedChunkIndexes(session) {
   return indexes;
 }
 
+// チャンク全体の時間予算 = 単発タイムアウトの2倍。フォールバック各段が
+// それぞれフルタイムアウトを持つと最悪所要時間が際限なく伸びるため、
+// 予算切れは失敗チャンク（後で再試行可能）として全体の進行を優先する。
+const CHUNK_BUDGET_MULTIPLIER = 2;
+
 function chunkLogMeta(session, idx, extra) {
   return {
     type: 'page-translation',
@@ -69,6 +74,7 @@ async function processChunk(session, idx, hooks) {
   try {
     const result = await translateChunk(chunk, session.settings, session.params, {
       timeoutMs,
+      deadlineAt: Date.now() + timeoutMs * CHUNK_BUDGET_MULTIPLIER,
       signal: session.abortController?.signal
     });
     if (session.canceled) return;
