@@ -8,17 +8,32 @@ const POPUP_GAP = 10;
 const POPUP_MAX_WIDTH = 420;
 const SHARED_SPINNER_STYLE_ID = 'llm-translator-styles';
 
-function ensureSelectionLoadingSpinnerStyles() {
-  if (document.getElementById('llm-selection-loading-spinner-style')) return;
-  const styleElement = document.createElement('style');
-  styleElement.id = 'llm-selection-loading-spinner-style';
-  styleElement.textContent = `
-    @keyframes llmSelectionLoadingSpin {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-  `;
-  document.head.appendChild(styleElement);
+// ページの CSP で <style> 注入が拒否されるサイトでも回転するよう、
+// CSS keyframes ではなく Web Animations API でアニメーションさせる
+function createLoadingSpinner({
+  size = 18,
+  borderWidth = 2,
+  trackColor = '#c8d6ea',
+  color = '#2f6fb3',
+  durationMs = 1000
+} = {}) {
+  const spinner = document.createElement('span');
+  spinner.setAttribute('aria-hidden', 'true');
+  Object.assign(spinner.style, {
+    display: 'inline-block',
+    flex: 'none',
+    width: `${size}px`,
+    height: `${size}px`,
+    border: `${borderWidth}px solid ${trackColor}`,
+    borderTopColor: color,
+    borderRadius: '50%',
+    boxSizing: 'border-box'
+  });
+  spinner.animate(
+    [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+    { duration: durationMs, iterations: Infinity }
+  );
+  return spinner;
 }
 
 function ensureEmbeddedTranslationSpinnerStyles() {
@@ -346,7 +361,7 @@ function extractTranslatedTextFromResponse(response) {
 
 window.LLMT = window.LLMT || {};
 window.LLMT.ui = {
-  ensureSelectionLoadingSpinnerStyles,
+  createLoadingSpinner,
   ensureEmbeddedTranslationSpinnerStyles,
   DOMUtils,
   ErrorUtils,
@@ -358,7 +373,7 @@ window.LLMT.ui = {
 };
 Object.assign(window, {
   translationPopup,
-  ensureSelectionLoadingSpinnerStyles,
+  createLoadingSpinner,
   ensureEmbeddedTranslationSpinnerStyles,
   DOMUtils,
   ErrorUtils,

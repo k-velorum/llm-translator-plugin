@@ -60,14 +60,12 @@ function renderPageTranslationStatus(statusElement, state) {
   applyStyles(statusElement, styles.pageControlsStatus);
 
   if (state === 'running') {
-    const spinner = document.createElement('span');
-    spinner.setAttribute('aria-hidden', 'true');
-    spinner.style.width = '10px';
-    spinner.style.height = '10px';
-    spinner.style.border = '2px solid rgba(31, 91, 149, 0.3)';
-    spinner.style.borderTopColor = '#1f5b95';
-    spinner.style.borderRadius = '50%';
-    spinner.style.animation = 'llmSelectionLoadingSpin 0.9s linear infinite';
+    const spinner = createLoadingSpinner({
+      size: 10,
+      trackColor: 'rgba(31, 91, 149, 0.3)',
+      color: '#1f5b95',
+      durationMs: 900
+    });
     spinner.style.marginRight = '6px';
 
     const label = document.createElement('span');
@@ -90,7 +88,6 @@ function renderPageTranslationStatus(statusElement, state) {
 }
 
 function showPageTranslationControls(snapshotId, remainingChunks, processedItems = 0, totalItems = 0, totalChunks = 0, canContinue = true) {
-  ensureSelectionLoadingSpinnerStyles();
   pageTranslationControlsSnapshotId = snapshotId;
 
   if (!pageTranslationControls) {

@@ -199,7 +199,16 @@ function createSelectionPopup({
   const content = document.createElement('div');
   applyStyles(content, styles.content);
   applyStyles(content, isError ? styles.errorContent : styles.normalContent);
-  content.textContent = bodyText;
+  if (loading) {
+    // streaming 初回応答が遅い provider でも進行中だと分かるよう、スピナーを並べる
+    applyStyles(content, { display: 'flex', alignItems: 'center', gap: '10px' });
+    const loadingLabel = document.createElement('span');
+    loadingLabel.textContent = bodyText;
+    content.appendChild(createLoadingSpinner());
+    content.appendChild(loadingLabel);
+  } else {
+    content.textContent = bodyText;
+  }
 
   const copyBtn = document.createElement('button');
   copyBtn.textContent = 'コピー';
@@ -292,6 +301,8 @@ function updateSelectionStreamPopup(requestId, text, { isError = false, isComple
 
   title.textContent = isError ? '翻訳エラー' : (isCompleted ? '翻訳結果' : '翻訳中');
   translationPopup.__renderedText = text;
+  // textContent 代入で loading 中のスピナーごと消えるため、flex レイアウトも通常表示へ戻す
+  applyStyles(content, { display: '', alignItems: '', gap: '' });
   content.textContent = text || (isCompleted ? '' : '翻訳しています...');
   copyBtn.disabled = !text;
   copyBtn.style.opacity = copyBtn.disabled ? '0.65' : '1';
@@ -319,7 +330,6 @@ function removePopup({ suppressCancel = false } = {}) {
 
 function showLoadingPopup(anchorRect = null) {
   removePopup();
-  ensureSelectionLoadingSpinnerStyles();
   const rect = resolvePopupAnchorRect(anchorRect);
 
   translationPopup = document.createElement('div');
@@ -344,14 +354,7 @@ function showLoadingPopup(anchorRect = null) {
   content.style.gap = '10px';
   content.style.padding = '16px 14px';
 
-  const spinner = document.createElement('div');
-  spinner.setAttribute('aria-hidden', 'true');
-  spinner.style.width = '18px';
-  spinner.style.height = '18px';
-  spinner.style.border = '2px solid #c8d6ea';
-  spinner.style.borderTopColor = '#2f6fb3';
-  spinner.style.borderRadius = '50%';
-  spinner.style.animation = 'llmSelectionLoadingSpin 1s linear infinite';
+  const spinner = createLoadingSpinner();
 
   const loadingText = document.createElement('span');
   loadingText.textContent = '翻訳しています...';
