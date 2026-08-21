@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   loadPersistedSession,
@@ -8,23 +8,55 @@ import {
   reviveSession,
   serializeSession
 } from '../src/background/page-translation/session-persistence.js';
+import { log } from '../src/shared/logger.js';
 
-function createMockStorageArea() {
+function createMockStorageArea({ asyncCallbacks = false, deferFirstSet = false } = {}) {
   const store = new Map();
-  return {
+  let pendingSetCallback = null;
+  const invoke = (callback) => {
+    if (asyncCallbacks) queueMicrotask(callback);
+    else callback();
+  };
+  const area = {
     get(keyOrKeys, callback) {
-      const keys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
-      const result = {};
-      for (const key of keys) {
-        if (store.has(key)) result[key] = store.get(key);
-      }
-      callback(result);
+      invoke(() => {
+        const keys = keyOrKeys === null
+          ? [...store.keys()]
+          : Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
+        const result = {};
+        for (const key of keys) {
+          if (store.has(key)) result[key] = store.get(key);
+        }
+        callback(result);
+      });
     },
     set(items, callback) {
-      for (const [key, value] of Object.entries(items)) store.set(key, value);
+      invoke(() => {
+        for (const [key, value] of Object.entries(items)) store.set(key, value);
+        if (deferFirstSet && pendingSetCallback === null) {
+          pendingSetCallback = callback;
+          return;
+        }
+        if (typeof callback === 'function') callback();
+      });
+    },
+    remove(keyOrKeys, callback) {
+      invoke(() => {
+        const keys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
+        for (const key of keys) store.delete(key);
+        if (typeof callback === 'function') callback();
+      });
+    },
+    hasPendingSet() {
+      return pendingSetCallback !== null;
+    },
+    releasePendingSet() {
+      const callback = pendingSetCallback;
+      pendingSetCallback = null;
       if (typeof callback === 'function') callback();
     }
   };
+  return area;
 }
 
 function makeSession(overrides = {}) {
@@ -47,6 +79,11 @@ function makeSession(overrides = {}) {
     ...overrides
   };
 }
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('serializeSession / reviveSession', () => {
   it('JSON化できないランタイム状態を除外してシリアライズする', () => {
@@ -114,6 +151,37 @@ describe('persistSession / loadPersistedSession', () => {
   it('storage が利用できない環境でも例外を投げず null を返す', async () => {
     expect(await loadPersistedSession(1, 3, null)).toBeNull();
   });
+
+  it('異なるタブへの同時保存が相互のセッションを失わない', async () => {
+    const area = createMockStorageArea({ asyncCallbacks: true });
+
+    await Promise.all([
+      persistSession(makeSession({ tabId: 1, snapshotId: 1 }), area),
+      persistSession(makeSession({ tabId: 2, snapshotId: 1 }), area)
+    ]);
+
+    expect(await loadPersistedSession(1, 1, area)).not.toBeNull();
+    expect(await loadPersistedSession(2, 1, area)).not.toBeNull();
+  });
+
+  it('storage callback の lastError を退避失敗として記録する', async () => {
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => {});
+    vi.stubGlobal('chrome', { runtime: { lastError: null } });
+    const area = createMockStorageArea();
+    area.set = (_items, callback) => {
+      globalThis.chrome.runtime.lastError = { message: 'quota exceeded' };
+      callback();
+      globalThis.chrome.runtime.lastError = null;
+    };
+
+    await persistSession(makeSession(), area);
+
+    expect(warn).toHaveBeenCalledWith(
+      'pageTranslation',
+      'partialセッションの退避に失敗しました',
+      expect.objectContaining({ message: 'quota exceeded' })
+    );
+  });
 });
 
 describe('removePersistedSession / removePersistedSessionsForTab', () => {
@@ -139,5 +207,17 @@ describe('removePersistedSession / removePersistedSessionsForTab', () => {
     expect(await loadPersistedSession(1, 1, area)).toBeNull();
     expect(await loadPersistedSession(1, 2, area)).toBeNull();
     expect(await loadPersistedSession(3, 1, area)).not.toBeNull();
+  });
+
+  it('進行中の旧セッション保存後に同一タブの一掃を実行する', async () => {
+    const area = createMockStorageArea({ deferFirstSet: true });
+    const persistPromise = persistSession(makeSession({ tabId: 1, snapshotId: 4 }), area);
+    await vi.waitFor(() => expect(area.hasPendingSet()).toBe(true));
+
+    const removePromise = removePersistedSessionsForTab(1, area);
+    area.releasePendingSet();
+    await Promise.all([persistPromise, removePromise]);
+
+    expect(await loadPersistedSession(1, 4, area)).toBeNull();
   });
 });

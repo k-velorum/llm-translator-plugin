@@ -94,6 +94,7 @@ function renderPageTranslationStatusChip(statusElement, status) {
 function createPageTranslationControls() {
   const wrap = document.createElement('div');
   wrap.id = 'llm-page-translation-controls';
+  wrap.dataset.llmtUi = '';
   applyStyles(wrap, styles.pageControlsWrap);
 
   const header = document.createElement('div');
@@ -163,7 +164,7 @@ function createPageTranslationControls() {
   closeBtn.textContent = '閉じる';
   closeBtn.type = 'button';
   applyStyles(closeBtn, styles.pageControlsStopBtn);
-  closeBtn.onclick = () => hidePageTranslationControls();
+  closeBtn.onclick = handleCloseClick;
 
   row.appendChild(retryBtn);
   row.appendChild(stopBtn);
@@ -212,6 +213,15 @@ function handleStopClick() {
     }
   );
   if (!sent) hidePageTranslationControls();
+}
+
+function handleCloseClick() {
+  const targetSnapshotId = pageTranslationControlsSnapshotId;
+  // UI は即座に閉じる。partial の退避セッションは background に破棄を依頼し、
+  // completed 等ですでに削除済みなら cancel 側が no-op になる。
+  hidePageTranslationControls();
+  if (!targetSnapshotId) return;
+  safeSendMessage({ action: 'cancelPageTranslation', snapshotId: targetSnapshotId });
 }
 
 function renderSessionLost() {

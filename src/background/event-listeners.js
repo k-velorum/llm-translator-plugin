@@ -1,5 +1,6 @@
 import { initializeDefaultSettings } from './settings.js';
 import {
+  discardPageTranslationSessionsForTab,
   handlePageTranslationRuntimeMessage,
   startPageTranslation
 } from './page-translation-service.js';
@@ -162,6 +163,12 @@ async function handleCommand(command) {
   }
 }
 
+function handleTabRemoved(tabId) {
+  discardPageTranslationSessionsForTab(tabId).catch((error) => {
+    log.warn('eventListeners', '終了タブのページ翻訳セッション破棄に失敗しました', error);
+  });
+}
+
 // イベントリスナーの登録
 export function registerEventListeners() {
   chrome.runtime.onInstalled.addListener((details) => {
@@ -184,6 +191,10 @@ export function registerEventListeners() {
 
   if (!chrome.commands.onCommand.hasListener(handleCommand)) {
     chrome.commands.onCommand.addListener(handleCommand);
+  }
+
+  if (!chrome.tabs.onRemoved.hasListener(handleTabRemoved)) {
+    chrome.tabs.onRemoved.addListener(handleTabRemoved);
   }
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

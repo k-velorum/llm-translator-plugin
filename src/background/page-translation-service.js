@@ -70,6 +70,14 @@ function abortSessionsForTab(tabId) {
   updateKeepAlive();
 }
 
+// 新規実行・タブ終了のどちらでも、メモリと storage のセッションを同じ順序で破棄する。
+// abort は同期的に canceled を立て、storage 側はタブ単位の操作列で進行中 persist の後に並ぶ。
+export async function discardPageTranslationSessionsForTab(tabId) {
+  if (!tabId) return;
+  abortSessionsForTab(tabId);
+  await removePersistedSessionsForTab(tabId);
+}
+
 async function resolveTabIdFromSenderOrActive(sender) {
   return sender?.tab?.id || (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
 }
@@ -200,9 +208,8 @@ export async function startPageTranslation(tabId) {
   if (!tabId) return;
 
   try {
-    abortSessionsForTab(tabId);
     // 旧スナップショット宛の退避セッションが残っていても新規実行では使わない
-    await removePersistedSessionsForTab(tabId);
+    await discardPageTranslationSessionsForTab(tabId);
 
     const response = await chrome.tabs.sendMessage(tabId, { action: 'getPageTexts' });
     const pageTexts = response?.texts || [];

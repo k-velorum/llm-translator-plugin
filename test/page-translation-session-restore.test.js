@@ -6,7 +6,10 @@ vi.mock('../src/background/page-translation/translator.js', async (importOrigina
   return { ...actual, translateChunk: vi.fn() };
 });
 
-import { handlePageTranslationRuntimeMessage } from '../src/background/page-translation-service.js';
+import {
+  handlePageTranslationRuntimeMessage,
+  startPageTranslation
+} from '../src/background/page-translation-service.js';
 import { translateChunk } from '../src/background/page-translation/translator.js';
 import {
   loadPersistedSession,
@@ -17,7 +20,9 @@ function createMockStorageArea() {
   const store = new Map();
   return {
     get(keyOrKeys, callback) {
-      const keys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
+      const keys = keyOrKeys === null
+        ? [...store.keys()]
+        : Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
       const result = {};
       for (const key of keys) {
         if (store.has(key)) result[key] = store.get(key);
@@ -27,11 +32,16 @@ function createMockStorageArea() {
     set(items, callback) {
       for (const [key, value] of Object.entries(items)) store.set(key, value);
       if (typeof callback === 'function') callback();
+    },
+    remove(keyOrKeys, callback) {
+      const keys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
+      for (const key of keys) store.delete(key);
+      if (typeof callback === 'function') callback();
     }
   };
 }
 
-function installChromeStub(sessionArea) {
+function installChromeStub(sessionArea, { pageSnapshot = null } = {}) {
   const localStore = new Map();
   const sentMessages = [];
   vi.stubGlobal('chrome', {
@@ -51,11 +61,25 @@ function installChromeStub(sessionArea) {
           if (typeof callback === 'function') callback();
         }
       },
+      sync: {
+        get: (defaults, callback) => callback({
+          ...defaults,
+          apiProvider: 'gemini',
+          geminiModel: 'test',
+          pageTranslationDelayMs: 0,
+          pageTranslationConcurrency: 1,
+          pageTranslationUseStructuredOutput: false
+        }),
+        set: (_items, callback) => {
+          if (typeof callback === 'function') callback();
+        }
+      },
       session: sessionArea
     },
     tabs: {
       sendMessage: async (tabId, message) => {
         sentMessages.push({ tabId, message });
+        if (message?.action === 'getPageTexts') return pageSnapshot;
       },
       query: async () => [{ id: 1 }]
     }
@@ -63,7 +87,7 @@ function installChromeStub(sessionArea) {
   return { sentMessages };
 }
 
-function makePartialSession() {
+function makePartialSession(overrides = {}) {
   return {
     tabId: 1,
     snapshotId: 7,
@@ -76,8 +100,15 @@ function makePartialSession() {
     ],
     totalItems: 3,
     lastError: 'model output failure',
-    params: { sep: '|||', delayMs: 0, concurrency: 1, useStructuredOutput: false }
+    params: { sep: '|||', delayMs: 0, concurrency: 1, useStructuredOutput: false },
+    ...overrides
   };
+}
+
+function sendRuntimeMessage(message, sender) {
+  return new Promise((resolve) => {
+    handlePageTranslationRuntimeMessage(message, sender, resolve);
+  });
 }
 
 describe('continuePageTranslation: SW再起動後のセッション復元', () => {
@@ -146,5 +177,62 @@ describe('continuePageTranslation: SW再起動後のセッション復元', () =
       expect(response).toEqual({ ok: false, error: 'session not found' });
     });
     expect(translateChunk).not.toHaveBeenCalled();
+  });
+});
+
+describe('page translation service: セッションの退避と破棄', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('新規startで旧snapshotを掃除し、partialになった新snapshotを退避する', async () => {
+    const sessionArea = createMockStorageArea();
+    const { sentMessages } = installChromeStub(sessionArea, {
+      pageSnapshot: { texts: ['new text'], snapshotId: 8 }
+    });
+    await persistSession(makePartialSession({ snapshotId: 7 }), sessionArea);
+    translateChunk.mockResolvedValue({
+      parts: [null],
+      method: 'per-item',
+      failedItems: 1
+    });
+
+    await startPageTranslation(1);
+
+    expect(await loadPersistedSession(1, 7, sessionArea)).toBeNull();
+    const persisted = await loadPersistedSession(1, 8, sessionArea);
+    expect(persisted?.chunkResults[0]).toEqual({ status: 'failed', items: 1, failedItems: 1 });
+    expect(sentMessages.some(({ message }) => message?.status === 'partial')).toBe(true);
+
+    await sendRuntimeMessage(
+      { action: 'cancelPageTranslation', snapshotId: 8 },
+      { tab: { id: 1 } }
+    );
+    await vi.waitFor(async () => {
+      expect(await loadPersistedSession(1, 8, sessionArea)).toBeNull();
+    });
+  });
+
+  it('メモリにない退避セッションもcancelで削除する', async () => {
+    const sessionArea = createMockStorageArea();
+    const { sentMessages } = installChromeStub(sessionArea);
+    await persistSession(makePartialSession({ tabId: 2, snapshotId: 9 }), sessionArea);
+
+    expect(await sendRuntimeMessage(
+      { action: 'cancelPageTranslation', snapshotId: 9 },
+      { tab: { id: 2 } }
+    )).toEqual({ ok: true });
+
+    await vi.waitFor(async () => {
+      expect(await loadPersistedSession(2, 9, sessionArea)).toBeNull();
+    });
+    expect(sentMessages).toContainEqual({
+      tabId: 2,
+      message: { action: 'hidePageTranslationControls', snapshotId: 9 }
+    });
   });
 });

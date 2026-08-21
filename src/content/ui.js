@@ -11,14 +11,7 @@ const SHARED_SPINNER_STYLE_ID = 'llm-translator-styles';
 // 拡張がページへ注入する UI のルートセレクタ。ページ翻訳のスナップショットに
 // これらが混入すると、再実行時に拡張自身のラベル（「ページ翻訳」「停止」等）が
 // 翻訳・上書きされてパネルが破壊されるため、キャプチャ時に除外する。
-const EXTENSION_UI_SELECTOR = [
-  '#llm-page-translation-controls',
-  '.llm-translation-popup',
-  '.llm-tweet-translation',
-  '.llm-translate-button',
-  '.llm-yt-translation',
-  '.llm-yt-translate-button'
-].join(',');
+const EXTENSION_UI_SELECTOR = '[data-llmt-ui]';
 
 // ページの CSP で <style> 注入が拒否されるサイトでも回転するよう、
 // CSS keyframes ではなく Web Animations API でアニメーションさせる

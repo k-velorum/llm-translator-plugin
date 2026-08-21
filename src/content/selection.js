@@ -172,6 +172,7 @@ function createSelectionPopup({
 
   translationPopup = document.createElement('div');
   translationPopup.className = 'llm-translation-popup';
+  translationPopup.dataset.llmtUi = '';
   translationPopup.setAttribute('role', 'dialog');
   translationPopup.setAttribute('aria-label', titleText || '翻訳結果');
   translationPopup.dataset.requestId = requestId || '';
@@ -334,6 +335,7 @@ function showLoadingPopup(anchorRect = null) {
 
   translationPopup = document.createElement('div');
   translationPopup.className = 'llm-translation-popup';
+  translationPopup.dataset.llmtUi = '';
   translationPopup.setAttribute('role', 'dialog');
   translationPopup.setAttribute('aria-label', '翻訳中');
   applyStyles(translationPopup, styles.popup);

@@ -47,6 +47,7 @@ async function injectFallbackPopup(tabId, translatedText) {
 
         const popup = document.createElement('div');
         popup.className = 'llm-translation-popup-fallback';
+        popup.dataset.llmtUi = '';
         Object.assign(popup.style, {
           position: 'absolute',
           zIndex: '2147483647',

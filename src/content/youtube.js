@@ -18,6 +18,7 @@ function ensureYouTubeTranslationElement(contentTextEl) {
 
   const wrap = document.createElement('div');
   wrap.className = 'llm-yt-translation';
+  wrap.dataset.llmtUi = '';
   wrap.style.marginTop = '6px';
   wrap.style.padding = '8px 10px';
   wrap.style.background = '#f2f5f9';
@@ -67,6 +68,7 @@ function addButtonToYouTubeComment(contentTextEl) {
 
   const btn = document.createElement('div');
   btn.className = 'llm-yt-translate-button';
+  btn.dataset.llmtUi = '';
   btn.style.display = 'inline-flex';
   btn.style.alignItems = 'center';
   btn.style.cursor = 'pointer';

@@ -176,6 +176,7 @@ async function injectFallbackPopup(tabId, translatedText) {
       if (existing) existing.remove();
       const popup = document.createElement('div');
       popup.id = 'llm-image-translation-fallback';
+      popup.dataset.llmtUi = '';
       popup.textContent = text;
       Object.assign(popup.style, {
         position: 'fixed',

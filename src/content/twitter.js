@@ -174,6 +174,7 @@ function ensureTweetTranslationElement(tweetTextElement) {
   }
   const translationElement = document.createElement('div');
   translationElement.className = 'llm-tweet-translation';
+  translationElement.dataset.llmtUi = '';
   applyStyles(translationElement, styles.tweetTranslation);
   tweetTextElement.parentNode.insertBefore(translationElement, tweetTextElement.nextSibling);
   return translationElement;
@@ -311,6 +312,7 @@ function addButtonToTweet(tweetElement) {
 
   const translateButton = document.createElement('div');
   translateButton.className = 'llm-translate-button';
+  translateButton.dataset.llmtUi = '';
   translateButton.style.display = 'flex';
   translateButton.style.alignItems = 'center';
   translateButton.style.cursor = 'pointer';
