@@ -7,7 +7,9 @@ let pageTranslationControlsSnapshotId = null;
 let pageTranslationAutoHideTimer = null;
 
 function capturePageTextSnapshot() {
-  const nodes = DOMUtils.getTextNodes(document.body);
+  // 再実行時に旧パネルや選択翻訳ポップアップなど拡張自身の UI が
+  // 翻訳対象に混入するとパネルが破壊されるため、キャプチャ時に除外する。
+  const nodes = DOMUtils.getTextNodes(document.body, { excludeExtensionUi: true });
   const texts = nodes.map((node) => node.nodeValue);
   pageTranslationSnapshot = {
     id: (pageTranslationSnapshot.id || 0) + 1,
@@ -23,7 +25,9 @@ function applyPageTranslation(translations, snapshotId) {
     targetNodes = pageTranslationSnapshot.nodes;
   } else {
     console.warn('applyPageTranslation: snapshotId が一致しないため再トラバースで適用します。');
-    targetNodes = DOMUtils.getTextNodes(document.body);
+    // スナップショット欠落時の再トラバース。キャプチャ時と同じ除外条件を
+    // 適用しないと拡張 UI の分だけ item インデックスがずれる。
+    targetNodes = DOMUtils.getTextNodes(document.body, { excludeExtensionUi: true });
   }
 
   const len = Math.min(targetNodes.length, translations.length);

@@ -8,6 +8,18 @@ const POPUP_GAP = 10;
 const POPUP_MAX_WIDTH = 420;
 const SHARED_SPINNER_STYLE_ID = 'llm-translator-styles';
 
+// 拡張がページへ注入する UI のルートセレクタ。ページ翻訳のスナップショットに
+// これらが混入すると、再実行時に拡張自身のラベル（「ページ翻訳」「停止」等）が
+// 翻訳・上書きされてパネルが破壊されるため、キャプチャ時に除外する。
+const EXTENSION_UI_SELECTOR = [
+  '#llm-page-translation-controls',
+  '.llm-translation-popup',
+  '.llm-tweet-translation',
+  '.llm-translate-button',
+  '.llm-yt-translation',
+  '.llm-yt-translate-button'
+].join(',');
+
 // ページの CSP で <style> 注入が拒否されるサイトでも回転するよう、
 // CSS keyframes ではなく Web Animations API でアニメーションさせる
 function createLoadingSpinner({
@@ -55,20 +67,23 @@ function ensureEmbeddedTranslationSpinnerStyles() {
 
 // 共通ユーティリティ関数
 const DOMUtils = {
-  createTextNodeWalker(rootNode) {
+  createTextNodeWalker(rootNode, { excludeExtensionUi = false } = {}) {
     return document.createTreeWalker(rootNode, NodeFilter.SHOW_TEXT, {
       acceptNode: (node) => {
         if (!node.parentNode) return NodeFilter.FILTER_REJECT;
         const tag = node.parentNode.nodeName;
         if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME'].includes(tag)) return NodeFilter.FILTER_REJECT;
         if (!node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+        if (excludeExtensionUi && node.parentElement?.closest(EXTENSION_UI_SELECTOR)) {
+          return NodeFilter.FILTER_REJECT;
+        }
         return NodeFilter.FILTER_ACCEPT;
       }
     });
   },
 
-  getTextNodes(rootNode) {
-    const walker = this.createTextNodeWalker(rootNode);
+  getTextNodes(rootNode, options) {
+    const walker = this.createTextNodeWalker(rootNode, options);
     const nodes = [];
     let node;
     while (node = walker.nextNode()) {
