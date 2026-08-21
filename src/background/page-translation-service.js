@@ -8,6 +8,12 @@ import {
   runChunkQueue,
   summarizeSession
 } from './page-translation/runner.js';
+import {
+  loadPersistedSession,
+  persistSession,
+  removePersistedSession,
+  removePersistedSessionsForTab
+} from './page-translation/session-persistence.js';
 import { buildSeparatorFallbackPrompt, clampInt } from './page-translation/translator.js';
 import { getProviderCapabilities } from './api/registry.js';
 
@@ -161,6 +167,11 @@ async function runSession(session, chunkIndexes) {
 
   if (finished) {
     deletePageTranslationSession(session.tabId, session.snapshotId);
+    await removePersistedSession(session.tabId, session.snapshotId);
+  } else {
+    // SW の idle 停止でメモリ上のセッションが失われても「失敗分を再試行」が
+    // 使えるよう、partial 完了時点で状態を退避しておく。
+    await persistSession(session);
   }
 
   await appendLog({
@@ -190,6 +201,8 @@ export async function startPageTranslation(tabId) {
 
   try {
     abortSessionsForTab(tabId);
+    // 旧スナップショット宛の退避セッションが残っていても新規実行では使わない
+    await removePersistedSessionsForTab(tabId);
 
     const response = await chrome.tabs.sendMessage(tabId, { action: 'getPageTexts' });
     const pageTexts = response?.texts || [];
@@ -262,10 +275,23 @@ async function continuePageTranslation(message, sender, sendResponse) {
     if (!tabId) return sendResponse && sendResponse({ ok: false, error: 'tab not found' });
 
     const { snapshotId } = message;
-    const session = getPageTranslationSession(tabId, snapshotId);
+    let session = getPageTranslationSession(tabId, snapshotId);
     if (!session) {
-      // service worker 再起動などでセッションが失われた場合
-      return sendResponse && sendResponse({ ok: false, error: 'session not found' });
+      // service worker 再起動でメモリ上のセッションを失った場合、partial 完了時に
+      // 退避した状態から復元して再試行を可能にする。
+      session = await loadPersistedSession(tabId, snapshotId);
+      if (!session) {
+        return sendResponse && sendResponse({ ok: false, error: 'session not found' });
+      }
+      pageTranslationSessions.set(makeSessionKey(tabId, snapshotId), session);
+      await appendLog({
+        level: 'info',
+        type: 'page-translation',
+        event: 'session_restored_from_storage',
+        ...getProviderMeta(session.settings),
+        tabId,
+        snapshotId
+      });
     }
 
     if (session.running) {
@@ -275,6 +301,8 @@ async function continuePageTranslation(message, sender, sendResponse) {
     const failedIndexes = getFailedChunkIndexes(session);
     sendResponse && sendResponse({ ok: true, retryChunks: failedIndexes.length });
     if (failedIndexes.length === 0) {
+      deletePageTranslationSession(tabId, snapshotId);
+      await removePersistedSession(tabId, snapshotId);
       await notifyControls(session, 'completed').catch(() => {});
       return;
     }
@@ -324,6 +352,9 @@ async function cancelPageTranslation(message, sender, sendResponse) {
         snapshotId
       });
     }
+
+    // メモリ側セッションが SW 再起動で失われていたケースでも、退避済みセッションを残さない
+    await removePersistedSession(tabId, snapshotId);
 
     await hideControls(tabId, snapshotId).catch(() => {});
   } catch (e) {
