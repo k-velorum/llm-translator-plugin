@@ -33,8 +33,8 @@ describe('provider registry', () => {
       maxPageTranslationConcurrency: 1
     });
     expect(getProviderCapabilities({ apiProvider: 'openrouter' })).toEqual({
-      supportsStreaming: false,
-      streamProtocol: null,
+      supportsStreaming: true,
+      streamProtocol: 'openai-chat-sse',
       supportsImageTranslation: false,
       maxPageTranslationConcurrency: null
     });

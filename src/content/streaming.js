@@ -16,7 +16,8 @@ function createTranslationRequestId(kind = 'translate') {
 function providerSupportsStreaming() {
   const settings = window.tweetTranslationCacheSettings || {};
   return settings.apiProvider === 'lmstudio'
-    || settings.apiProvider === 'cerebras';
+    || settings.apiProvider === 'cerebras'
+    || settings.apiProvider === 'openrouter';
 }
 
 function cancelTranslationStream(requestId) {

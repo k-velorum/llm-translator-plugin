@@ -36,7 +36,11 @@ export const PROVIDERS = {
     label: 'OpenRouter',
     settingsKeys: { apiKey: 'openrouterApiKey', model: 'openrouterModel' },
     needsApiKey: true,
-    capabilities: DEFAULT_CAPABILITIES,
+    capabilities: {
+      ...DEFAULT_CAPABILITIES,
+      supportsStreaming: true,
+      streamProtocol: 'openai-chat-sse'
+    },
     ...openrouterProvider
   },
   gemini: {
