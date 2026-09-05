@@ -1,6 +1,4 @@
 const STRUCTURED_RESPONSE_BUDGET_MULTIPLIER = 2.2;
-const STRUCTURED_ITEMS_MULTIPLIER = 4;
-const STRUCTURED_MAX_ITEMS_CAP = 500;
 
 export function estimateTranslatedLength(text) {
   const s = (typeof text === 'string' ? text : '').trim();
@@ -75,10 +73,8 @@ export function chunkByEstimatedOutputAndItems(items, maxChars, maxItems, sep, u
     ? Math.max(2000, Math.floor(maxChars * STRUCTURED_RESPONSE_BUDGET_MULTIPLIER))
     : maxChars;
   const perItemOverhead = useStructuredOutput ? 32 : 0;
-  // structured 出力は区切りトークン不要なので同梱数を増やしてリクエスト数を抑える
-  const effectiveMaxItems = useStructuredOutput
-    ? Math.min(STRUCTURED_MAX_ITEMS_CAP, maxItems * STRUCTURED_ITEMS_MULTIPLIER)
-    : maxItems;
+  // 構造化出力でも設定した項目数を守り、長い生成待ちを避ける。
+  const effectiveMaxItems = maxItems;
 
   for (const s of items) {
     const sLen = s.length;

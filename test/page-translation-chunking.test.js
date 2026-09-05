@@ -32,9 +32,9 @@ describe('chunkByEstimatedOutputAndItems', () => {
     ]);
   });
 
-  it('allows more items when structured output is enabled', () => {
+  it('respects the item limit even with structured output', () => {
     expect(chunkByEstimatedOutputAndItems(['a', 'b', 'c'], 1000, 1, '|||', true)).toEqual([
-      ['a', 'b', 'c']
+      ['a'], ['b'], ['c']
     ]);
   });
 });

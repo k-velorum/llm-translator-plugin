@@ -10,7 +10,7 @@ import {
   PAGE_TRANSLATION_TIMEOUT_LONG_THRESHOLD_CHARS,
   PAGE_TRANSLATION_TIMEOUT_SHORT_MS
 } from '../../shared/constants.js';
-import { createAbortError, sleepWithSignal } from '../../shared/async-utils.js';
+import { createAbortError, sleepWithSignal, withTimeout } from '../../shared/async-utils.js';
 import { log } from '../../shared/logger.js';
 import { splitTextByNaturalBoundaries } from './chunking.js';
 
@@ -19,8 +19,6 @@ const SPLIT_FALLBACK_MAX_DEPTH = 2;
 
 // 時間予算の残りがこれ以下なら新規リクエストを発行しない（往復遅延の余裕分）
 const BUDGET_SAFETY_MARGIN_MS = 2000;
-// 予算切れ間際でも fetch 側へ渡すタイムアウトの下限
-const MIN_STEP_TIMEOUT_MS = 5000;
 
 function remainingBudgetMs(requestOptions) {
   const deadlineAt = requestOptions?.deadlineAt;
@@ -38,9 +36,26 @@ function isBudgetExhausted(requestOptions) {
 function stepRequestOptions(requestOptions, stepTimeoutMs) {
   const remaining = remainingBudgetMs(requestOptions);
   const timeoutMs = Number.isFinite(remaining)
-    ? Math.max(MIN_STEP_TIMEOUT_MS, Math.min(stepTimeoutMs, remaining))
+    ? Math.max(0, Math.min(stepTimeoutMs, remaining))
     : stepTimeoutMs;
   return { ...requestOptions, timeoutMs };
+}
+
+function requestTranslation(operation, text, settings, options) {
+  // provider 内部のフォーマット切替・HTTP再試行も一つの期限に含める。
+  return withTimeout(
+    (signal) => operation(text, settings, { ...options, signal }),
+    options.timeoutMs,
+    options.signal
+  );
+}
+
+function normalizeParts(parts, chunk) {
+  return chunk.map((source, i) => {
+    const translated = parts?.[i];
+    if (typeof translated !== 'string' || !translated.trim()) return null;
+    return source.match(/^\s*/)[0] + translated.trim() + source.match(/\s*$/)[0];
+  });
 }
 
 function allItemsFailed(chunk, method) {
@@ -112,6 +127,13 @@ function resolveChunkParams(settings, params) {
 // モデル出力失敗がページ全体翻訳を止めないことを保証する。
 // 戻り値: { parts: (string|null)[], method, failedItems }
 export async function translateChunk(chunk, settings, params, requestOptions = {}) {
+  throwIfAborted(requestOptions.signal);
+  const result = await translateChunkContents(chunk, settings, params, requestOptions);
+  const parts = normalizeParts(result.parts, chunk);
+  return { ...result, parts, failedItems: parts.filter((part) => part === null).length };
+}
+
+async function translateChunkContents(chunk, settings, params, requestOptions) {
   const resolved = resolveChunkParams(settings, params);
   const signal = requestOptions.signal;
 
@@ -136,7 +158,8 @@ async function tryStructured(chunk, settings, params, resolved, requestOptions) 
   const startedAt = Date.now();
   const stepTimeoutMs = requestOptions.timeoutMs ?? getTimeoutMsForPromptLen(chunk.join(resolved.sep).length);
   try {
-    const arr = await translateBatchStructured(
+    const arr = await requestTranslation(
+      translateBatchStructured,
       chunk,
       settings,
       stepRequestOptions(requestOptions, stepTimeoutMs)
@@ -144,16 +167,18 @@ async function tryStructured(chunk, settings, params, resolved, requestOptions) 
     if (!Array.isArray(arr) || arr.length !== chunk.length) {
       throw new Error('構造化出力の件数が不一致です');
     }
-    return { parts: arr, method: 'structured', failedItems: 0 };
+    return { parts: arr, method: 'structured' };
   } catch (e) {
     if (isAbortError(e)) throw e;
+    // 通信のタイムアウトにフォーマット変更は効かない。次のチャンクへ進む。
+    if (e?.name === 'TimeoutError') return allItemsFailed(chunk, 'timeout');
 
     // 構造化出力に一度失敗した provider/model は以降も失敗する可能性が高いため、
     // セッション単位で無効化して無駄な API 呼び出しを抑える。
     const shouldDisable = !!(params && params.disableStructuredAfterFailure !== false);
     if (shouldDisable) {
-      if (params && !params.runtime) params.runtime = {};
-      if (params?.runtime) params.runtime.structuredDisabled = true;
+      params.runtime ||= {};
+      params.runtime.structuredDisabled = true;
     }
     log.warn('pageTranslation', '構造化バッチ翻訳が失敗したためセパレータ方式にフォールバックします', e);
     await appendLog({
@@ -191,7 +216,8 @@ async function translateBySeparatorOrSplit(chunk, settings, resolved, requestOpt
 
   const joined = chunk.join(resolved.sep);
   try {
-    const translated = await translateText(
+    const translated = await requestTranslation(
+      translateText,
       joined,
       resolved.separatorSettings,
       stepRequestOptions(requestOptions, getTimeoutMsForPromptLen(joined.length))
@@ -207,6 +233,7 @@ async function translateBySeparatorOrSplit(chunk, settings, resolved, requestOpt
     });
   } catch (e) {
     if (isAbortError(e)) throw e;
+    if (e?.name === 'TimeoutError') return allItemsFailed(chunk, 'timeout');
     log.warn('pageTranslation', 'セパレータ方式の翻訳に失敗したためサブ分割を試行', {
       depth,
       message: e?.message || String(e)
@@ -248,7 +275,8 @@ async function translatePerItem(chunk, resolved, requestOptions) {
     }
     const text = chunk[i];
     try {
-      parts[i] = await translateText(
+      parts[i] = await requestTranslation(
+        translateText,
         text,
         resolved.separatorSettings,
         stepRequestOptions(requestOptions, getTimeoutMsForPromptLen(text.length))
@@ -298,13 +326,15 @@ async function translateOversizedSingle(text, settings, resolved, requestOptions
       return { parts: [null], method: 'oversized', failedItems: 1 };
     }
     try {
-      translatedPieces.push(
-        await translateText(
-          pieces[i],
-          settings,
-          stepRequestOptions(requestOptions, getTimeoutMsForPromptLen(pieces[i].length))
-        )
+      const translated = await requestTranslation(
+        translateText,
+        pieces[i],
+        settings,
+        stepRequestOptions(requestOptions, getTimeoutMsForPromptLen(pieces[i].length))
       );
+      const part = normalizeParts([translated], [pieces[i]])[0];
+      if (part === null) return allItemsFailed([text], 'oversized');
+      translatedPieces.push(part);
     } catch (e) {
       if (isAbortError(e)) throw e;
       log.warn('pageTranslation', '巨大ノード断片の翻訳に失敗しました（原文を維持）', {

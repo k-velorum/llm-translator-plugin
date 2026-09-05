@@ -8,7 +8,8 @@ vi.mock('../src/background/page-translation/translator.js', async (importOrigina
 
 import {
   handlePageTranslationRuntimeMessage,
-  startPageTranslation
+  startPageTranslation,
+  discardPageTranslationSessionsForTab
 } from '../src/background/page-translation-service.js';
 import { translateChunk } from '../src/background/page-translation/translator.js';
 import {
@@ -77,9 +78,11 @@ function installChromeStub(sessionArea, { pageSnapshot = null } = {}) {
       session: sessionArea
     },
     tabs: {
-      sendMessage: async (tabId, message) => {
+      sendMessage: async (tabId, message, options) => {
+        expect(options).toEqual({ frameId: 0 });
         sentMessages.push({ tabId, message });
         if (message?.action === 'getPageTexts') return pageSnapshot;
+        if (message?.action === 'applyPageTranslationChunk') return { ok: true };
       },
       query: async () => [{ id: 1 }]
     }
@@ -116,7 +119,9 @@ describe('continuePageTranslation: SW再起動後のセッション復元', () =
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await discardPageTranslationSessionsForTab(1);
+    await discardPageTranslationSessionsForTab(2);
     vi.unstubAllGlobals();
   });
 
@@ -185,7 +190,9 @@ describe('page translation service: セッションの退避と破棄', () => {
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await discardPageTranslationSessionsForTab(1);
+    await discardPageTranslationSessionsForTab(2);
     vi.unstubAllGlobals();
   });
 
@@ -205,7 +212,7 @@ describe('page translation service: セッションの退避と破棄', () => {
 
     expect(await loadPersistedSession(1, 7, sessionArea)).toBeNull();
     const persisted = await loadPersistedSession(1, 8, sessionArea);
-    expect(persisted?.chunkResults[0]).toEqual({ status: 'failed', items: 1, failedItems: 1 });
+    expect(persisted?.chunkResults[0]).toMatchObject({ status: 'failed', items: 1, failedItems: 1 });
     expect(sentMessages.some(({ message }) => message?.status === 'partial')).toBe(true);
 
     await sendRuntimeMessage(
@@ -234,5 +241,100 @@ describe('page translation service: セッションの退避と破棄', () => {
       tabId: 2,
       message: { action: 'hidePageTranslationControls', snapshotId: 9 }
     });
+  });
+});
+
+describe('page translation service: 実行途中の復帰と競合', () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(async () => {
+    await discardPageTranslationSessionsForTab(1);
+    vi.unstubAllGlobals();
+  });
+
+  it('実行中にチェックポイントを保存し、停止後は再保存しない', async () => {
+    const area = createMockStorageArea();
+    installChromeStub(area, { pageSnapshot: { texts: ['one'], snapshotId: 'running' } });
+    translateChunk.mockImplementation(() => new Promise(() => {}));
+    const running = startPageTranslation(1);
+    await vi.waitFor(() => expect(translateChunk).toHaveBeenCalledTimes(1));
+    expect(await loadPersistedSession(1, 'running', area)).not.toBeNull();
+    expect(await sendRuntimeMessage({ action: 'getPageTranslationStatus', snapshotId: 'running' },
+      { tab: { id: 1 } })).toMatchObject({ ok: true, status: 'running', activeChunks: 1 });
+    await sendRuntimeMessage({ action: 'cancelPageTranslation', snapshotId: 'running' }, { tab: { id: 1 } });
+    await running;
+    await vi.waitFor(async () => expect(await loadPersistedSession(1, 'running', area)).toBeNull());
+  });
+
+  it('worker消失時は未処理分のあるチェックポイントを再試行可能と表示する', async () => {
+    const area = createMockStorageArea();
+    installChromeStub(area);
+    await persistSession(makePartialSession({ snapshotId: 'interrupted', chunkResults: [
+      { status: 'done', items: 2, failedItems: 0 }, null
+    ] }), area);
+    expect(await sendRuntimeMessage({ action: 'getPageTranslationStatus', snapshotId: 'interrupted' },
+      { tab: { id: 1 } })).toMatchObject({ ok: true, status: 'partial', processedItems: 2, remainingChunks: 1 });
+    translateChunk.mockResolvedValue({ parts: ['三'], method: 'per-item' });
+    expect(await sendRuntimeMessage({ action: 'continuePageTranslation', snapshotId: 'interrupted' },
+      { tab: { id: 1 } })).toMatchObject({ ok: true, retryChunks: 1 });
+    await vi.waitFor(() => expect(translateChunk).toHaveBeenCalledTimes(1));
+    expect(translateChunk.mock.calls[0][0]).toEqual(['c']);
+  });
+
+  it('復元と再試行を連打しても同一チャンクを二重送信しない', async () => {
+    const area = createMockStorageArea();
+    installChromeStub(area);
+    await persistSession(makePartialSession({ snapshotId: 'double' }), area);
+    translateChunk.mockImplementation(() => new Promise(() => {}));
+    const message = { action: 'continuePageTranslation', snapshotId: 'double' };
+    const responses = await Promise.all([
+      sendRuntimeMessage(message, { tab: { id: 1 } }),
+      sendRuntimeMessage(message, { tab: { id: 1 } })
+    ]);
+    expect(responses).toContainEqual({ ok: true, alreadyRunning: true });
+    await vi.waitFor(() => expect(translateChunk).toHaveBeenCalledTimes(1));
+  });
+
+  it('開始を連打した場合は最後の要求だけ実行する', async () => {
+    const area = createMockStorageArea();
+    installChromeStub(area, { pageSnapshot: { texts: ['one'], snapshotId: 'latest' } });
+    translateChunk.mockResolvedValue({ parts: ['一'], method: 'per-item' });
+    await Promise.all([startPageTranslation(1), startPageTranslation(1)]);
+    expect(translateChunk).toHaveBeenCalledTimes(1);
+  });
+
+  it('iframeからの操作を拒否する', async () => {
+    installChromeStub(createMockStorageArea());
+    expect(await sendRuntimeMessage({ action: 'continuePageTranslation', snapshotId: 7 },
+      { tab: { id: 1 }, frameId: 2 })).toMatchObject({ ok: false });
+    expect(translateChunk).not.toHaveBeenCalled();
+  });
+});
+
+describe('page translation service: 復元中のキャンセル', () => {
+  afterEach(async () => {
+    await discardPageTranslationSessionsForTab(1);
+    vi.unstubAllGlobals();
+  });
+
+  it('古いstorage応答が遅れて届いてもキャンセル済みセッションを復活させない', async () => {
+    vi.clearAllMocks();
+    const area = createMockStorageArea();
+    installChromeStub(area);
+    await persistSession(makePartialSession({ snapshotId: 'cancel-loading' }), area);
+    const originalGet = area.get;
+    let release;
+    area.get = (key, callback) => {
+      area.get = originalGet;
+      originalGet(key, (value) => { release = () => callback(value); });
+    };
+    const retry = sendRuntimeMessage({ action: 'continuePageTranslation', snapshotId: 'cancel-loading' },
+      { tab: { id: 1 } });
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    await sendRuntimeMessage({ action: 'cancelPageTranslation', snapshotId: 'cancel-loading' },
+      { tab: { id: 1 } });
+    release();
+    expect(await retry).toMatchObject({ ok: false });
+    expect(translateChunk).not.toHaveBeenCalled();
+    await vi.waitFor(async () => expect(await loadPersistedSession(1, 'cancel-loading', area)).toBeNull());
   });
 });

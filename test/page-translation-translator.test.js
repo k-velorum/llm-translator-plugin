@@ -129,3 +129,38 @@ describe('translateChunk', () => {
     expect(result.parts[0]).toContain('訳');
   });
 });
+
+describe('translateChunk: 応答の期限と整合性', () => {
+  it('欠落・空の訳文を失敗にし、インライン要素の前後空白を保つ', async () => {
+    translateBatchStructured.mockResolvedValue([' 一 ', null, '  ']);
+    const result = await translateChunk([' one ', 'two', 'three'], settings, makeParams());
+    expect(result.parts).toEqual([' 一 ', null, null]);
+    expect(result.failedItems).toBe(2);
+  });
+
+  it('残り3秒なら5秒へ引き延ばさず、応答しないproviderも中断する', async () => {
+    vi.useFakeTimers();
+    try {
+      let signal;
+      translateBatchStructured.mockImplementation((_texts, _settings, options) => {
+        signal = options.signal;
+        expect(options.timeoutMs).toBe(3000);
+        return new Promise(() => {});
+      });
+      const params = makeParams();
+      const running = translateChunk(['one', 'two'], settings, params, { deadlineAt: Date.now() + 3000 });
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(await running).toMatchObject({ parts: [null, null], failedItems: 2 });
+      expect(signal.aborted).toBe(true);
+      expect(translateText).not.toHaveBeenCalled();
+      expect(params.runtime.structuredDisabled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('空の単一訳文で原文を消さない', async () => {
+    translateText.mockResolvedValue('');
+    expect(await translateChunk(['one'], settings, makeParams())).toMatchObject({ parts: [null], failedItems: 1 });
+  });
+});

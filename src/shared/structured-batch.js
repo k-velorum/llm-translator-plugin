@@ -105,7 +105,7 @@ export function normalizeStructuredBatchResult(parsed, texts, options = {}) {
     tooManyMissingIds: (missing, total) =>
       `構造化出力の id 欠落率が高すぎます (${missing}/${total})`,
     missingIdsWarning: (missing, ratio) =>
-      `構造化出力の id が不足しています。原文で補完します: [${missing.join(',')}] ratio=${ratio.toFixed(2)}`,
+      `構造化出力の id が不足しています。未翻訳として残します: [${missing.join(',')}] ratio=${ratio.toFixed(2)}`,
     ...options.messages
   };
   const warnOnMissingIds = options.warnOnMissingIds !== false;
@@ -115,13 +115,13 @@ export function normalizeStructuredBatchResult(parsed, texts, options = {}) {
     throw new Error(messages.missingItems);
   }
 
-  const out = new Array(texts.length);
+  const out = new Array(texts.length).fill(null);
   const seen = new Set();
 
   for (const item of arr) {
     const id = item?.id;
     const translation = item?.translation;
-    if (!Number.isInteger(id) || id < 0 || id >= out.length || typeof translation !== 'string') continue;
+    if (!Number.isInteger(id) || id < 0 || id >= out.length || typeof translation !== 'string' || !translation.trim()) continue;
     if (seen.has(id)) continue;
     out[id] = translation.trim();
     seen.add(id);
@@ -135,7 +135,7 @@ export function normalizeStructuredBatchResult(parsed, texts, options = {}) {
     const missing = [];
     for (let i = 0; i < texts.length; i += 1) {
       if (!seen.has(i)) {
-        out[i] = texts[i];
+        out[i] = null;
         missing.push(i);
       }
     }

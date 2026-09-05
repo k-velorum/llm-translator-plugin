@@ -16,7 +16,10 @@ import {
 } from './page-translation/session-persistence.js';
 import { buildSeparatorFallbackPrompt, clampInt } from './page-translation/translator.js';
 import { getProviderCapabilities } from './api/registry.js';
+import { withTimeout } from '../shared/async-utils.js';
 
+const startingTabs = new Map();
+const restoringSessions = new Map();
 const pageTranslationSessions = new Map(); // key: `${tabId}:${snapshotId}` -> session
 
 // MV3 service worker は拡張 API 呼び出しがないと約30秒で停止されるため、
@@ -57,6 +60,9 @@ function deletePageTranslationSession(tabId, snapshotId) {
 // 混ざらないよう先に中断・破棄する。
 function abortSessionsForTab(tabId) {
   const prefix = `${tabId}:`;
+  for (const key of restoringSessions.keys()) {
+    if (key.startsWith(prefix)) restoringSessions.delete(key);
+  }
   for (const [key, session] of pageTranslationSessions) {
     if (!key.startsWith(prefix)) continue;
     session.canceled = true;
@@ -74,6 +80,7 @@ function abortSessionsForTab(tabId) {
 // abort は同期的に canceled を立て、storage 側はタブ単位の操作列で進行中 persist の後に並ぶ。
 export async function discardPageTranslationSessionsForTab(tabId) {
   if (!tabId) return;
+  startingTabs.delete(tabId);
   abortSessionsForTab(tabId);
   await removePersistedSessionsForTab(tabId);
 }
@@ -84,23 +91,39 @@ async function resolveTabIdFromSenderOrActive(sender) {
 
 // 進捗・状態は background から content へ一方向 push する。
 // status: 'running' | 'completed' | 'partial' | 'canceled'
-async function notifyControls(session, status) {
+function controlsState(session, status) {
   const summary = summarizeSession(session);
-  await chrome.tabs.sendMessage(session.tabId, {
-    action: 'showPageTranslationControls',
+  return {
     snapshotId: session.snapshotId,
     status,
+    noteText: status === 'partial' && summary.pendingChunks > 0
+      ? '処理が中断しました。未完了分を再試行できます。' : '',
     processedItems: summary.processedItems,
     totalItems: session.totalItems,
     failedItems: summary.failedItems,
     failedChunks: summary.failedChunks,
     remainingChunks: summary.pendingChunks,
-    totalChunks: session.chunks.length
+    totalChunks: session.chunks.length,
+    activeChunks: session.activeChunks || 0,
+    elapsedSeconds: Math.floor((Date.now() - (session.startedAt || Date.now())) / 1000)
+  };
+}
+
+// all_frames の content script のうち、本文があるトップフレームだけへ送る。
+function sendToPage(tabId, message) {
+  return withTimeout(() => chrome.tabs.sendMessage(tabId, message, { frameId: 0 }), 10000);
+}
+
+async function notifyControls(session, status) {
+  if (session.canceled) return;
+  await sendToPage(session.tabId, {
+    action: 'showPageTranslationControls',
+    ...controlsState(session, status)
   });
 }
 
 async function hideControls(tabId, snapshotId) {
-  await chrome.tabs.sendMessage(tabId, {
+  await sendToPage(tabId, {
     action: 'hidePageTranslationControls',
     snapshotId
   });
@@ -141,40 +164,59 @@ function buildSessionParams(settings) {
 }
 
 async function applyChunkToTab(session, chunkIndex, parts) {
-  await chrome.tabs.sendMessage(session.tabId, {
+  const response = await sendToPage(session.tabId, {
     action: 'applyPageTranslationChunk',
     snapshotId: session.snapshotId,
     offset: session.chunkOffsets[chunkIndex],
     translations: parts
   });
+  if (!response?.ok) {
+    throw new Error(response?.error || '訳文をページに反映できませんでした。ページの変更を確認してください。');
+  }
 }
 
 // 指定チャンク群を実行し、終了時の状態を content へ通知する共通経路。
 // start / retry のどちらからも呼ばれる。
 async function runSession(session, chunkIndexes) {
+  const runToken = {};
+  session.runToken = runToken;
   session.running = true;
+  session.startedAt = Date.now();
   updateKeepAlive();
 
   // 再試行直後もパネルを即「実行中」へ切り替える（以降はチャンク完了ごとに push）
-  await notifyControls(session, 'running').catch(() => {});
-
   try {
+    await persistSession(session);
+    await notifyControls(session, 'running').catch(() => {});
     await runChunkQueue(session, chunkIndexes, {
       applyChunk: (idx, parts) => applyChunkToTab(session, idx, parts),
-      notifyProgress: () => notifyControls(session, 'running')
+      notifyProgress: async () => {
+        if (session.canceled) return;
+        await persistSession(session);
+        await notifyControls(session, 'running');
+      }
     });
+    if (!session.canceled) await finishSession(session);
+  } catch (error) {
+    if (!session.canceled) {
+      session.lastError = error?.message || String(error);
+      session.running = false;
+      await persistSession(session);
+      await notifyControls(session, 'partial').catch(() => {});
+    }
   } finally {
-    session.running = false;
+    if (session.runToken === runToken) session.running = false;
     updateKeepAlive();
   }
+}
 
-  if (session.canceled) return; // cancel ハンドラ側で後始末済み
-
+async function finishSession(session) {
   const summary = summarizeSession(session);
-  const finished = summary.failedChunks === 0;
+  const finished = summary.failedChunks === 0 && summary.pendingChunks === 0;
 
   if (finished) {
-    deletePageTranslationSession(session.tabId, session.snapshotId);
+    // 完了pushを取り逃しても状態照会で回復できるよう、最後の状態はメモリに残す。
+    // 本文・APIキーは不要になった時点で解放する。
     await removePersistedSession(session.tabId, session.snapshotId);
   } else {
     // SW の idle 停止でメモリ上のセッションが失われても「失敗分を再試行」が
@@ -196,25 +238,41 @@ async function runSession(session, chunkIndexes) {
     message: session.lastError || undefined
   });
 
+  if (session.canceled) return;
+  session.running = false;
+  updateKeepAlive();
   try {
     await notifyControls(session, finished ? 'completed' : 'partial');
   } catch (e) {
     log.warn('pageTranslation', '完了状態の通知に失敗しました', e);
+  }
+  if (finished) {
+    session.settings = {};
+    session.params = {};
+    session.chunks = session.chunks.map(() => []);
+    session.chunkResults = session.chunkResults.map(({ parts: _parts, ...result }) => result);
   }
 }
 
 export async function startPageTranslation(tabId) {
   log.info('pageTranslation', 'ページ全体翻訳リクエストを受信');
   if (!tabId) return;
+  const startToken = {};
+  let snapshotId;
 
   try {
     // 旧スナップショット宛の退避セッションが残っていても新規実行では使わない
-    await discardPageTranslationSessionsForTab(tabId);
+    const discarded = discardPageTranslationSessionsForTab(tabId);
+    startingTabs.set(tabId, startToken);
+    await discarded;
+    if (startingTabs.get(tabId) !== startToken) return;
 
-    const response = await chrome.tabs.sendMessage(tabId, { action: 'getPageTexts' });
-    const pageTexts = response?.texts || [];
-    const snapshotId = response?.snapshotId;
-    const settings = await loadSettings();
+    const response = await sendToPage(tabId, { action: 'getPageTexts' });
+    snapshotId = response?.snapshotId;
+    if (!snapshotId || !Array.isArray(response?.texts)) throw new Error('ページの文章を取得できませんでした');
+    const pageTexts = response.texts;
+    const settings = await withTimeout(() => loadSettings(), 10000);
+    if (startingTabs.get(tabId) !== startToken) return;
     const params = buildSessionParams(settings);
 
     const chunks = chunkByEstimatedOutputAndItems(
@@ -260,8 +318,14 @@ export async function startPageTranslation(tabId) {
       }
     });
 
+    if (session.canceled) return;
     await runSession(session, chunks.map((_, i) => i));
   } catch (error) {
+    if (startingTabs.get(tabId) !== startToken) return;
+    if (snapshotId) {
+      await sendToPage(tabId, { action: 'showPageTranslationControls', snapshotId,
+        status: 'lost', noteText: '翻訳を開始できませんでした。ページを再読み込みしてお試しください。' }).catch(() => {});
+    }
     log.error('pageTranslation', 'ページ全体翻訳エラー', error);
     await appendLog({
       level: 'error',
@@ -271,7 +335,26 @@ export async function startPageTranslation(tabId) {
       tabId,
       message: error?.message || String(error)
     });
+  } finally {
+    if (startingTabs.get(tabId) === startToken) startingTabs.delete(tabId);
   }
+}
+
+// 同じsnapshotの復元を共有し、復元中のキャンセル・新規開始に追い越された
+// 古いロード結果がセッションを復活させないようにする。
+async function restoreForRetry(tabId, snapshotId) {
+  const key = makeSessionKey(tabId, snapshotId);
+  if (startingTabs.has(tabId)) return null;
+  if (!restoringSessions.has(key)) {
+    const pending = loadPersistedSession(tabId, snapshotId).then((restored) => {
+      if (restoringSessions.get(key) !== pending) return null;
+      restoringSessions.delete(key);
+      if (restored) pageTranslationSessions.set(key, restored);
+      return restored;
+    });
+    restoringSessions.set(key, pending);
+  }
+  return restoringSessions.get(key);
 }
 
 // 失敗チャンクのみ再実行する。応答は受理時点で即返し、進捗は push で届ける
@@ -286,12 +369,11 @@ async function continuePageTranslation(message, sender, sendResponse) {
     if (!session) {
       // service worker 再起動でメモリ上のセッションを失った場合、partial 完了時に
       // 退避した状態から復元して再試行を可能にする。
-      session = await loadPersistedSession(tabId, snapshotId);
+      session = await restoreForRetry(tabId, snapshotId);
       if (!session) {
         return sendResponse && sendResponse({ ok: false, error: 'session not found' });
       }
-      pageTranslationSessions.set(makeSessionKey(tabId, snapshotId), session);
-      await appendLog({
+      void appendLog({
         level: 'info',
         type: 'page-translation',
         event: 'session_restored_from_storage',
@@ -306,6 +388,8 @@ async function continuePageTranslation(message, sender, sendResponse) {
     }
 
     const failedIndexes = getFailedChunkIndexes(session);
+    if (session.canceled) return sendResponse({ ok: false, error: 'session canceled' });
+    session.running = failedIndexes.length > 0;
     sendResponse && sendResponse({ ok: true, retryChunks: failedIndexes.length });
     if (failedIndexes.length === 0) {
       deletePageTranslationSession(tabId, snapshotId);
@@ -314,7 +398,7 @@ async function continuePageTranslation(message, sender, sendResponse) {
       return;
     }
 
-    await appendLog({
+    void appendLog({
       level: 'info',
       type: 'page-translation',
       event: 'retry',
@@ -325,6 +409,7 @@ async function continuePageTranslation(message, sender, sendResponse) {
     });
 
     session.lastError = null;
+    session.params.runtime = { structuredDisabled: false };
     await runSession(session, failedIndexes);
   } catch (e) {
     log.error('pageTranslation', 'continuePageTranslation エラー', e);
@@ -338,7 +423,9 @@ async function cancelPageTranslation(message, sender, sendResponse) {
     if (!tabId) return sendResponse && sendResponse({ ok: false, error: 'tab not found' });
 
     const { snapshotId } = message;
+    restoringSessions.delete(makeSessionKey(tabId, snapshotId));
     const session = getPageTranslationSession(tabId, snapshotId);
+    if (session || ![...pageTranslationSessions.values()].some((s) => s.tabId === tabId)) startingTabs.delete(tabId);
     sendResponse && sendResponse({ ok: true });
 
     if (session) {
@@ -370,7 +457,21 @@ async function cancelPageTranslation(message, sender, sendResponse) {
   }
 }
 
+async function getPageTranslationStatus(message, sender, sendResponse) {
+  const tabId = sender?.tab?.id;
+  if (!tabId) return sendResponse({ ok: false });
+  let session = getPageTranslationSession(tabId, message.snapshotId);
+  if (!session && startingTabs.has(tabId)) return sendResponse({ ok: true, starting: true });
+  if (!session) session = await loadPersistedSession(tabId, message.snapshotId);
+  if (!session) return sendResponse({ ok: false });
+  const summary = summarizeSession(session);
+  const status = session.running ? 'running'
+    : summary.pendingChunks || summary.failedChunks ? 'partial' : 'completed';
+  sendResponse({ ok: true, ...controlsState(session, status) });
+}
+
 const PAGE_TRANSLATION_RUNTIME_HANDLERS = {
+  getPageTranslationStatus,
   continuePageTranslation,
   cancelPageTranslation
 };
@@ -378,6 +479,19 @@ const PAGE_TRANSLATION_RUNTIME_HANDLERS = {
 export function handlePageTranslationRuntimeMessage(message, sender, sendResponse) {
   const handler = PAGE_TRANSLATION_RUNTIME_HANDLERS[message?.action];
   if (!handler) return false;
-  handler(message, sender, sendResponse);
+  // 古いiframeからページ翻訳の操作を受け付けない。
+  if (sender?.frameId !== undefined && sender.frameId !== 0) {
+    sendResponse({ ok: false, error: 'top frame only' });
+    return true;
+  }
+  let responded = false;
+  const respond = (response) => {
+    if (responded) return;
+    responded = true;
+    sendResponse(response);
+  };
+  handler(message, sender, respond).catch((error) => {
+    respond({ ok: false, error: error?.message || String(error) });
+  });
   return true;
 }

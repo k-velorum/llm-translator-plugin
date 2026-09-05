@@ -44,7 +44,7 @@ describe('normalizeStructuredBatchResult', () => {
     ).toEqual(['一番目', '二番目']);
   });
 
-  it('fills a small number of missing ids with original text', () => {
+  it('marks missing ids as untranslated', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     expect(
@@ -57,7 +57,7 @@ describe('normalizeStructuredBatchResult', () => {
         },
         ['first', 'second', 'third']
       )
-    ).toEqual(['一番目', 'second', '三番目']);
+    ).toEqual(['一番目', null, '三番目']);
 
     warn.mockRestore();
   });

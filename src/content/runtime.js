@@ -77,9 +77,9 @@ const runtimeMessageHandlers = {
     return false;
   },
 
-  applyPageTranslationChunk(message) {
-    window.applyPageTranslationChunk(message.snapshotId, message.offset || 0, message.translations || []);
-    return false;
+  applyPageTranslationChunk(message, sender, sendResponse) {
+    sendResponse(window.applyPageTranslationChunk(message.snapshotId, message.offset ?? 0, message.translations || []));
+    return true;
   },
 
   showPageTranslationControls(message) {
@@ -87,8 +87,8 @@ const runtimeMessageHandlers = {
     return false;
   },
 
-  hidePageTranslationControls() {
-    window.hidePageTranslationControls();
+  hidePageTranslationControls(message) {
+    window.hidePageTranslationControls(message.snapshotId);
     return false;
   }
 };

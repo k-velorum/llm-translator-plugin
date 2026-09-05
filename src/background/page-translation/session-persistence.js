@@ -1,7 +1,7 @@
 import { log } from '../../shared/logger.js';
 
-// partial 完了セッションの退避先。MV3 service worker は idle 停止でメモリ上の
-// セッションを失うため、「失敗分を再試行」を機能させるには別ストアへの退避が要る。
+// 実行開始時・チャンク完了時のチェックポイント。MV3 worker 停止後も
+// 成功済みの訳文を保ち、失敗・未処理分から再試行するために退避する。
 // chrome.storage.session はディスクに書かれないブラウザセッション限定のストアで、
 // settings（APIキー含む）を保持しても chrome.storage.local 永続化より露出面を増やさない。
 const STORAGE_KEY_PREFIX = 'pageTranslationSession:';
@@ -123,9 +123,12 @@ export async function persistSession(session, storageArea) {
   const area = resolveStorageArea(storageArea);
   if (!area) return;
   try {
-    await runTabStorageOperation(session.tabId, () => storageSet(area, {
-      [makeStorageKey(session.tabId, session.snapshotId)]: serializeSession(session)
-    }));
+    await runTabStorageOperation(session.tabId, () => {
+      if (session.canceled) return;
+      return storageSet(area, {
+        [makeStorageKey(session.tabId, session.snapshotId)]: serializeSession(session)
+      });
+    });
   } catch (error) {
     // 退避失敗は翻訳機能を壊さない。SW再起動後の再試行が使えなくなるだけ。
     log.warn('pageTranslation', 'partialセッションの退避に失敗しました', error);

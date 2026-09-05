@@ -69,7 +69,7 @@ export async function translateTextStream(text, settings, handlers = {}, request
 }
 
 // 構造化バッチ翻訳（全Provider対応）。
-// 入力: texts: string[] -> 出力: translations: string[]（同じ長さ）
+// 入力: texts: string[] -> 出力: translations: (string|null)[]（同じ長さ、欠落項目は null）
 export async function translateBatchStructured(texts, settings, requestOptions = {}) {
   if (!Array.isArray(texts) || texts.length === 0) return [];
 

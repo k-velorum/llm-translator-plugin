@@ -38,3 +38,32 @@ export function createAbortError() {
   error.name = 'AbortError';
   return error;
 }
+
+// API実装やメッセージ受信側が応答しなくても呼び出し元を解放する。
+// signal も渡すことで、時間切れ後の通信・推論・再試行を中断する。
+export async function withTimeout(operation, timeoutMs, signal) {
+  const controller = new AbortController();
+  let timer;
+  let onAbort;
+  const interrupted = new Promise((_, reject) => {
+    onAbort = () => {
+      reject(createAbortError());
+      controller.abort();
+    };
+    if (signal?.aborted) return onAbort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    timer = setTimeout(() => {
+      const error = new Error(`応答が ${timeoutMs}ms 以内に返りませんでした`);
+      error.name = 'TimeoutError';
+      reject(error);
+      controller.abort();
+    }, Math.max(0, timeoutMs));
+  });
+  try {
+    if (signal?.aborted) return await interrupted;
+    return await Promise.race([interrupted, operation(controller.signal)]);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+  }
+}

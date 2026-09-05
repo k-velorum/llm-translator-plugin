@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS } from '../settings.js';
 import { appendLog, getProviderMeta } from '../logging.js';
-import { sleepWithSignal } from '../../shared/async-utils.js';
+import { sleepWithSignal, withTimeout } from '../../shared/async-utils.js';
 import { clampInt, getTimeoutMsForPromptLen, translateChunk } from './translator.js';
 
 // チャンクは snapshot 内で連続した item 範囲を持つため、開始オフセットを
@@ -22,7 +22,7 @@ export function summarizeSession(session) {
   let failedItems = 0;
 
   for (const result of session.chunkResults) {
-    if (!result) continue;
+    if (!result || result.status === 'pending') continue;
     if (result.status === 'done') doneChunks += 1;
     else failedChunks += 1;
     processedItems += result.items;
@@ -41,7 +41,7 @@ export function summarizeSession(session) {
 export function getFailedChunkIndexes(session) {
   const indexes = [];
   for (let i = 0; i < session.chunkResults.length; i += 1) {
-    if (session.chunkResults[i]?.status === 'failed') indexes.push(i);
+    if (session.chunkResults[i]?.status !== 'done') indexes.push(i);
   }
   return indexes;
 }
@@ -62,6 +62,30 @@ function chunkLogMeta(session, idx, extra) {
   };
 }
 
+function mergeTranslatedParts(parts, indexes, translated) {
+  indexes.forEach((index, i) => {
+    const part = translated?.[i];
+    parts[index] = typeof part === 'string' && part.trim() ? part : null;
+  });
+}
+
+async function translateMissingParts(session, chunk, parts, timeoutMs) {
+  const missing = chunk.map((_, i) => i).filter((i) => typeof parts[i] !== 'string');
+  if (missing.length === 0) return { method: 'cached' };
+  const budgetMs = timeoutMs * CHUNK_BUDGET_MULTIPLIER;
+  const result = await withTimeout(
+    (signal) => translateChunk(missing.map((i) => chunk[i]), session.settings, session.params, {
+      timeoutMs,
+      deadlineAt: Date.now() + budgetMs,
+      signal
+    }),
+    budgetMs,
+    session.abortController?.signal
+  );
+  mergeTranslatedParts(parts, missing, result.parts);
+  return result;
+}
+
 // 1チャンクを翻訳して結果を session に記録し、成功分をページへ適用する。
 // 翻訳失敗・適用失敗のどちらでも例外は外へ出さない（キャンセルのみ上位で判定）。
 async function processChunk(session, idx, hooks) {
@@ -70,57 +94,48 @@ async function processChunk(session, idx, hooks) {
   const promptLen = chunk.join(sep).length;
   const timeoutMs = getTimeoutMsForPromptLen(promptLen);
   const startedAt = Date.now();
-
+  const parts = session.chunkResults[idx]?.parts?.slice() || new Array(chunk.length).fill(null);
   try {
-    const result = await translateChunk(chunk, session.settings, session.params, {
-      timeoutMs,
-      deadlineAt: Date.now() + timeoutMs * CHUNK_BUDGET_MULTIPLIER,
-      signal: session.abortController?.signal
-    });
+    const result = await translateMissingParts(session, chunk, parts, timeoutMs);
     if (session.canceled) return;
 
+    const failedItems = parts.filter((part) => part === null).length;
+
+    await withTimeout(() => hooks.applyChunk(idx, parts), 10000, session.abortController?.signal);
+    if (session.canceled) return;
     session.chunkResults[idx] = {
-      status: result.failedItems > 0 ? 'failed' : 'done',
+      status: failedItems > 0 ? 'failed' : 'done',
       items: chunk.length,
-      failedItems: result.failedItems
+      failedItems,
+      parts
     };
 
-    try {
-      await hooks.applyChunk(idx, result.parts);
-    } catch (e) {
-      // タブが閉じられた等。適用失敗は翻訳自体の失敗とは区別してログのみ残す。
-      await appendLog({
-        level: 'warn',
-        event: 'apply_failed',
-        ...chunkLogMeta(session, idx, { message: e?.message || String(e) })
-      });
-    }
-
     await appendLog({
-      level: result.failedItems > 0 ? 'warn' : 'info',
+      level: failedItems > 0 ? 'warn' : 'info',
       event: 'chunk_done',
       ...chunkLogMeta(session, idx, {
         method: result.method,
         items: chunk.length,
-        failedItems: result.failedItems,
+        failedItems,
         len: promptLen,
         ms: Date.now() - startedAt,
         timeoutMs
       })
     });
   } catch (e) {
-    if (session.canceled || e?.name === 'AbortError') return;
-    await recordChunkFailure(session, idx, e, { promptLen, timeoutMs });
+    if (session.canceled || session.abortController?.signal.aborted) return;
+    await recordChunkFailure(session, idx, e, { promptLen, timeoutMs, parts });
   }
 }
 
-async function recordChunkFailure(session, idx, error, { promptLen, timeoutMs }) {
+async function recordChunkFailure(session, idx, error, { promptLen, timeoutMs, parts }) {
   const chunk = session.chunks[idx];
   session.lastError = error?.message || String(error);
   session.chunkResults[idx] = {
     status: 'failed',
     items: chunk.length,
-    failedItems: chunk.length
+    failedItems: chunk.length,
+    ...(parts ? { parts } : {})
   };
 
   await appendLog({
@@ -152,7 +167,7 @@ export async function runChunkQueue(session, chunkIndexes, hooks) {
 
   // 再試行対象は集計上 pending に戻す
   for (const idx of queue) {
-    session.chunkResults[idx] = null;
+    session.chunkResults[idx] = { ...session.chunkResults[idx], status: 'pending' };
   }
 
   const worker = async () => {
@@ -160,7 +175,12 @@ export async function runChunkQueue(session, chunkIndexes, hooks) {
       const idx = queue.shift();
       if (idx === undefined) return;
 
-      await processChunk(session, idx, hooks);
+      session.activeChunks = (session.activeChunks || 0) + 1;
+      try {
+        await processChunk(session, idx, hooks);
+      } finally {
+        session.activeChunks -= 1;
+      }
       if (session.canceled) return;
 
       try {

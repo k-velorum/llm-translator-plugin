@@ -125,3 +125,88 @@ describe('runChunkQueue', () => {
     expect(translateChunk).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('runChunkQueue: 停滞と再試行', () => {
+  it('応答しない翻訳も期限で中断し、次のチャンクへ進む', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeSession([['slow'], ['next']], { params: { concurrency: 1, delayMs: 0 } });
+      let stuckSignal;
+      translateChunk.mockImplementation((chunk, _settings, _params, { signal }) => {
+        if (chunk[0] === 'slow') {
+          stuckSignal = signal;
+          return new Promise(() => {});
+        }
+        return Promise.resolve({ parts: ['次'], method: 'per-item' });
+      });
+      const applyChunk = vi.fn();
+      const running = runChunkQueue(session, [0, 1], { applyChunk, notifyProgress: vi.fn() });
+      await vi.advanceTimersByTimeAsync(240000);
+      await running;
+      expect(stuckSignal.aborted).toBe(true);
+      expect(getFailedChunkIndexes(session)).toEqual([0]);
+      expect(applyChunk).toHaveBeenCalledWith(1, ['次']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('応答しないモデルのキャンセルを待たずに終了する', async () => {
+    const session = makeSession([['slow']]);
+    translateChunk.mockImplementation(() => new Promise(() => {}));
+    const applyChunk = vi.fn();
+    const running = runChunkQueue(session, [0], { applyChunk, notifyProgress: vi.fn() });
+    session.canceled = true;
+    session.abortController.abort();
+    await running;
+    expect(applyChunk).not.toHaveBeenCalled();
+  });
+
+  it('部分成功の訳文を保持して未翻訳の項目だけ再送する', async () => {
+    const session = makeSession([['one', 'two', 'three']]);
+    translateChunk.mockResolvedValueOnce({ parts: ['一', null, '三'], method: 'structured' });
+    const applyChunk = vi.fn();
+    const hooks = { applyChunk, notifyProgress: vi.fn() };
+    await runChunkQueue(session, [0], hooks);
+    translateChunk.mockResolvedValueOnce({ parts: ['二'], method: 'per-item' });
+    await runChunkQueue(session, getFailedChunkIndexes(session), hooks);
+    expect(translateChunk.mock.calls[1][0]).toEqual(['two']);
+    expect(applyChunk).toHaveBeenLastCalledWith(0, ['一', '二', '三']);
+    expect(summarizeSession(session).failedItems).toBe(0);
+  });
+
+  it('反映失敗は完了にせず、再試行ではモデルを再呼び出しせず反映する', async () => {
+    const session = makeSession([['one']]);
+    translateChunk.mockResolvedValue({ parts: ['一'], method: 'per-item' });
+    const applyChunk = vi.fn().mockRejectedValueOnce(new Error('反映失敗')).mockResolvedValue(undefined);
+    const hooks = { applyChunk, notifyProgress: vi.fn() };
+    await runChunkQueue(session, [0], hooks);
+    expect(getFailedChunkIndexes(session)).toEqual([0]);
+    await runChunkQueue(session, [0], hooks);
+    expect(translateChunk).toHaveBeenCalledTimes(1);
+    expect(getFailedChunkIndexes(session)).toEqual([]);
+  });
+
+  it('反映の応答が途絶えても次へ進む', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeSession([['one'], ['two']], { params: { concurrency: 1, delayMs: 0 } });
+      translateChunk.mockImplementation(async (chunk) => ({ parts: chunk, method: 'per-item' }));
+      const applyChunk = vi.fn().mockImplementationOnce(() => new Promise(() => {})).mockResolvedValue(undefined);
+      const running = runChunkQueue(session, [0, 1], { applyChunk, notifyProgress: vi.fn() });
+      await vi.advanceTimersByTimeAsync(10000);
+      await running;
+      expect(getFailedChunkIndexes(session)).toEqual([0]);
+      expect(applyChunk).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('復元した未着手・処理中のチャンクも再試行対象にする', () => {
+    const session = makeSession([['one'], ['two'], ['three']]);
+    session.chunkResults = [{ status: 'done', items: 1, failedItems: 0 }, null, { status: 'pending' }];
+    expect(getFailedChunkIndexes(session)).toEqual([1, 2]);
+    expect(summarizeSession(session)).toMatchObject({ pendingChunks: 2, processedItems: 1 });
+  });
+});

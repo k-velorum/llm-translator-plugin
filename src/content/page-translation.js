@@ -5,53 +5,69 @@ let pageTranslationSnapshot = { id: 0, nodes: [] };
 let pageTranslationControls = null;
 let pageTranslationControlsSnapshotId = null;
 let pageTranslationAutoHideTimer = null;
+let pageTranslationStatusTimer = null;
+let pageTranslationControlsDismissed = false;
+let pageTranslationViewVersion = 0;
+const translatedNodes = new WeakMap();
 
 function capturePageTextSnapshot() {
   // 再実行時に旧パネルや選択翻訳ポップアップなど拡張自身の UI が
   // 翻訳対象に混入するとパネルが破壊されるため、キャプチャ時に除外する。
-  const nodes = DOMUtils.getTextNodes(document.body, { excludeExtensionUi: true });
-  const texts = nodes.map((node) => node.nodeValue);
+  const nodes = DOMUtils.getTextNodes(document.body, { excludeExtensionUi: true }).filter((node) => {
+    const parent = node.parentElement;
+    return parent && !parent.isContentEditable && !parent.closest(
+      'textarea, input, select, code, pre, [hidden], [aria-hidden="true"], [translate="no"], .notranslate'
+    );
+  });
+  const texts = nodes.map((node) => {
+    const previous = translatedNodes.get(node);
+    return previous?.translated === node.nodeValue ? previous.original : node.nodeValue;
+  });
   pageTranslationSnapshot = {
-    id: (pageTranslationSnapshot.id || 0) + 1,
-    nodes
+    // randomUUID は通常の HTTP ページでは使えないため getRandomValues を使う。
+    id: crypto.getRandomValues(new Uint32Array(4)).join('-'),
+    nodes,
+    texts,
+    expected: nodes.map((node) => node.nodeValue)
   };
+  pageTranslationControlsDismissed = false;
+  updateStatusPolling('reset');
+  showPageTranslationControls({ snapshotId: pageTranslationSnapshot.id, status: 'running',
+    processedItems: 0, totalItems: texts.length, noteText: '翻訳を準備しています…' });
   return { texts, snapshotId: pageTranslationSnapshot.id };
 }
 
 function applyPageTranslation(translations, snapshotId) {
-  let targetNodes = [];
-
-  if (snapshotId && snapshotId === pageTranslationSnapshot.id && Array.isArray(pageTranslationSnapshot.nodes) && pageTranslationSnapshot.nodes.length) {
-    targetNodes = pageTranslationSnapshot.nodes;
-  } else {
-    console.warn('applyPageTranslation: snapshotId が一致しないため再トラバースで適用します。');
-    // スナップショット欠落時の再トラバース。キャプチャ時と同じ除外条件を
-    // 適用しないと拡張 UI の分だけ item インデックスがずれる。
-    targetNodes = DOMUtils.getTextNodes(document.body, { excludeExtensionUi: true });
-  }
-
-  const len = Math.min(targetNodes.length, translations.length);
-  for (let i = 0; i < len; i += 1) {
-    if (typeof translations[i] === 'string' && targetNodes[i] && targetNodes[i].nodeValue !== undefined) {
-      targetNodes[i].nodeValue = translations[i];
-    }
-  }
+  return applyPageTranslationChunk(snapshotId, 0, translations);
 }
 
-// translations の null/undefined は「翻訳失敗 item」を表し、原文を維持する。
+// snapshot の原文・直前の訳文と一致するノードだけに反映する。
+// SPA がノードを再利用した場合に、別の記事や入力内容を上書きしない。
 function applyPageTranslationChunk(snapshotId, offset = 0, translations = []) {
-  if (!snapshotId || snapshotId !== pageTranslationSnapshot.id) {
-    console.warn('applyPageTranslationChunk: snapshotId 不一致のため適用をスキップします。');
-    return;
+  if (!snapshotId || snapshotId !== pageTranslationSnapshot.id || pageTranslationControlsDismissed) {
+    return { ok: false, error: '翻訳対象のページが変わりました' };
   }
-
-  const nodes = pageTranslationSnapshot.nodes || [];
-  const end = Math.min(nodes.length, offset + translations.length);
-  for (let i = offset, j = 0; i < end; i += 1, j += 1) {
-    if (nodes[i] && nodes[i].nodeValue !== undefined && typeof translations[j] === 'string') {
-      nodes[i].nodeValue = translations[j];
+  const { nodes, texts, expected } = pageTranslationSnapshot;
+  if (!Number.isInteger(offset) || offset < 0 || offset + translations.length > nodes.length) {
+    return { ok: false, error: '翻訳結果の範囲が一致しません' };
+  }
+  let skipped = 0;
+  translations.forEach((translation, j) => {
+    if (typeof translation !== 'string') return;
+    const i = offset + j;
+    const node = nodes[i];
+    if (!node?.isConnected || node.nodeValue !== expected[i]) {
+      skipped += 1;
+      return;
     }
-  }
+    const text = texts[i].match(/^\s*/)[0] + translation.trim() + texts[i].match(/\s*$/)[0];
+    node.nodeValue = text;
+    expected[i] = text;
+    translatedNodes.set(node, { original: texts[i], translated: text });
+  });
+  return skipped > 0
+    ? { ok: false, error: `${skipped}項目はページが更新されたため反映できませんでした` }
+    : { ok: true };
 }
 
 const PAGE_CONTROL_STATUS_LABELS = {
@@ -147,7 +163,7 @@ function createPageTranslationControls() {
 
   const retryBtn = document.createElement('button');
   retryBtn.id = 'llm-page-translation-retry';
-  retryBtn.textContent = '失敗分を再試行';
+  retryBtn.textContent = '未完了分を再試行';
   retryBtn.type = 'button';
   applyStyles(retryBtn, styles.pageControlsContinueBtn);
   retryBtn.onclick = handleRetryClick;
@@ -190,6 +206,7 @@ function handleRetryClick() {
   const sent = safeSendMessage(
     { action: 'continuePageTranslation', snapshotId: targetSnapshotId },
     (response) => {
+      if (targetSnapshotId !== pageTranslationControlsSnapshotId) return;
       if (response?.ok) return; // 以降は push 更新
       // service worker 再起動などでセッションが失われた場合は再実行を促す
       console.warn('continuePageTranslation 失敗:', response?.error);
@@ -203,8 +220,7 @@ function handleStopClick() {
   const targetSnapshotId = pageTranslationControlsSnapshotId;
   if (!targetSnapshotId || !pageTranslationControls) return;
 
-  const stopBtn = pageTranslationControls.querySelector('#llm-page-translation-stop');
-  if (stopBtn) stopBtn.disabled = true;
+  hidePageTranslationControls();
 
   const sent = safeSendMessage(
     { action: 'cancelPageTranslation', snapshotId: targetSnapshotId },
@@ -226,6 +242,7 @@ function handleCloseClick() {
 
 function renderSessionLost() {
   if (!pageTranslationControls) return;
+  updateStatusPolling('lost');
   updateControlsView({
     status: 'lost',
     noteText: '翻訳セッションが失われました。ページ翻訳をやり直してください。'
@@ -254,7 +271,7 @@ function renderControlsProgress(wrap, { status, processedItems, totalItems }) {
 function renderControlsNote(wrap, { failedItems, noteText }) {
   const note = wrap.querySelector('#llm-page-translation-note');
   if (!note) return;
-  const text = noteText || (failedItems > 0 ? `${failedItems}項目の翻訳に失敗しました（原文を表示中）` : '');
+  const text = noteText || (failedItems > 0 ? `${failedItems}項目の翻訳または反映が未完了です` : '');
   note.textContent = text;
   note.style.display = text ? 'block' : 'none';
   note.style.color = text ? '#8b4a12' : '';
@@ -266,7 +283,7 @@ function renderControlsButtons(wrap, status) {
   const closeBtn = wrap.querySelector('#llm-page-translation-close');
 
   if (retryBtn) {
-    retryBtn.style.display = status === 'partial' ? 'inline-block' : 'none';
+    retryBtn.style.display = status === 'partial' || status === 'lost' ? 'inline-block' : 'none';
     retryBtn.disabled = false;
     applyStyles(retryBtn, styles.pageControlsContinueBtn);
   }
@@ -305,16 +322,12 @@ function updateControlsView({
 // background からの状態 push を受けてパネルを更新する。
 // message: { snapshotId, status, processedItems, totalItems, failedItems, ... }
 function showPageTranslationControls(message = {}) {
-  const { snapshotId, status = 'running', processedItems, totalItems, failedItems } = message;
+  const { snapshotId, status = 'running', processedItems, totalItems, failedItems,
+    activeChunks = 0, elapsedSeconds = 0, noteText = '' } = message;
 
-  // 古いスナップショット宛の遅延 push は無視する
-  if (
-    pageTranslationControlsSnapshotId !== null &&
-    snapshotId !== undefined &&
-    snapshotId < pageTranslationControlsSnapshotId
-  ) {
-    return;
-  }
+  // ナビゲーション・再実行・停止より前の通知はパネルを再表示しない。
+  if (snapshotId !== pageTranslationSnapshot.id || pageTranslationControlsDismissed) return;
+  pageTranslationViewVersion += 1;
 
   pageTranslationControlsSnapshotId = snapshotId ?? pageTranslationControlsSnapshotId;
 
@@ -327,14 +340,54 @@ function showPageTranslationControls(message = {}) {
     pageTranslationAutoHideTimer = null;
   }
 
-  updateControlsView({ status, processedItems, totalItems, failedItems });
+  const runningNote = activeChunks > 0
+    ? `モデルの応答を待っています（${activeChunks}件処理中・${elapsedSeconds}秒経過）` : '';
+  updateControlsView({ status, processedItems, totalItems, failedItems,
+    noteText: noteText || (status === 'running' ? runningNote : '') });
+  updateStatusPolling(status);
 
   if (status === 'completed') {
     pageTranslationAutoHideTimer = setTimeout(() => hidePageTranslationControls(), 3000);
   }
 }
 
-function hidePageTranslationControls() {
+// push が途絶えた場合も storage のチェックポイントを問い合わせ、中断を表示する。
+function updateStatusPolling(status) {
+  if (status !== 'running') {
+    pageTranslationViewVersion += 1;
+    clearInterval(pageTranslationStatusTimer);
+    pageTranslationStatusTimer = null;
+    return;
+  }
+  if (pageTranslationStatusTimer) return;
+  let waiting = false;
+  pageTranslationStatusTimer = setInterval(() => {
+    if (waiting) return;
+    waiting = true;
+    const snapshotId = pageTranslationControlsSnapshotId;
+    const viewVersion = pageTranslationViewVersion;
+    let expired = false;
+    const isCurrent = () => pageTranslationControlsSnapshotId === snapshotId &&
+      !pageTranslationControlsDismissed && viewVersion === pageTranslationViewVersion;
+    const timeout = setTimeout(() => {
+      expired = true;
+      waiting = false;
+      if (isCurrent()) renderSessionLost();
+    }, 10000);
+    safeSendMessage({ action: 'getPageTranslationStatus', snapshotId }, (response) => {
+      clearTimeout(timeout);
+      waiting = false;
+      if (expired || !isCurrent()) return;
+      if (!response?.ok) return renderSessionLost();
+      if (!response.starting) showPageTranslationControls(response);
+    });
+  }, 10000);
+}
+
+function hidePageTranslationControls(snapshotId) {
+  if (snapshotId !== undefined && snapshotId !== pageTranslationSnapshot.id) return;
+  pageTranslationControlsDismissed = true;
+  updateStatusPolling('closed');
   if (pageTranslationAutoHideTimer) {
     clearTimeout(pageTranslationAutoHideTimer);
     pageTranslationAutoHideTimer = null;
