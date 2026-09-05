@@ -39,7 +39,7 @@ describe('ollama provider', () => {
   it('keeps structured batch format fallback order', async () => {
     const fetch = vi.fn(async () =>
       mockJsonResponse({
-        response: '{"items":[{"id":0,"translation":"一"}]}'
+        response: '{"items":[[0,"一"]]}'
       })
     );
     globalThis.fetch = fetch;

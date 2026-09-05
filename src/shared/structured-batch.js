@@ -13,13 +13,9 @@ export const STRUCTURED_BATCH_SCHEMA = {
     items: {
       type: 'array',
       items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          id: { type: 'integer' },
-          translation: { type: 'string' }
-        },
-        required: ['id', 'translation']
+        // 位置別のスキーマに依存せず、[id, 訳文] の順序と長さは受信時に検証する。
+        type: 'array',
+        items: { anyOf: [{ type: 'integer' }, { type: 'string' }] }
       }
     }
   },
@@ -38,7 +34,7 @@ export function buildStructuredBatchInstruction(settings, options = {}) {
 
   return [
     'あなたは優秀な翻訳者です。与えられた JSON 配列 items の各要素を日本語に翻訳してください。',
-    '出力は JSON のみで、オブジェクト形式 {"items":[{"id": number, "translation": string}]} にしてください。',
+    '出力は JSON のみで、形式 {"items":[[0,"訳文"],[1,"訳文"]]} にしてください。各要素は必ず [入力のid, 訳文の文字列] の2要素配列です。原文やキー名は各要素に出力しないでください。',
     '重要: 入力の id をそのまま維持し、items の件数は入力と同じにします。不要な説明文は一切出力しないでください。',
     'HTMLタグやコードブロックなどのマークアップは保持し、意味を変えないように訳してください。',
     `翻訳方針: ${policy}`
@@ -119,8 +115,10 @@ export function normalizeStructuredBatchResult(parsed, texts, options = {}) {
   const seen = new Set();
 
   for (const item of arr) {
-    const id = item?.id;
-    const translation = item?.translation;
+    // JSONモード等でモデルが旧形式を返しても、再生成せず既存のID検証で扱う。
+    if (Array.isArray(item) && item.length !== 2) continue;
+    const id = Array.isArray(item) ? item[0] : item?.id;
+    const translation = Array.isArray(item) ? item[1] : item?.translation;
     if (!Number.isInteger(id) || id < 0 || id >= out.length || typeof translation !== 'string' || !translation.trim()) continue;
     if (seen.has(id)) continue;
     out[id] = translation.trim();

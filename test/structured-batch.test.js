@@ -30,6 +30,27 @@ describe('parseJsonLoose', () => {
 });
 
 describe('normalizeStructuredBatchResult', () => {
+  it('orders compact pairs by id and keeps missing items in place', () => {
+    expect(normalizeStructuredBatchResult(
+      { items: [[2, ' 三番目 '], [0, '一番目']] },
+      ['first', 'second', 'third'], { warnOnMissingIds: false }
+    )).toEqual(['一番目', null, '三番目']);
+  });
+
+  it('ignores malformed pairs, invalid ids and duplicate ids', () => {
+    expect(normalizeStructuredBatchResult({ items: [
+      ['0', '文字列ID'], [-1, '範囲外'], [99, '範囲外'], [0, 42],
+      [0, '余剰要素', 'extra'], [0], ['逆順', 0], [null, '無効'],
+      [0, '一番目'], [0, '重複'], [1, '二番目']
+    ] }, ['first', 'second'])).toEqual(['一番目', '二番目']);
+  });
+
+  it('rejects compact output with too many missing items', () => {
+    expect(() => normalizeStructuredBatchResult(
+      { items: [[0, '一番目'], [1, ' ']] }, ['first', 'second']
+    )).toThrow('構造化出力の id 欠落率が高すぎます');
+  });
+
   it('returns translations ordered by id', () => {
     expect(
       normalizeStructuredBatchResult(

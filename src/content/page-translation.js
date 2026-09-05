@@ -10,6 +10,23 @@ let pageTranslationControlsDismissed = false;
 let pageTranslationViewVersion = 0;
 const translatedNodes = new WeakMap();
 
+function getOriginalPageText(node) {
+  const previous = translatedNodes.get(node);
+  return previous?.translated === node.nodeValue ? previous.original : node.nodeValue;
+}
+
+function needsPageTranslation(text) {
+  // ブロック範囲の列挙ではなくUnicode属性を使い、半角かなや拡張漢字も扱う。
+  if (!/\p{L}/u.test(text)) return false;
+  // 漢字だけでは中国語と区別できないため、かなを含む場合のみ日本語と推定する。
+  const hasKana = /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(text);
+  const otherLetters = text.replace(
+    /[\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\p{Script=Han}]/gu,
+    ''
+  );
+  return !hasKana || /\p{L}/u.test(otherLetters);
+}
+
 function capturePageTextSnapshot() {
   // 再実行時に旧パネルや選択翻訳ポップアップなど拡張自身の UI が
   // 翻訳対象に混入するとパネルが破壊されるため、キャプチャ時に除外する。
@@ -17,12 +34,9 @@ function capturePageTextSnapshot() {
     const parent = node.parentElement;
     return parent && !parent.isContentEditable && !parent.closest(
       'textarea, input, select, code, pre, [hidden], [aria-hidden="true"], [translate="no"], .notranslate'
-    );
+    ) && needsPageTranslation(getOriginalPageText(node));
   });
-  const texts = nodes.map((node) => {
-    const previous = translatedNodes.get(node);
-    return previous?.translated === node.nodeValue ? previous.original : node.nodeValue;
-  });
+  const texts = nodes.map(getOriginalPageText);
   pageTranslationSnapshot = {
     // randomUUID は通常の HTTP ページでは使えないため getRandomValues を使う。
     id: crypto.getRandomValues(new Uint32Array(4)).join('-'),

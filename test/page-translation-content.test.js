@@ -44,6 +44,36 @@ function setup(texts = [' one ', 'two']) {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
+describe('ページ翻訳の対象判定', () => {
+  it.each([
+    '123,456.78%', '２０２６／０９／０６', '… → ★ 😀', ' \n ',
+    'これは日本語です。', 'カタカナ・メニュー', 'ﾒﾆｭｰ', 'ばなな', '𠮷野家です'
+  ])('翻訳不要なテキストを送信対象から除外する: %s', (text) => {
+    const { api } = setup([text]);
+    expect(api.capturePageTextSnapshot().texts).toEqual([]);
+  });
+
+  it.each([
+    '設定', '中文翻译', 'English', '日本語とEnglish', '日本語とＥｎｇｌｉｓｈ',
+    'café', '한국어', 'مرحبا', 'Привет', '日本語と한국어'
+  ])('他言語や判定できないテキストを対象に残す: %s', (text) => {
+    const { api } = setup([text]);
+    expect(api.capturePageTextSnapshot().texts).toEqual([text]);
+  });
+
+  it('除外項目を挟んでも反映位置と再実行時の原文を維持する', () => {
+    const { api, nodes } = setup(['123', 'hello', 'こんにちは', 'world', '★']);
+    const { texts, snapshotId } = api.capturePageTextSnapshot();
+    expect(texts).toEqual(['hello', 'world']);
+    expect(api.applyPageTranslationChunk(snapshotId, 1, ['せかい'])).toEqual({ ok: true });
+    expect(api.applyPageTranslationChunk(snapshotId, 0, ['こんにちは'])).toEqual({ ok: true });
+    expect(nodes.map((node) => node.nodeValue)).toEqual(['123', 'こんにちは', 'こんにちは', 'せかい', '★']);
+    expect(api.capturePageTextSnapshot().texts).toEqual(['hello', 'world']);
+    nodes[1].nodeValue = 'ページが更新されました';
+    expect(api.capturePageTextSnapshot().texts).toEqual(['world']);
+  });
+});
+
 describe('ページ翻訳のDOMと操作パネル', () => {
   it('原文の前後空白を保ち、再実行では元の文章を取り出す', () => {
     const { api, nodes } = setup();

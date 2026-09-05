@@ -82,7 +82,7 @@ describe('cerebras provider', () => {
         choices: [
           {
             message: {
-              content: '{"items":[{"id":0,"translation":"一"},{"id":1,"translation":"二"}]}'
+              content: '{"items":[[1,"二"],[0,"一"]]}'
             }
           }
         ]
@@ -93,6 +93,10 @@ describe('cerebras provider', () => {
     await expect(cerebrasProvider.translateBatchStructured(['one', 'two'], settings)).resolves.toEqual(['一', '二']);
 
     const body = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(body.messages[1].content).toContain('[入力のid, 訳文の文字列]');
+    expect(body.response_format.json_schema.schema.properties.items.items).toEqual({
+      type: 'array', items: { anyOf: [{ type: 'integer' }, { type: 'string' }] }
+    });
     expect(body.response_format).toMatchObject({
       type: 'json_schema',
       json_schema: {
