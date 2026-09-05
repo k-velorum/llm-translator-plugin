@@ -1,3 +1,4 @@
+import { formatUserError } from '../shared/errors.js';
 import { getProviderCapabilities, getProviderDefinition } from './api/registry.js';
 
 export { makeApiRequest, makeStreamingApiRequest, readOpenAICompatibleSSE } from './api/http.js';
@@ -6,12 +7,6 @@ export { OPENROUTER_HEADERS_BASE } from './api/providers/openrouter.js';
 
 // エラー詳細のフォーマット
 export function formatErrorDetails(error, settings) {
-  const maskApiKey = (apiKey) => {
-    if (!apiKey) return '未設定';
-    if (apiKey.length <= 8) return '********';
-    return apiKey.substring(0, 4) + '...' + apiKey.substring(apiKey.length - 4);
-  };
-
   const providerId = settings?.apiProvider || 'unknown';
   const provider = getProviderDefinition(providerId);
   const serverKey = provider?.settingsKeys?.server;
@@ -23,14 +18,14 @@ export function formatErrorDetails(error, settings) {
       : provider.label
     : providerId || '不明';
   const modelName = provider?.fixedModel || (modelKey ? settings?.[modelKey] || '未選択' : '不明');
-  const maskedApiKey = apiKeyKey ? maskApiKey(settings?.[apiKeyKey]) : provider ? '不要' : '不明';
+  const maskedApiKey = apiKeyKey ? (settings?.[apiKeyKey] ? '設定済み' : '未設定') : provider ? '不要' : '不明';
 
   return `
 ==== 翻訳エラー ====
 API プロバイダー: ${apiProvider}
 使用モデル: ${modelName}
 APIキー: ${maskedApiKey}
-エラー詳細: ${error.message || '詳細不明のエラー'}
+エラー詳細: ${formatUserError(error)}
 ${error.stack ? '\nスタックトレース:\n' + error.stack : ''}
 ==================
 `;

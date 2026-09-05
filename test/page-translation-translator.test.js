@@ -28,6 +28,26 @@ beforeEach(() => {
 });
 
 describe('translateChunk', () => {
+  it('課金エラーでセパレータや分割へ再送せず、対処可能なエラーを返す', async () => {
+    translateBatchStructured.mockRejectedValue(Object.assign(new Error('Insufficient credits'), { status: 402 }));
+    const params = makeParams();
+    const result = await translateChunk(['one', 'two'], settings, params);
+    expect(result).toMatchObject({ parts: [null, null], error: { status: 402, code: 'payment_required' } });
+    expect(translateText).not.toHaveBeenCalled();
+    expect(params.runtime.structuredDisabled).toBe(false);
+  });
+
+  it('分割途中でAPIが利用不可になっても成功済みの訳文を残す', async () => {
+    translateText.mockImplementation(async (text) => {
+      if (text.includes('|||')) return 'separator missing';
+      if (text === 'one') return '一';
+      throw Object.assign(new Error('credits exhausted'), { status: 402 });
+    });
+    const result = await translateChunk(['one', 'two', 'three', 'four'], settings, makeParams({ useStructuredOutput: false }));
+    expect(result).toMatchObject({ parts: ['一', null, null, null], failedItems: 3, error: { status: 402 } });
+    expect(translateText.mock.calls.map(([text]) => text)).not.toContain('three');
+  });
+
   it('構造化出力が成功したらそのまま返す', async () => {
     translateBatchStructured.mockResolvedValue(['一', '二']);
 

@@ -42,6 +42,37 @@ describe('computeChunkOffsets', () => {
 });
 
 describe('runChunkQueue', () => {
+  it('利用不可でキューを止めても送信済みチャンクの成功は反映する', async () => {
+    const session = makeSession([['blocked'], ['in-flight'], ['pending']]);
+    let completeInFlight;
+    translateChunk.mockImplementation(async (chunk) => {
+      if (chunk[0] === 'blocked') return { parts: [null], error: { status: 402, message: 'Insufficient credits' } };
+      return new Promise((resolve) => { completeInFlight = resolve; });
+    });
+    const applyChunk = vi.fn();
+    const running = runChunkQueue(session, [0, 1, 2], {
+      applyChunk,
+      notifyProgress: async () => { completeInFlight({ parts: ['成功'], method: 'per-item' }); }
+    });
+    await running;
+    expect(translateChunk).toHaveBeenCalledTimes(2);
+    expect(applyChunk).toHaveBeenCalledWith(1, ['成功']);
+    expect(summarizeSession(session)).toMatchObject({ doneChunks: 1, failedChunks: 1, pendingChunks: 1 });
+  });
+
+  it('課金エラーで未着手チャンクを残して停止し、手動再試行で続行する', async () => {
+    const session = makeSession([['a'], ['b'], ['c']], { params: { concurrency: 1, delayMs: 0 } });
+    translateChunk.mockResolvedValueOnce({ parts: [null], method: 'api-error', error: { status: 402, message: 'Insufficient credits' } });
+    const hooks = { applyChunk: vi.fn(), notifyProgress: vi.fn() };
+    await runChunkQueue(session, [0, 1, 2], hooks);
+    expect(translateChunk).toHaveBeenCalledTimes(1);
+    expect(summarizeSession(session)).toMatchObject({ failedChunks: 1, pendingChunks: 2 });
+    expect(session.lastError).toContain('請求設定');
+    translateChunk.mockResolvedValue({ parts: ['訳'], method: 'per-item' });
+    await runChunkQueue(session, getFailedChunkIndexes(session), hooks);
+    expect(summarizeSession(session).doneChunks).toBe(3);
+  });
+
   it('一部チャンクの失敗では止まらず、成功分を適用して失敗分を記録する', async () => {
     const chunks = [['a', 'b'], ['c'], ['d', 'e']];
     const session = makeSession(chunks);

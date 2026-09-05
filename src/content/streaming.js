@@ -124,7 +124,7 @@ function failStreamSession(requestId, error) {
   if (!session || session.closed) return;
   clearStreamSessionTimer(session);
   session.pendingText = '';
-  const message = error?.message || 'ストリーム翻訳に失敗しました';
+  const message = [error?.message || 'ストリーム翻訳に失敗しました', error?.hint].filter(Boolean).join('\n');
   const errorText = `翻訳エラー: ${message}`;
   session.renderedText = errorText;
   session.state = 'error';

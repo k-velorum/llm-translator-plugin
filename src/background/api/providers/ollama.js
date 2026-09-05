@@ -1,3 +1,4 @@
+import { canFallbackAfterError } from '../../../shared/errors.js';
 import { TRANSLATION_TIMEOUT_MS } from '../../../shared/constants.js';
 import {
   STRUCTURED_BATCH_SCHEMA,
@@ -81,7 +82,7 @@ async function translateBatchStructured(texts, settings, requestOptions = {}) {
       const responseText = (data?.response ?? '').toString();
       return parseStructuredBatchResponse(responseText, texts);
     } catch (error) {
-      if (error?.name === 'AbortError' || error?.name === 'TimeoutError') throw error;
+      if (!canFallbackAfterError(error)) throw error;
       lastError = error;
       if (i >= formatCandidates.length - 1) break;
     }

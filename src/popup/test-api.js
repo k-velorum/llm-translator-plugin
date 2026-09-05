@@ -1,3 +1,4 @@
+import { formatUserError } from '../shared/errors.js';
 import { getProviderUi } from './provider-ui.js';
 import { showStatus } from './status.js';
 import { log } from '../shared/logger.js';
@@ -57,9 +58,9 @@ export function testApi(elements) {
             showStatus(testStatus, `エラー: ${chrome.runtime.lastError.message}`, false);
             testResult.textContent = '';
             testResult.classList.remove('hidden');
-          } else if (response.error) {
-            showStatus(testStatus, `エラー: ${response.error.message}`, false);
-            testResult.textContent = response.error.details || '';
+          } else if (!response || response.error) {
+            showStatus(testStatus, `エラー: ${formatUserError(response?.error || "バックグラウンドから応答がありません。拡張を再読み込みしてください。")}`, false);
+            testResult.textContent = response?.error?.details || '';
             testResult.classList.remove('hidden');
           } else {
             showStatus(testStatus, 'テスト成功！', true);

@@ -157,12 +157,14 @@ const styles = {
     backgroundColor: 'transparent'
   },
   errorContent: {
-    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
+    fontFamily: 'inherit',
     fontSize: '13px',
     backgroundColor: '#fff5f5',
     color: '#b42318',
-    borderLeft: '3px solid #d92d20',
-    paddingLeft: '10px'
+    border: '1px solid #f3d1d1',
+    borderRadius: '8px',
+    margin: '12px 14px',
+    padding: '12px'
   },
   actions: {
     display: 'flex',
@@ -355,8 +357,62 @@ function applyTranslationTextState(element, text, isError, normalStyle = {}, err
   applyStyles(element, normalStyle);
   if (isError) {
     applyStyles(element, errorStyle);
+    renderTranslationError(element, text);
+    return;
   }
+  element.removeAttribute('role');
   element.textContent = text;
+}
+
+// 通常表示は復旧案内に絞り、API本文やスタックは必要時だけ開けるようにする。
+// 非ストリーミング経路も使うため、既存のエラー文字列をここで表示用に分ける。
+function renderTranslationError(element, text) {
+  const detail = String(text || '').replace(/^翻訳エラー:\s*/, '').trim();
+  const guidance = detail.split('\n').find((line) =>
+    !/^API Error:|^\s*at\s/.test(line) && /確認してください|再読み込み|再試行|短くしてください|小さくしてください/.test(line)
+  ) || '翻訳を完了できませんでした。拡張の設定と接続先を確認してください。';
+  element.textContent = '';
+  element.setAttribute('role', 'alert');
+  element.style.fontFamily = 'inherit';
+  const title = document.createElement('strong');
+  title.textContent = '翻訳できませんでした';
+  title.style.display = 'block';
+  const description = document.createElement('div');
+  description.textContent = guidance;
+  applyStyles(description, {
+    marginTop: '6px',
+    color: '#4b3540',
+    whiteSpace: 'normal',
+    lineHeight: '1.65',
+    textWrap: 'pretty',
+    lineBreak: 'strict'
+  });
+  element.append(title, description);
+
+  if (/再読み込み/.test(guidance)) {
+    const reload = document.createElement('button');
+    reload.type = 'button';
+    reload.textContent = 'ページを再読み込み';
+    applyStyles(reload, { ...styles.copyBtn, marginTop: '8px' });
+    reload.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      window.location.reload();
+    });
+    element.append(reload);
+  }
+  if (detail && detail !== guidance) {
+    const details = document.createElement('details');
+    const summary = document.createElement('summary');
+    summary.textContent = 'エラーの詳細';
+    summary.style.cursor = 'pointer';
+    const body = document.createElement('div');
+    body.textContent = detail;
+    body.style.whiteSpace = 'pre-wrap';
+    details.style.marginTop = '8px';
+    details.append(summary, body);
+    element.append(details);
+  }
 }
 
 function extractTranslatedTextFromResponse(response) {
@@ -377,6 +433,7 @@ window.LLMT.ui = {
   applyStyles,
   positionPopupInViewport,
   applyTranslationTextState,
+  renderTranslationError,
   extractTranslatedTextFromResponse
 };
 Object.assign(window, {
@@ -389,6 +446,7 @@ Object.assign(window, {
   applyStyles,
   positionPopupInViewport,
   applyTranslationTextState,
+  renderTranslationError,
   extractTranslatedTextFromResponse
 });
 })();

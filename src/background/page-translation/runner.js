@@ -1,3 +1,4 @@
+import { formatUserError, shouldPauseTranslationQueue } from '../../shared/errors.js';
 import { DEFAULT_SETTINGS } from '../settings.js';
 import { appendLog, getProviderMeta } from '../logging.js';
 import { sleepWithSignal, withTimeout } from '../../shared/async-utils.js';
@@ -99,6 +100,7 @@ async function processChunk(session, idx, hooks) {
     const result = await translateMissingParts(session, chunk, parts, timeoutMs);
     if (session.canceled) return;
 
+    if (result.error) recordSessionError(session, result.error);
     const failedItems = parts.filter((part) => part === null).length;
 
     await withTimeout(() => hooks.applyChunk(idx, parts), 10000, session.abortController?.signal);
@@ -115,6 +117,7 @@ async function processChunk(session, idx, hooks) {
       event: 'chunk_done',
       ...chunkLogMeta(session, idx, {
         method: result.method,
+        ...(result.error ? { error: result.error, message: formatUserError(result.error) } : {}),
         items: chunk.length,
         failedItems,
         len: promptLen,
@@ -128,9 +131,14 @@ async function processChunk(session, idx, hooks) {
   }
 }
 
+function recordSessionError(session, error) {
+  session.lastError = formatUserError(error);
+  if (shouldPauseTranslationQueue(error)) session.queuePaused = true;
+}
+
 async function recordChunkFailure(session, idx, error, { promptLen, timeoutMs, parts }) {
   const chunk = session.chunks[idx];
-  session.lastError = error?.message || String(error);
+  recordSessionError(session, error);
   session.chunkResults[idx] = {
     status: 'failed',
     items: chunk.length,
@@ -151,9 +159,10 @@ async function recordChunkFailure(session, idx, error, { promptLen, timeoutMs, p
 }
 
 // 指定チャンク群をワーカープールで連続処理する。チャンク失敗は記録して
-// 続行し（後で失敗分のみ再試行できる）、キャンセル時のみ即座に抜ける。
+// 続行する。API全体の利用障害では新規送信を止め、未処理分を再試行用に残す。
 export async function runChunkQueue(session, chunkIndexes, hooks) {
   const queue = [...chunkIndexes];
+  session.queuePaused = false;
   const concurrency = clampInt(
     session.params?.concurrency,
     1,
@@ -171,7 +180,7 @@ export async function runChunkQueue(session, chunkIndexes, hooks) {
   }
 
   const worker = async () => {
-    while (!session.canceled) {
+    while (!session.canceled && !session.queuePaused) {
       const idx = queue.shift();
       if (idx === undefined) return;
 

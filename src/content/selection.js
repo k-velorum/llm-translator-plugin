@@ -207,12 +207,14 @@ function createSelectionPopup({
     loadingLabel.textContent = bodyText;
     content.appendChild(createLoadingSpinner());
     content.appendChild(loadingLabel);
+  } else if (isError) {
+    window.LLMT.ui.renderTranslationError(content, bodyText);
   } else {
     content.textContent = bodyText;
   }
 
   const copyBtn = document.createElement('button');
-  copyBtn.textContent = 'コピー';
+  copyBtn.textContent = isError ? 'エラー詳細をコピー' : 'コピー';
   copyBtn.type = 'button';
   applyStyles(copyBtn, styles.copyBtn);
   copyBtn.disabled = !bodyText || loading;
@@ -311,6 +313,8 @@ function updateSelectionStreamPopup(requestId, text, { isError = false, isComple
   if (isError) {
     applyStyles(translationPopup, styles.popupError);
     applyStyles(content, styles.errorContent);
+    window.LLMT.ui.renderTranslationError(content, text);
+    copyBtn.textContent = 'エラー詳細をコピー';
   } else {
     applyStyles(content, styles.normalContent);
     translationPopup.style.borderTop = styles.popup.borderTop;
@@ -380,7 +384,7 @@ function showLoadingPopup(anchorRect = null) {
 
 function showTranslationPopup(translatedText, anchorRect = null) {
   createSelectionPopup({
-    titleText: '翻訳結果',
+    titleText: ErrorUtils.isTranslationError(translatedText) ? '翻訳エラー' : '翻訳結果',
     bodyText: translatedText,
     isError: ErrorUtils.isTranslationError(translatedText),
     anchorRect

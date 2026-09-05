@@ -1,5 +1,6 @@
+import { getErrorPolicy } from '../../shared/errors.js';
 import { sleepWithSignal } from '../../shared/async-utils.js';
-import { createScopedLogger, log } from '../../shared/logger.js';
+import { createScopedLogger } from '../../shared/logger.js';
 
 const HTTP_429_RETRY_DELAY_MS = 500;
 // 初回リクエストとは別に、429 発生時の再試行回数を表す。
@@ -44,6 +45,29 @@ async function waitBeforeRetry({
   );
   await sleepWithSignal(delay, signal);
   return true;
+}
+
+// 本文は一度だけ読み、JSON解析失敗とAPI自身のエラーを混同しない。
+async function createHttpError(response) {
+  let detail = '';
+  try {
+    detail = await response.text();
+  } catch (_) {
+    detail = 'レスポンス本文を取得できませんでした';
+  }
+  try {
+    const data = JSON.parse(detail);
+    const message = data?.error?.message || data?.message || data?.error;
+    if (typeof message === 'string') detail = message;
+  } catch (_) {
+    // JSON以外のエラー本文も診断に使えるよう保持する。
+  }
+
+  const statusText = response.statusText || (response.status === 402 ? 'Payment Required' : 'HTTP Error');
+  const error = new Error(`API Error: ${statusText} (${response.status})${detail ? ` - ${detail}` : ''}`);
+  error.status = response.status;
+  Object.assign(error, getErrorPolicy(error));
+  return error;
 }
 
 function normalizeOpenAICompatibleDeltaText(content) {
@@ -125,21 +149,7 @@ export async function makeApiRequest(url, options = {}, errorMessage, logLevel =
           continue;
         }
 
-        let errorText = '';
-        try {
-          const errorData = await response.json();
-          errorText = JSON.stringify(errorData);
-          log.error('api', 'エラーレスポンス', errorData);
-          throw new Error(`API Error: ${errorData.error?.message || response.statusText} (${response.status})`);
-        } catch (_parseError) {
-          try {
-            errorText = await response.text();
-            log.error('api', 'エラーテキスト', { errorText });
-          } catch (_textError) {
-            errorText = 'レスポンステキストを取得できませんでした';
-          }
-          throw new Error(`API Error: ${response.statusText} (${response.status}) - ${errorText}`);
-        }
+        throw await createHttpError(response);
       }
 
       const data = await response.json();
@@ -230,19 +240,7 @@ export async function makeStreamingApiRequest(url, options = {}, handlers = {}, 
           continue;
         }
 
-        let errorText = '';
-        try {
-          const errorData = await response.json();
-          errorText = JSON.stringify(errorData);
-          throw new Error(`API Error: ${errorData.error?.message || response.statusText} (${response.status})`);
-        } catch (_parseError) {
-          try {
-            errorText = await response.text();
-          } catch (_) {
-            errorText = 'レスポンステキストを取得できませんでした';
-          }
-          throw new Error(`API Error: ${response.statusText} (${response.status}) - ${errorText}`);
-        }
+        throw await createHttpError(response);
       }
 
       if (!response.body) {

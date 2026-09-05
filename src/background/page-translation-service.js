@@ -96,8 +96,9 @@ function controlsState(session, status) {
   return {
     snapshotId: session.snapshotId,
     status,
-    noteText: status === 'partial' && summary.pendingChunks > 0
-      ? '処理が中断しました。未完了分を再試行できます。' : '',
+    noteText: status === 'partial'
+      ? session.lastError || (summary.pendingChunks > 0 ? '処理が中断しました。未完了分を再試行できます。' : '')
+      : '',
     processedItems: summary.processedItems,
     totalItems: session.totalItems,
     failedItems: summary.failedItems,

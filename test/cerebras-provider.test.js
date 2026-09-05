@@ -21,6 +21,16 @@ afterEach(() => {
 });
 
 describe('cerebras provider', () => {
+  it('課金エラーでは構造化出力形式を切り替えて再送しない', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    globalThis.fetch = vi.fn(async () => new Response(
+      '{"error":{"message":"Insufficient credits"}}', { status: 402 }
+    ));
+    await expect(cerebrasProvider.translateBatchStructured(['one', 'two'], settings))
+      .rejects.toMatchObject({ status: 402, code: 'payment_required' });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('builds the current chat completion request for text translation', async () => {
     const fetch = vi.fn(async () =>
       mockJsonResponse({

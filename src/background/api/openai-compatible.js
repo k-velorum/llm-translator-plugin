@@ -1,3 +1,4 @@
+import { canFallbackAfterError } from '../../shared/errors.js';
 import { TRANSLATION_TIMEOUT_MS } from '../../shared/constants.js';
 import {
   STRUCTURED_BATCH_SCHEMA,
@@ -146,7 +147,7 @@ export function createOpenAICompatibleProvider({
 
         return parseStructuredBatchResponse(extractChatMessageContent(data), texts);
       } catch (error) {
-        if (error?.name === 'AbortError' || error?.name === 'TimeoutError') throw error;
+        if (!canFallbackAfterError(error)) throw error;
         lastError = error;
         if (i >= formats.length - 1) break;
       }

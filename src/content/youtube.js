@@ -42,8 +42,12 @@ function ensureYouTubeTranslationElement(contentTextEl) {
 function renderYouTubeTranslationElement(element, translatedText, isError) {
   element.style.background = isError ? '#fff0f0' : '#f2f5f9';
   element.style.color = isError ? '#b00020' : '#0f0f0f';
-  element.style.fontFamily = isError ? 'monospace' : '';
-  element.textContent = translatedText;
+  if (isError) {
+    window.LLMT.ui.renderTranslationError(element, translatedText);
+  } else {
+    element.removeAttribute('role');
+    element.textContent = translatedText;
+  }
 }
 
 function addTranslateButtonToYouTubeComments() {

@@ -1,3 +1,4 @@
+import { normalizeError, shouldPauseTranslationQueue } from '../../shared/errors.js';
 import {
   DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT,
   DEFAULT_SETTINGS,
@@ -123,9 +124,9 @@ function resolveChunkParams(settings, params) {
 }
 
 // 1チャンクを翻訳する。失敗した item は parts に null を入れて返し（原文維持）、
-// AbortError 以外の例外は呼び出し元へ伝播させない。これにより 1 チャンクの
-// モデル出力失敗がページ全体翻訳を止めないことを保証する。
-// 戻り値: { parts: (string|null)[], method, failedItems }
+// 例外はキャンセルだけ伝播する。API全体の利用障害は error を返してキューを
+// 停止可能にし、通常のモデル出力失敗では残りのチャンクを続行する。
+// 戻り値: { parts: (string|null)[], method, failedItems, error? }
 export async function translateChunk(chunk, settings, params, requestOptions = {}) {
   throwIfAborted(requestOptions.signal);
   const result = await translateChunkContents(chunk, settings, params, requestOptions);
@@ -170,6 +171,7 @@ async function tryStructured(chunk, settings, params, resolved, requestOptions) 
     return { parts: arr, method: 'structured' };
   } catch (e) {
     if (isAbortError(e)) throw e;
+    if (shouldPauseTranslationQueue(e)) return { ...allItemsFailed(chunk, 'api-error'), error: normalizeError(e) };
     // 通信のタイムアウトにフォーマット変更は効かない。次のチャンクへ進む。
     if (e?.name === 'TimeoutError') return allItemsFailed(chunk, 'timeout');
 
@@ -233,6 +235,7 @@ async function translateBySeparatorOrSplit(chunk, settings, resolved, requestOpt
     });
   } catch (e) {
     if (isAbortError(e)) throw e;
+    if (shouldPauseTranslationQueue(e)) return { ...allItemsFailed(chunk, 'api-error'), error: normalizeError(e) };
     if (e?.name === 'TimeoutError') return allItemsFailed(chunk, 'timeout');
     log.warn('pageTranslation', 'セパレータ方式の翻訳に失敗したためサブ分割を試行', {
       depth,
@@ -248,12 +251,14 @@ async function translateBySeparatorOrSplit(chunk, settings, resolved, requestOpt
 
   const mid = Math.floor(chunk.length / 2);
   const left = await translateBySeparatorOrSplit(chunk.slice(0, mid), settings, resolved, requestOptions, depth + 1);
+  if (left.error) return { ...left, parts: [...left.parts, ...new Array(chunk.length - mid).fill(null)] };
   if (resolved.delayMs > 0) await sleepWithSignal(resolved.delayMs, signal);
   const right = await translateBySeparatorOrSplit(chunk.slice(mid), settings, resolved, requestOptions, depth + 1);
 
   return {
     parts: [...left.parts, ...right.parts],
     method: 'split',
+    ...(right.error ? { error: right.error } : {}),
     failedItems: left.failedItems + right.failedItems
   };
 }
@@ -283,6 +288,7 @@ async function translatePerItem(chunk, resolved, requestOptions) {
       );
     } catch (e) {
       if (isAbortError(e)) throw e;
+      if (shouldPauseTranslationQueue(e)) return { parts, method: 'api-error', error: normalizeError(e) };
       failedItems += 1;
       log.warn('pageTranslation', 'item 単位翻訳に失敗しました（原文を維持）', {
         index: i,
@@ -337,6 +343,7 @@ async function translateOversizedSingle(text, settings, resolved, requestOptions
       translatedPieces.push(part);
     } catch (e) {
       if (isAbortError(e)) throw e;
+      if (shouldPauseTranslationQueue(e)) return { ...allItemsFailed([text], 'api-error'), error: normalizeError(e) };
       log.warn('pageTranslation', '巨大ノード断片の翻訳に失敗しました（原文を維持）', {
         piece: i,
         message: e?.message || String(e)
