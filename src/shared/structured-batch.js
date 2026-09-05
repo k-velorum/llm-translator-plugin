@@ -1,7 +1,6 @@
 import { log } from './logger.js';
 
-const DEFAULT_TRANSLATION_SYSTEM_PROMPT =
-  '指示された文章を日本語に翻訳してください。翻訳結果のみを出力してください。';
+import { DEFAULT_TRANSLATION_SYSTEM_PROMPT, normalizeTranslationPolicy } from './translation-policy.js';
 
 const DEFAULT_BATCH_POLICY =
   '指示された文章を日本語に翻訳してください。翻訳結果のみを返してください。';
@@ -29,7 +28,7 @@ export function buildStructuredBatchItems(texts) {
 export function buildStructuredBatchInstruction(settings, options = {}) {
   const defaultPrompt = options.defaultPrompt || DEFAULT_TRANSLATION_SYSTEM_PROMPT;
   const fallbackPolicy = options.fallbackPolicy || DEFAULT_BATCH_POLICY;
-  const customPrompt = (settings?.translationSystemPrompt || '').trim();
+  const customPrompt = normalizeTranslationPolicy(settings?.translationSystemPrompt, defaultPrompt);
   const policy = customPrompt && customPrompt !== defaultPrompt ? customPrompt : fallbackPolicy;
 
   return [

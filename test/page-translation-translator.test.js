@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { translateBatchStructured, translateText } from '../src/background/api.js';
 import { translateChunk } from '../src/background/page-translation/translator.js';
+import { LEGACY_SEPARATOR_INSTRUCTION } from '../src/shared/translation-policy.js';
 
 vi.mock('../src/background/api.js', () => ({
   translateBatchStructured: vi.fn(),
@@ -11,7 +12,6 @@ vi.mock('../src/background/api.js', () => ({
 function makeParams(overrides = {}) {
   return {
     sep: '|||',
-    separatorSystemPrompt: '',
     maxChars: 3500,
     delayMs: 0,
     useStructuredOutput: true,
@@ -25,6 +25,44 @@ const settings = { apiProvider: 'gemini', geminiModel: 'gemini-test' };
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe('翻訳経路ごとの形式指示', () => {
+  const oldSettings = { ...settings, translationSystemPrompt: '敬体。' + LEGACY_SEPARATOR_INSTRUCTION };
+  const oldParams = () => makeParams({ separatorSystemPrompt: '古いセッションのSEP指示' });
+
+  it('JSONには翻訳方針だけ、フォールバックにのみ実際の区切り文字の指示を付ける', async () => {
+    translateBatchStructured.mockRejectedValue(new Error('bad json'));
+    translateText.mockResolvedValue('一|||二');
+    await translateChunk(['one', 'two'], oldSettings, oldParams());
+    expect(translateBatchStructured.mock.calls[0][1].translationSystemPrompt).toBe('敬体。');
+    const prompt = translateText.mock.calls[0][1].translationSystemPrompt;
+    expect(prompt).toContain('敬体。');
+    expect(prompt).toContain('"|||"');
+    expect(prompt).not.toContain('SEP');
+  });
+
+  it('単一項目には形式の指示を付けない', async () => {
+    translateText.mockResolvedValue('一');
+    await translateChunk(['one'], oldSettings, oldParams());
+    expect(translateText.mock.calls[0][1].translationSystemPrompt).toBe('敬体。');
+  });
+
+  it('セパレータ失敗後の個別翻訳にも形式の指示を残さない', async () => {
+    translateBatchStructured.mockRejectedValue(new Error('bad json'));
+    translateText.mockImplementation(async text => text.includes('|||') ? 'bad separator' : '訳');
+    await translateChunk(['one', 'two'], oldSettings, oldParams());
+    const singles = translateText.mock.calls.filter(([text]) => !text.includes('|||'));
+    expect(singles).toHaveLength(2);
+    singles.forEach(([, config]) => expect(config.translationSystemPrompt).toBe('敬体。'));
+  });
+
+  it('巨大ノードの断片にも形式の指示を付けない', async () => {
+    translateText.mockResolvedValue('訳');
+    await translateChunk(['A'.repeat(80)], oldSettings, { ...oldParams(), maxChars: 40 });
+    expect(translateText.mock.calls).toHaveLength(2);
+    translateText.mock.calls.forEach(([, config]) => expect(config.translationSystemPrompt).toBe('敬体。'));
+  });
 });
 
 describe('translateChunk', () => {

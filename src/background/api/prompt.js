@@ -1,9 +1,6 @@
-import { DEFAULT_SETTINGS } from '../settings.js';
+import { normalizeTranslationPolicy } from '../../shared/translation-policy.js';
 
-// 設定のカスタムプロンプトが空の場合は既定値へ戻す。
+// 保存前の設定や再開セッションでも、既知の旧形式指示を翻訳方針に混ぜない。
 export function getSystemPrompt(settings) {
-  const value = (settings && settings.translationSystemPrompt) || DEFAULT_SETTINGS.translationSystemPrompt;
-  return (typeof value === 'string' && value.trim().length)
-    ? value
-    : DEFAULT_SETTINGS.translationSystemPrompt;
+  return normalizeTranslationPolicy(settings?.translationSystemPrompt);
 }

@@ -1,9 +1,6 @@
 import { normalizeError, shouldPauseTranslationQueue } from '../../shared/errors.js';
-import {
-  DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT,
-  DEFAULT_SETTINGS,
-  DEFAULT_TRANSLATION_SYSTEM_PROMPT
-} from '../settings.js';
+import { DEFAULT_SETTINGS } from '../settings.js';
+import { buildSeparatorInstruction, normalizeTranslationPolicy } from '../../shared/translation-policy.js';
 import { translateBatchStructured, translateText } from '../api.js';
 import { appendLog, getProviderMeta } from '../logging.js';
 import {
@@ -79,26 +76,6 @@ export function clampInt(value, min, max, fallback) {
   return fallback;
 }
 
-export function buildSeparatorFallbackPrompt(settings) {
-  const base = (
-    settings?.translationSystemPrompt ||
-    DEFAULT_TRANSLATION_SYSTEM_PROMPT ||
-    DEFAULT_SETTINGS.translationSystemPrompt ||
-    ''
-  ).trim();
-  const extra = (
-    settings?.pageTranslationSeparatorPrompt ||
-    DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT ||
-    DEFAULT_SETTINGS.pageTranslationSeparatorPrompt ||
-    ''
-  ).trim();
-
-  if (!base) return extra;
-  if (!extra) return base;
-  if (base.includes(extra)) return base;
-  return `${base}\n${extra}`;
-}
-
 function isAbortError(error) {
   return error?.name === 'AbortError';
 }
@@ -107,7 +84,7 @@ function throwIfAborted(signal) {
   if (signal?.aborted) throw createAbortError();
 }
 
-function resolveChunkParams(settings, params) {
+function resolveChunkParams(params) {
   const sep = params?.sep || DEFAULT_SETTINGS.pageTranslationSeparator;
   const delayMs =
     typeof params?.delayMs === 'number' ? params.delayMs : DEFAULT_SETTINGS.pageTranslationDelayMs;
@@ -115,12 +92,7 @@ function resolveChunkParams(settings, params) {
     typeof params?.maxChars === 'number' ? params.maxChars : DEFAULT_SETTINGS.pageTranslationMaxChars;
   const structuredDisabled = params?.runtime?.structuredDisabled === true;
   const useStructuredOutput = params?.useStructuredOutput !== false && !structuredDisabled;
-  const separatorSystemPrompt = (params?.separatorSystemPrompt || '').trim();
-  const separatorSettings = separatorSystemPrompt
-    ? { ...settings, translationSystemPrompt: separatorSystemPrompt }
-    : settings;
-
-  return { sep, delayMs, maxChars, useStructuredOutput, separatorSettings };
+  return { sep, delayMs, maxChars, useStructuredOutput };
 }
 
 // 1チャンクを翻訳する。失敗した item は parts に null を入れて返し（原文維持）、
@@ -129,13 +101,14 @@ function resolveChunkParams(settings, params) {
 // 戻り値: { parts: (string|null)[], method, failedItems, error? }
 export async function translateChunk(chunk, settings, params, requestOptions = {}) {
   throwIfAborted(requestOptions.signal);
-  const result = await translateChunkContents(chunk, settings, params, requestOptions);
+  const policySettings = { ...settings, translationSystemPrompt: normalizeTranslationPolicy(settings?.translationSystemPrompt) };
+  const result = await translateChunkContents(chunk, policySettings, params, requestOptions);
   const parts = normalizeParts(result.parts, chunk);
   return { ...result, parts, failedItems: parts.filter((part) => part === null).length };
 }
 
 async function translateChunkContents(chunk, settings, params, requestOptions) {
-  const resolved = resolveChunkParams(settings, params);
+  const resolved = resolveChunkParams(params);
   const signal = requestOptions.signal;
 
   if (
@@ -213,7 +186,7 @@ async function translateBySeparatorOrSplit(chunk, settings, resolved, requestOpt
   }
 
   if (chunk.length === 1) {
-    return translatePerItem(chunk, resolved, requestOptions);
+    return translatePerItem(chunk, settings, resolved, requestOptions);
   }
 
   const joined = chunk.join(resolved.sep);
@@ -221,7 +194,7 @@ async function translateBySeparatorOrSplit(chunk, settings, resolved, requestOpt
     const translated = await requestTranslation(
       translateText,
       joined,
-      resolved.separatorSettings,
+      { ...settings, translationSystemPrompt: settings.translationSystemPrompt + '\n' + buildSeparatorInstruction(resolved.sep) },
       stepRequestOptions(requestOptions, getTimeoutMsForPromptLen(joined.length))
     );
     const parts = translated.split(resolved.sep);
@@ -244,7 +217,7 @@ async function translateBySeparatorOrSplit(chunk, settings, resolved, requestOpt
   }
 
   if (depth >= SPLIT_FALLBACK_MAX_DEPTH) {
-    return translatePerItem(chunk, resolved, requestOptions);
+    return translatePerItem(chunk, settings, resolved, requestOptions);
   }
 
   if (resolved.delayMs > 0) await sleepWithSignal(resolved.delayMs, signal);
@@ -264,7 +237,7 @@ async function translateBySeparatorOrSplit(chunk, settings, resolved, requestOpt
 }
 
 // 最終フォールバック: item 単位で翻訳し、失敗 item は null（原文維持）。
-async function translatePerItem(chunk, resolved, requestOptions) {
+async function translatePerItem(chunk, settings, resolved, requestOptions) {
   const signal = requestOptions.signal;
   const parts = new Array(chunk.length).fill(null);
   let failedItems = 0;
@@ -283,7 +256,7 @@ async function translatePerItem(chunk, resolved, requestOptions) {
       parts[i] = await requestTranslation(
         translateText,
         text,
-        resolved.separatorSettings,
+        settings,
         stepRequestOptions(requestOptions, getTimeoutMsForPromptLen(text.length))
       );
     } catch (e) {

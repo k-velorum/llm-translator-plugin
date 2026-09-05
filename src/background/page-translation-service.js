@@ -14,7 +14,7 @@ import {
   removePersistedSession,
   removePersistedSessionsForTab
 } from './page-translation/session-persistence.js';
-import { buildSeparatorFallbackPrompt, clampInt } from './page-translation/translator.js';
+import { clampInt } from './page-translation/translator.js';
 import { getProviderCapabilities } from './api/registry.js';
 import { withTimeout } from '../shared/async-utils.js';
 
@@ -148,7 +148,6 @@ function buildSessionParams(settings) {
   const sep = (settings.pageTranslationSeparator || DEFAULT_SETTINGS.pageTranslationSeparator).toString();
   return {
     sep,
-    separatorSystemPrompt: buildSeparatorFallbackPrompt(settings),
     maxChars: clampInt(settings.pageTranslationMaxChars, 500, 32000, DEFAULT_SETTINGS.pageTranslationMaxChars),
     maxItemsPerChunk: clampInt(
       settings.pageTranslationMaxItemsPerChunk,

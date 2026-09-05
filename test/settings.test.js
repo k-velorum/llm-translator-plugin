@@ -2,11 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   DEFAULT_SETTINGS,
-  DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT,
   DEFAULT_TRANSLATION_SYSTEM_PROMPT,
-  LEGACY_COMBINED_TRANSLATION_SYSTEM_PROMPT,
   loadSettings
 } from '../src/background/settings.js';
+import { LEGACY_SEPARATOR_INSTRUCTION } from '../src/shared/translation-policy.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -45,27 +44,24 @@ describe('loadSettings', () => {
     });
   });
 
-  it('migrates the legacy combined prompt into separate prompt settings', async () => {
+  it('removes the legacy instruction from the saved policy', async () => {
     const { set } = installChromeStorageMock({
-      translationSystemPrompt: LEGACY_COMBINED_TRANSLATION_SYSTEM_PROMPT,
+      translationSystemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT + LEGACY_SEPARATOR_INSTRUCTION,
       pageTranslationSeparatorPrompt: ''
     });
 
     await expect(loadSettings()).resolves.toMatchObject({
-      translationSystemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT,
-      pageTranslationSeparatorPrompt: DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT
+      translationSystemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT
     });
 
     expect(set).toHaveBeenCalledWith({
-      translationSystemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT,
-      pageTranslationSeparatorPrompt: DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT
+      translationSystemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT
     });
   });
 
   it('returns current settings without migration when prompt is already split', async () => {
     const current = {
-      translationSystemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT,
-      pageTranslationSeparatorPrompt: DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT
+      translationSystemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT
     };
     const { set } = installChromeStorageMock(current);
 

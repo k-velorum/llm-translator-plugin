@@ -1,5 +1,4 @@
 import {
-  DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT,
   DEFAULT_TRANSLATION_SYSTEM_PROMPT
 } from '../background/settings.js';
 import { createVerificationUI } from './api-key-verification.js';
@@ -92,8 +91,6 @@ function getElements() {
     youtubeFeatureCheckbox: document.getElementById('enable-youtube-translation'),
     translationSystemPromptTextarea: document.getElementById('translation-system-prompt'),
     resetSystemPromptButton: document.getElementById('reset-system-prompt'),
-    pageTranslationSeparatorPromptTextarea: document.getElementById('page-translation-separator-prompt'),
-    resetSeparatorPromptButton: document.getElementById('reset-separator-prompt'),
     pageTranslationMaxCharsInput: document.getElementById('page-translation-max-chars'),
     pageTranslationMaxItemsInput: document.getElementById('page-translation-max-items'),
     pageTranslationDelayMsInput: document.getElementById('page-translation-delay-ms'),
@@ -142,14 +139,8 @@ function setupApiProviderToggle(elements) {
 function bindEventHandlers(elements, draft, markDirty) {
   elements.testButton.addEventListener('click', () => testApi(elements, draft()));
   bindProviderModelRefreshHandlers(elements);
-  const resets = [
-    [elements.resetSystemPromptButton, elements.translationSystemPromptTextarea, DEFAULT_TRANSLATION_SYSTEM_PROMPT],
-    [elements.resetSeparatorPromptButton, elements.pageTranslationSeparatorPromptTextarea, DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT]
-  ];
-  resets.forEach(([button, field, value]) => {
-    button.addEventListener('click', () => {
-      field.value = value;
-      markDirty(field);
-    });
+  elements.resetSystemPromptButton.addEventListener('click', () => {
+    elements.translationSystemPromptTextarea.value = DEFAULT_TRANSLATION_SYSTEM_PROMPT;
+    markDirty(elements.translationSystemPromptTextarea);
   });
 }

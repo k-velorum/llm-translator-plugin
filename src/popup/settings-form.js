@@ -1,8 +1,4 @@
-import {
-  DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT,
-  DEFAULT_TRANSLATION_SYSTEM_PROMPT,
-  LEGACY_COMBINED_TRANSLATION_SYSTEM_PROMPT
-} from '../background/settings.js';
+import { normalizeTranslationPolicy } from '../shared/translation-policy.js';
 import {
   MODEL_PROVIDER_IDS,
   PROVIDER_ORDER,
@@ -37,7 +33,6 @@ export function loadSettings(elements) {
     twitterFeatureCheckbox,
     youtubeFeatureCheckbox,
     translationSystemPromptTextarea,
-    pageTranslationSeparatorPromptTextarea,
     pageTranslationMaxCharsInput,
     pageTranslationMaxItemsInput,
     pageTranslationDelayMsInput,
@@ -70,16 +65,9 @@ export function loadSettings(elements) {
     if (twitterFeatureCheckbox) twitterFeatureCheckbox.checked = settings.enableTwitterTranslation !== false;
     if (youtubeFeatureCheckbox) youtubeFeatureCheckbox.checked = settings.enableYoutubeTranslation !== false;
 
-    const usesLegacyCombinedPrompt =
-      settings.translationSystemPrompt === LEGACY_COMBINED_TRANSLATION_SYSTEM_PROMPT;
-    const translationPrompt = usesLegacyCombinedPrompt
-      ? DEFAULT_TRANSLATION_SYSTEM_PROMPT
-      : (settings.translationSystemPrompt || DEFAULT_TRANSLATION_SYSTEM_PROMPT);
-    const separatorPrompt =
-      settings.pageTranslationSeparatorPrompt || DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT;
-
-    if (translationSystemPromptTextarea) translationSystemPromptTextarea.value = translationPrompt;
-    if (pageTranslationSeparatorPromptTextarea) pageTranslationSeparatorPromptTextarea.value = separatorPrompt;
+    if (translationSystemPromptTextarea) {
+      translationSystemPromptTextarea.value = normalizeTranslationPolicy(settings.translationSystemPrompt);
+    }
     if (pageTranslationMaxCharsInput) pageTranslationMaxCharsInput.value = (settings.pageTranslationMaxChars ?? 3500);
     if (pageTranslationMaxItemsInput) pageTranslationMaxItemsInput.value = (settings.pageTranslationMaxItemsPerChunk ?? 50);
     if (pageTranslationDelayMsInput) pageTranslationDelayMsInput.value = (settings.pageTranslationDelayMs ?? 400);
@@ -151,31 +139,19 @@ function collectFeatureSettings(elements) {
   const {
     twitterFeatureCheckbox,
     youtubeFeatureCheckbox,
-    translationSystemPromptTextarea,
-    pageTranslationSeparatorPromptTextarea
+    translationSystemPromptTextarea
   } = elements;
 
   const partial = {
     enableTwitterTranslation: !!(twitterFeatureCheckbox && twitterFeatureCheckbox.checked),
     enableYoutubeTranslation: !!(youtubeFeatureCheckbox && youtubeFeatureCheckbox.checked),
-    translationSystemPrompt: (translationSystemPromptTextarea?.value || '').trim(),
-    pageTranslationSeparatorPrompt: (
-      pageTranslationSeparatorPromptTextarea?.value ||
-      DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT
-    ).trim(),
+    translationSystemPrompt: normalizeTranslationPolicy(translationSystemPromptTextarea?.value),
     pageTranslationMaxChars: readNumberInput(elements.pageTranslationMaxCharsInput, 3500, 500, 32000),
     pageTranslationMaxItemsPerChunk: readNumberInput(elements.pageTranslationMaxItemsInput, 50, 5, 500),
     pageTranslationDelayMs: readNumberInput(elements.pageTranslationDelayMsInput, 400, 0, 60000),
     pageTranslationConcurrency: readNumberInput(elements.pageTranslationConcurrencyInput, 4, 1, 20),
     pageTranslationSeparator: ((elements.pageTranslationSeparatorInput?.value || '[[[SEP]]]').trim() || '[[[SEP]]]')
   };
-
-  if (!partial.translationSystemPrompt) {
-    partial.translationSystemPrompt = DEFAULT_TRANSLATION_SYSTEM_PROMPT;
-  }
-  if (!partial.pageTranslationSeparatorPrompt) {
-    partial.pageTranslationSeparatorPrompt = DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT;
-  }
 
   return partial;
 }

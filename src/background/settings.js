@@ -1,10 +1,5 @@
-export const DEFAULT_TRANSLATION_SYSTEM_PROMPT =
-  '指示された文章を日本語に翻訳してください。翻訳結果のみを出力してください。';
-
-export const DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT =
-  '特殊区切りトークン [[[SEP]]] が含まれる場合、それらは絶対に削除・翻訳・変更せず、そのまま出力に保持してください。トークンの数と順序も厳密に維持してください。';
-export const LEGACY_COMBINED_TRANSLATION_SYSTEM_PROMPT =
-  `${DEFAULT_TRANSLATION_SYSTEM_PROMPT}${DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT}`;
+import { DEFAULT_TRANSLATION_SYSTEM_PROMPT, normalizeTranslationPolicy } from '../shared/translation-policy.js';
+export { DEFAULT_TRANSLATION_SYSTEM_PROMPT } from '../shared/translation-policy.js';
 
 // 共有デフォルト設定（全コンポーネントの単一ソース）
 export const DEFAULT_SETTINGS = {
@@ -37,8 +32,6 @@ export const DEFAULT_SETTINGS = {
   enableYoutubeTranslation: true,
   // ページ全体翻訳 詳細設定（UIで変更可能）
   pageTranslationSeparator: '[[[SEP]]]',
-  // セパレータ方式フォールバック時に通常翻訳プロンプトへ追記する指示
-  pageTranslationSeparatorPrompt: DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT,
   pageTranslationMaxChars: 3500,
   pageTranslationMaxItemsPerChunk: 50,
   // 旧パス方式の互換用に残置（連続実行方式へ移行したため現在は未使用）
@@ -56,19 +49,10 @@ export function loadSettings() {
     // chrome.storage.sync.get の第一引数にデフォルト値を渡すことで、
     // 保存されていないキーに対してもデフォルト値が適用されたオブジェクトを取得できる
     chrome.storage.sync.get(DEFAULT_SETTINGS, (settings) => {
-      // 旧形式（通常翻訳 + セパレータ指示が1つのプロンプト）から新形式へ自動移行
-      if (settings.translationSystemPrompt === LEGACY_COMBINED_TRANSLATION_SYSTEM_PROMPT) {
-        const migrated = {
-          ...settings,
-          translationSystemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT,
-          pageTranslationSeparatorPrompt:
-            settings.pageTranslationSeparatorPrompt || DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT
-        };
-        chrome.storage.sync.set({
-          translationSystemPrompt: migrated.translationSystemPrompt,
-          pageTranslationSeparatorPrompt: migrated.pageTranslationSeparatorPrompt
-        });
-        resolve(migrated);
+      const translationSystemPrompt = normalizeTranslationPolicy(settings.translationSystemPrompt);
+      if (translationSystemPrompt !== settings.translationSystemPrompt) {
+        chrome.storage.sync.set({ translationSystemPrompt });
+        resolve({ ...settings, translationSystemPrompt });
         return;
       }
       resolve(settings);
@@ -93,6 +77,7 @@ export function initializeDefaultSettings() {
   // 既存の設定を尊重しつつ、未設定の項目にデフォルト値を設定する
   chrome.storage.sync.get(null, (existingSettings) => {
      const mergedSettings = { ...DEFAULT_SETTINGS, ...existingSettings };
+     mergedSettings.translationSystemPrompt = normalizeTranslationPolicy(mergedSettings.translationSystemPrompt);
      chrome.storage.sync.set(mergedSettings);
   });
 }
