@@ -1,6 +1,6 @@
 import { formatUserError } from '../shared/errors.js';
 import { getProviderUi } from './provider-ui.js';
-import { showStatus } from './status.js';
+import { showStatus, showPendingStatus } from './status.js';
 import { log } from '../shared/logger.js';
 
 function buildProviderSettingsForTest(apiProvider, settings) {
@@ -26,56 +26,62 @@ function buildProviderSettingsForTest(apiProvider, settings) {
   return { providerSettings };
 }
 
-export function testApi(elements) {
-  const { testApiProviderSelect, testTextArea, testButton, testStatus, testResult } = elements;
-  const apiProvider = testApiProviderSelect.value;
+// 保存前の入力で接続を確認できるよう、storageではなく画面の設定を受け取る。
+export async function testApi(elements, settings) {
+  const version = (elements.testRequestVersion || 0) + 1;
+  elements.testRequestVersion = version;
+  const { testTextArea, testButton, testStatus, testResult, testErrorDetails, testErrorBody } = elements;
   const testText = testTextArea.value.trim();
-  if (!testText) {
-    showStatus(testStatus, 'テスト文章を入力してください', false);
+  testResult.classList.add('hidden');
+  testErrorDetails.classList.add('hidden');
+  testErrorDetails.open = false;
+  const { providerSettings, error } = buildProviderSettingsForTest(settings.apiProvider, settings);
+  if (!testText || error) {
+    showStatus(testStatus, error || 'テスト文章を入力してください', false);
     return;
   }
-
-  chrome.storage.sync.get(null, async settings => {
-    const { providerSettings, error } = buildProviderSettingsForTest(apiProvider, settings);
-    if (error) {
-      showStatus(testStatus, error, false);
-      testButton.disabled = false;
-      return;
+  testButton.disabled = true;
+  testButton.textContent = '翻訳しています…';
+  showPendingStatus(testStatus, '応答を待っています…');
+  try {
+    const response = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ action: 'testTranslate', text: testText,
+        settings: { ...providerSettings, translationSystemPrompt: settings.translationSystemPrompt } }, (result) => {
+        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+        if (!result) return reject(new Error('拡張から応答がありません。拡張を再読み込みしてください。'));
+        if (result.error) return reject(result.error);
+        resolve(result);
+      });
+    });
+    if (elements.testRequestVersion !== version) return;
+    showStatus(testStatus, '翻訳できました。この設定で接続できます。', true, { autoHide: false });
+    testResult.textContent = response.result;
+    testResult.classList.remove('hidden');
+  } catch (error) {
+    if (elements.testRequestVersion !== version) return;
+    log.error('popup.testApi', 'APIテストエラー', { error });
+    showStatus(testStatus, formatUserError(error), false);
+    const details = error.details || error.stack;
+    if (details) {
+      testErrorBody.textContent = details;
+      testErrorDetails.classList.remove('hidden');
     }
-
-    try {
-      testButton.disabled = true;
-      showStatus(testStatus, 'テスト中...', true);
-      testResult.classList.add('hidden');
-      chrome.runtime.sendMessage(
-        {
-          action: 'testTranslate',
-          text: testText,
-          settings: providerSettings
-        },
-        response => {
-          if (chrome.runtime.lastError) {
-            showStatus(testStatus, `エラー: ${chrome.runtime.lastError.message}`, false);
-            testResult.textContent = '';
-            testResult.classList.remove('hidden');
-          } else if (!response || response.error) {
-            showStatus(testStatus, `エラー: ${formatUserError(response?.error || "バックグラウンドから応答がありません。拡張を再読み込みしてください。")}`, false);
-            testResult.textContent = response?.error?.details || '';
-            testResult.classList.remove('hidden');
-          } else {
-            showStatus(testStatus, 'テスト成功！', true);
-            testResult.textContent = response.result;
-            testResult.classList.remove('hidden');
-          }
-          testButton.disabled = false;
-        }
-      );
-    } catch (error) {
-      log.error('popup.testApi', 'APIテストエラー', { error });
-      showStatus(testStatus, `エラー: ${error.message}`, false);
-      testResult.textContent = error.stack || 'スタックトレース情報なし';
-      testResult.classList.remove('hidden');
-      testButton.disabled = false;
+  } finally {
+    testButton.disabled = false;
+    testButton.textContent = '翻訳して確認';
+    if (elements.testRequestVersion !== version) {
+      showPendingStatus(testStatus, '設定が変更されています。現在の設定でもう一度お試しください。');
     }
-  });
+  }
+}
+
+export function invalidateTestResult(elements) {
+  elements.testRequestVersion = (elements.testRequestVersion || 0) + 1;
+  elements.testResult.classList.add('hidden');
+  elements.testErrorDetails.classList.add('hidden');
+  if (elements.testButton.disabled) {
+    showPendingStatus(elements.testStatus, '設定が変更されました。実行中の確認が終わったら、もう一度お試しください。');
+  } else {
+    elements.testStatus.classList.add('hidden');
+  }
 }

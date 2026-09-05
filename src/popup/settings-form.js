@@ -10,7 +10,6 @@ import {
   getProviderUi
 } from './provider-ui.js';
 import { restoreModelSelection } from './models.js';
-import { showStatus } from './status.js';
 
 function validateApiKey(apiProvider, settings) {
   const provider = getProviderUi(apiProvider);
@@ -45,7 +44,8 @@ export function loadSettings(elements) {
     pageTranslationSeparatorInput
   } = elements;
 
-  chrome.storage.sync.get(null, settings => {
+  return new Promise((resolve, reject) => chrome.storage.sync.get(null, settings => {
+    if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
     const apiProvider = settings.apiProvider || 'openrouter';
     apiProviderSelect.value = apiProvider;
 
@@ -95,11 +95,12 @@ export function loadSettings(elements) {
         settings[config.settingsKeys.model]
       );
     });
-  });
+    resolve(settings);
+  }));
 }
 
-export function saveSettings(elements) {
-  const { apiProviderSelect, statusMessage, twitterFeatureCheckbox, youtubeFeatureCheckbox } = elements;
+export function collectSettings(elements, savedSettings = {}) {
+  const { apiProviderSelect, twitterFeatureCheckbox, youtubeFeatureCheckbox } = elements;
   const settings = {
     apiProvider: apiProviderSelect.value
   };
@@ -113,7 +114,7 @@ export function saveSettings(elements) {
     const temperatureInput = elements[config.elements.temperature];
     if (apiKeyInput) settings[settingsKeys.apiKey] = apiKeyInput.value.trim();
     if (serverInput) settings[settingsKeys.server] = serverInput.value.trim() || config.defaultServer;
-    if (modelSelect) settings[settingsKeys.model] = modelSelect.value;
+    if (modelSelect) settings[settingsKeys.model] = modelSelect.value || savedSettings[settingsKeys.model] || '';
     if (temperatureInput) {
       const temperature = Number(temperatureInput.value);
       settings[settingsKeys.temperature] = Number.isFinite(temperature)
@@ -125,22 +126,24 @@ export function saveSettings(elements) {
   if (twitterFeatureCheckbox) settings.enableTwitterTranslation = !!twitterFeatureCheckbox.checked;
   if (youtubeFeatureCheckbox) settings.enableYoutubeTranslation = !!youtubeFeatureCheckbox.checked;
 
-  const validation = validateApiKey(settings.apiProvider, settings);
-  if (!validation.isValid) {
-    showStatus(statusMessage, validation.message, false);
-    return;
-  }
+  return { ...settings, ...collectFeatureSettings(elements) };
+}
 
-  chrome.storage.sync.set(settings, () => {
-    showStatus(statusMessage, '設定を保存しました', true);
+export async function saveSettings(settings, { validateConnection = true } = {}) {
+  const validation = validateApiKey(settings.apiProvider, settings);
+  if (validateConnection && !validation.isValid) throw new Error(validation.message);
+  await new Promise((resolve, reject) => {
+    chrome.storage.sync.set(settings, () => {
+      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+      resolve();
+    });
   });
 }
 
-export function saveFeatureSettings(elements) {
+function collectFeatureSettings(elements) {
   const {
     twitterFeatureCheckbox,
     youtubeFeatureCheckbox,
-    featureStatusMessage,
     translationSystemPromptTextarea,
     pageTranslationSeparatorPromptTextarea
   } = elements;
@@ -167,8 +170,5 @@ export function saveFeatureSettings(elements) {
     partial.pageTranslationSeparatorPrompt = DEFAULT_PAGE_TRANSLATION_SEPARATOR_PROMPT;
   }
 
-  chrome.storage.sync.set(partial, () => {
-    const target = featureStatusMessage || document.getElementById('feature-status-message') || document.getElementById('status-message');
-    showStatus(target, '機能設定を保存しました', true);
-  });
+  return partial;
 }

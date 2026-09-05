@@ -19,14 +19,7 @@ function ensureYouTubeTranslationElement(contentTextEl) {
   const wrap = document.createElement('div');
   wrap.className = 'llm-yt-translation';
   wrap.dataset.llmtUi = '';
-  wrap.style.marginTop = '6px';
-  wrap.style.padding = '8px 10px';
-  wrap.style.background = '#f2f5f9';
-  wrap.style.borderRadius = '8px';
-  wrap.style.fontSize = '13px';
-  wrap.style.color = '#0f0f0f';
-  wrap.style.whiteSpace = 'pre-wrap';
-  wrap.style.wordBreak = 'break-word';
+  applyStyles(wrap, styles.tweetTranslation);
   wrap.style.maxHeight = 'none';
   wrap.style.overflow = 'visible';
 
@@ -40,14 +33,8 @@ function ensureYouTubeTranslationElement(contentTextEl) {
 }
 
 function renderYouTubeTranslationElement(element, translatedText, isError) {
-  element.style.background = isError ? '#fff0f0' : '#f2f5f9';
-  element.style.color = isError ? '#b00020' : '#0f0f0f';
-  if (isError) {
-    window.LLMT.ui.renderTranslationError(element, translatedText);
-  } else {
-    element.removeAttribute('role');
-    element.textContent = translatedText;
-  }
+  applyTranslationTextState(element, translatedText, isError,
+    styles.tweetTranslation, styles.tweetTranslationError);
 }
 
 function addTranslateButtonToYouTubeComments() {

@@ -101,17 +101,18 @@ const styles = {
     position: 'absolute',
     zIndex: '10000',
     backgroundColor: '#ffffff',
-    border: 'none',
+    border: '1px solid #dce3ed',
     borderRadius: '12px',
     borderTop: '3px solid #2f6fb3',
     padding: '0',
-    boxShadow: '0 10px 30px rgba(16, 24, 40, 0.22), 0 2px 8px rgba(16, 24, 40, 0.15)',
+    boxShadow: '0 12px 32px rgba(27, 43, 66, 0.16), 0 2px 6px rgba(27, 43, 66, 0.08)',
+    width: '420px',
     maxWidth: '420px',
     maxHeight: '360px',
     overflowY: 'auto',
-    fontSize: '14px',
+    fontSize: '13px',
     fontFamily: '"Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", "Meiryo", sans-serif',
-    color: '#1b2431',
+    color: '#223047',
     boxSizing: 'border-box',
     lineHeight: '1.7',
     opacity: '0',
@@ -125,16 +126,16 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '10px 14px 8px',
-    backgroundColor: '#f3f6fb',
-    borderBottom: '1px solid #e3e8f2',
+    padding: '10px 14px',
+    backgroundColor: '#f6f8fb',
+    borderBottom: '1px solid #e6ebf2',
     borderRadius: '9px 9px 0 0'
   },
   title: {
     fontWeight: '700',
-    fontSize: '11px',
-    color: '#5b6a82',
-    letterSpacing: '0.08em',
+    fontSize: '12px',
+    color: '#45546b',
+    letterSpacing: '0.01em',
     textTransform: 'uppercase'
   },
   closeBtn: {
@@ -142,19 +143,29 @@ const styles = {
     background: 'none',
     cursor: 'pointer',
     fontSize: '18px',
-    padding: '0 2px',
+    padding: '0',
+    width: '28px',
+    height: '28px',
+    borderRadius: '6px',
+    flexShrink: '0',
     color: '#7b8aa4',
     lineHeight: '1'
   },
   content: {
     margin: '0',
     whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word',
-    padding: '12px 14px'
+    wordBreak: 'normal',
+    overflowWrap: 'anywhere',
+    lineBreak: 'strict',
+    padding: '16px'
   },
   normalContent: {
     color: '#1b2431',
-    backgroundColor: 'transparent'
+    backgroundColor: 'transparent',
+    border: 'none',
+    margin: '0',
+    borderRadius: '0',
+    fontFamily: 'inherit'
   },
   errorContent: {
     fontFamily: 'inherit',
@@ -169,17 +180,21 @@ const styles = {
   actions: {
     display: 'flex',
     justifyContent: 'flex-start',
-    padding: '0 14px 12px'
+    padding: '0 14px 14px',
+    gap: '8px'
   },
   copyBtn: {
-    padding: '6px 14px',
-    backgroundColor: '#2f6fb3',
-    border: 'none',
+    padding: '7px 12px',
+    minHeight: '34px',
+    backgroundColor: '#eef3f9',
+    border: '1px solid #d3dfec',
     borderRadius: '8px',
     cursor: 'pointer',
-    color: '#ffffff',
-    fontSize: '13px',
+    color: '#365779',
+    fontSize: '12px',
     fontFamily: 'inherit',
+    fontWeight: '600',
+    lineHeight: '1.4',
     transition: 'background-color 140ms ease'
   },
   pageControlsWrap: {
@@ -187,31 +202,33 @@ const styles = {
     right: '16px',
     bottom: '16px',
     zIndex: '100000',
-    border: '2px solid #ff9800',
+    border: '1px solid #dce3ed',
     borderRadius: '12px',
-    boxShadow: '0 14px 30px rgba(16, 24, 40, 0.22), 0 3px 10px rgba(16, 24, 40, 0.15)',
-    padding: '12px 12px 10px',
-    minWidth: '260px',
-    maxWidth: '340px',
+    boxShadow: '0 12px 32px rgba(27, 43, 66, 0.16)',
+    padding: '16px',
+    width: '320px',
+    maxWidth: 'calc(100vw - 32px)',
     fontFamily: '"Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", "Meiryo", sans-serif',
     fontSize: '13px',
     color: '#1b2431',
     boxSizing: 'border-box',
-    lineHeight: '1.45',
-    backdropFilter: 'blur(8px)',
+    lineHeight: '1.65',
+    overflowWrap: 'anywhere',
+    maxHeight: 'calc(100vh - 32px)',
+    overflowY: 'auto',
     transition: 'background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease'
   },
   pageControlsWrapRunning: {
-    background: '#e9f4ff',
-    borderColor: '#2f6fb3'
+    background: '#ffffff',
+    borderColor: '#dce3ed'
   },
   pageControlsWrapWaiting: {
-    background: '#fff4e8',
-    borderColor: '#f08a24'
+    background: '#fffdf8',
+    borderColor: '#ead8b4'
   },
   pageControlsWrapCompleted: {
-    background: '#ebf8ef',
-    borderColor: '#2e7d32'
+    background: '#f5fbf7',
+    borderColor: '#cde8d6'
   },
   pageControlsHeader: {
     display: 'flex',
@@ -220,10 +237,10 @@ const styles = {
     marginBottom: '8px'
   },
   pageControlsTitle: {
-    fontSize: '11px',
-    letterSpacing: '0.08em',
+    fontSize: '13px',
+    letterSpacing: '0.01em',
     textTransform: 'uppercase',
-    color: '#55627a',
+    color: '#223047',
     fontWeight: '700'
   },
   pageControlsStatus: {
@@ -250,7 +267,9 @@ const styles = {
   pageControlsInfo: {
     fontSize: '12px',
     color: '#2d3d54',
-    marginBottom: '4px'
+    marginBottom: '12px',
+    whiteSpace: 'pre-line',
+    textWrap: 'pretty'
   },
   pageControlsProgress: {
     fontSize: '12px',
@@ -259,10 +278,15 @@ const styles = {
   },
   pageControlsRow: {
     display: 'flex',
-    gap: '8px'
+    gap: '8px',
+    flexWrap: 'wrap',
+    marginTop: '12px'
   },
   pageControlsContinueBtn: {
-    padding: '6px 11px',
+    padding: '8px 12px',
+    minHeight: '34px',
+    fontFamily: 'inherit',
+    lineHeight: '1.4',
     borderRadius: '8px',
     border: '1px solid #2f6fb3',
     background: '#2f6fb3',
@@ -277,11 +301,14 @@ const styles = {
     cursor: 'default'
   },
   pageControlsStopBtn: {
-    padding: '6px 11px',
+    padding: '8px 12px',
+    minHeight: '34px',
+    fontFamily: 'inherit',
+    lineHeight: '1.4',
     borderRadius: '8px',
-    border: '1px solid #b42318',
-    background: '#fff1f1',
-    color: '#b42318',
+    border: '1px solid #d3dfec',
+    background: '#f5f7fa',
+    color: '#45546b',
     fontSize: '12px',
     fontWeight: '700',
     cursor: 'pointer',
@@ -293,18 +320,21 @@ const styles = {
   },
   tweetTranslation: {
     marginTop: '8px',
-    padding: '8px 12px',
-    backgroundColor: '#46627e',
+    padding: '12px 14px',
+    backgroundColor: '#f0f5fc',
+    border: '1px solid #dce6f2',
     borderRadius: '8px',
-    fontSize: '14px',
-    color: '#FFF',
+    fontSize: '13px',
+    color: '#223047',
     whiteSpace: 'pre-wrap',
-    wordBreak: 'break-word',
-    lineHeight: '1.4'
+    overflowWrap: 'anywhere',
+    lineBreak: 'strict',
+    lineHeight: '1.7'
   },
   tweetTranslationError: {
-    backgroundColor: '#fff0f0',
-    color: '#d32f2f'
+    backgroundColor: '#fff5f5',
+    borderColor: '#f0d0d3',
+    color: '#a52c32'
   }
 };
 
@@ -376,7 +406,7 @@ function renderTranslationError(element, text) {
   element.style.fontFamily = 'inherit';
   const title = document.createElement('strong');
   title.textContent = '翻訳できませんでした';
-  title.style.display = 'block';
+  applyStyles(title, { display: 'block', fontSize: '13px', fontWeight: '700', lineHeight: '1.5' });
   const description = document.createElement('div');
   description.textContent = guidance;
   applyStyles(description, {
@@ -405,10 +435,11 @@ function renderTranslationError(element, text) {
     const details = document.createElement('details');
     const summary = document.createElement('summary');
     summary.textContent = 'エラーの詳細';
-    summary.style.cursor = 'pointer';
+    applyStyles(summary, { cursor: 'pointer', fontSize: '12px', color: '#627188', lineHeight: '1.6' });
     const body = document.createElement('div');
     body.textContent = detail;
-    body.style.whiteSpace = 'pre-wrap';
+    applyStyles(body, { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: '12px',
+      lineHeight: '1.6', marginTop: '8px', maxHeight: '180px', overflowY: 'auto', color: '#627188' });
     details.style.marginTop = '8px';
     details.append(summary, body);
     element.append(details);

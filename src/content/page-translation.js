@@ -274,7 +274,7 @@ function renderControlsNote(wrap, { failedItems, noteText }) {
   const text = noteText || (failedItems > 0 ? `${failedItems}項目の翻訳または反映が未完了です` : '');
   note.textContent = text;
   note.style.display = text ? 'block' : 'none';
-  note.style.color = text ? '#8b4a12' : '';
+  note.style.color = '#627188';
 }
 
 function renderControlsButtons(wrap, status) {

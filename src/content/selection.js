@@ -219,7 +219,7 @@ function createSelectionPopup({
   applyStyles(copyBtn, styles.copyBtn);
   copyBtn.disabled = !bodyText || loading;
   copyBtn.style.opacity = copyBtn.disabled ? '0.65' : '1';
-  copyBtn.onmouseenter = () => { copyBtn.style.backgroundColor = '#245a94'; };
+  copyBtn.onmouseenter = () => { copyBtn.style.backgroundColor = '#e1eaf5'; };
   copyBtn.onmouseleave = () => { copyBtn.style.backgroundColor = styles.copyBtn.backgroundColor; };
   copyBtn.onclick = () => {
     const text = translationPopup?.__renderedText || '';
@@ -227,7 +227,7 @@ function createSelectionPopup({
       .then(() => {
         const originalText = copyBtn.textContent;
         copyBtn.textContent = 'コピーしました！';
-        copyBtn.style.backgroundColor = '#2e7d32';
+        copyBtn.style.backgroundColor = '#dcefe2';
         setTimeout(() => {
           copyBtn.textContent = originalText;
           copyBtn.style.backgroundColor = styles.copyBtn.backgroundColor;

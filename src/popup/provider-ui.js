@@ -260,7 +260,12 @@ function createProviderField(provider, field) {
     const info = document.createElement('div');
     info.id = getProviderElementId(provider, 'modelInfo');
     info.className = 'model-info';
-    group.appendChild(info);
+    const details = document.createElement('details');
+    details.className = 'model-details';
+    const summary = document.createElement('summary');
+    summary.textContent = 'モデル情報';
+    details.append(summary, info);
+    group.appendChild(details);
     return group;
   }
 
