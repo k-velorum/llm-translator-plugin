@@ -70,7 +70,10 @@ export function createOpenAICompatibleProvider({
       {
         method: 'POST',
         headers: cfg.headers,
-        body: JSON.stringify(buildTranslateBody({ cfg, messages, settings, text })),
+        body: JSON.stringify({
+          ...buildTranslateBody({ cfg, messages, settings, text }),
+          ...cfg.requestBodyOptions
+        }),
         timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
         signal: requestOptions.signal
       },
@@ -96,7 +99,8 @@ export function createOpenAICompatibleProvider({
           model: cfg.model,
           messages,
           temperature: 0.2,
-          stream: true
+          stream: true,
+          ...cfg.requestBodyOptions
         }),
         timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
         signal: requestOptions.signal
@@ -137,7 +141,8 @@ export function createOpenAICompatibleProvider({
               messages,
               temperature: 0.2,
               stream: false,
-              response_format: responseFormat
+              response_format: responseFormat,
+              ...cfg.requestBodyOptions
             }),
             timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
             signal: requestOptions.signal

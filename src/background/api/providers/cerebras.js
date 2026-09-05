@@ -1,6 +1,7 @@
 import { createConfigurationError } from '../../../shared/errors.js';
 import { createOpenAICompatibleProvider } from '../openai-compatible.js';
 import { makeApiRequest } from '../http.js';
+import { getReasoningRequestOptions } from '../../../shared/reasoning.js';
 
 const MODELS_URL = 'https://api.cerebras.ai/v1/models';
 const PUBLIC_MODELS_URL = 'https://api.cerebras.ai/public/v1/models?format=openrouter';
@@ -16,6 +17,7 @@ function getConfig(settings) {
   return {
     apiUrl: 'https://api.cerebras.ai/v1/chat/completions',
     model: settings.cerebrasModel,
+    requestBodyOptions: getReasoningRequestOptions('cerebras', settings.cerebrasReasoning),
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${settings.cerebrasApiKey}`

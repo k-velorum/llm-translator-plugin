@@ -1,4 +1,13 @@
 import { DEFAULT_PROVIDER_MODELS } from './provider-default-models.js';
+import { REASONING_OPTIONS } from '../shared/reasoning.js';
+
+function reasoningField(provider) {
+  return {
+    kind: 'select', element: 'reasoning', label: '推論（Thinking）',
+    options: REASONING_OPTIONS[provider],
+    note: 'この接続先でのすべての翻訳に適用します。対応する段階はモデルによって異なり、OFFにできないモデルもあります。'
+  };
+}
 
 export const PROVIDER_ORDER = [
   'openrouter',
@@ -23,16 +32,19 @@ export const PROVIDER_UI = {
       section: 'openrouterSection',
       apiKey: 'openrouterApiKeyInput',
       model: 'openrouterModelSelect',
+      reasoning: 'openrouterReasoningSelect',
       modelInfo: 'openrouterModelInfo'
     },
     settingsKeys: {
       apiKey: 'openrouterApiKey',
-      model: 'openrouterModel'
+      model: 'openrouterModel',
+      reasoning: 'openrouterReasoning'
     },
     validationMessage: 'OpenRouter APIキーを入力してください',
     fields: [
       { kind: 'text', element: 'apiKey', label: 'OpenRouter APIキー', placeholder: 'sk-or-...' },
-      { kind: 'model', element: 'model', label: 'モデル' }
+      { kind: 'model', element: 'model', label: 'モデル' },
+      reasoningField('openrouter')
     ],
     testRequired: [
       { key: 'openrouterApiKey', message: 'OpenRouter APIキーが設定されていません' }
@@ -73,16 +85,19 @@ export const PROVIDER_UI = {
       section: 'cerebrasSection',
       apiKey: 'cerebrasApiKeyInput',
       model: 'cerebrasModelSelect',
+      reasoning: 'cerebrasReasoningSelect',
       modelInfo: 'cerebrasModelInfo'
     },
     settingsKeys: {
       apiKey: 'cerebrasApiKey',
-      model: 'cerebrasModel'
+      model: 'cerebrasModel',
+      reasoning: 'cerebrasReasoning'
     },
     validationMessage: 'Cerebras APIキーを入力してください',
     fields: [
       { kind: 'text', element: 'apiKey', label: 'Cerebras APIキー', placeholder: 'your-cerebras-api-key' },
-      { kind: 'model', element: 'model', label: 'モデル' }
+      { kind: 'model', element: 'model', label: 'モデル' },
+      reasoningField('cerebras')
     ],
     testRequired: [
       { key: 'cerebrasApiKey', message: 'Cerebras APIキーが設定されていません' },
@@ -99,16 +114,19 @@ export const PROVIDER_UI = {
       section: 'zaiSection',
       apiKey: 'zaiApiKeyInput',
       model: 'zaiModelSelect',
+      reasoning: 'zaiReasoningSelect',
       modelInfo: 'zaiModelInfo'
     },
     settingsKeys: {
       apiKey: 'zaiApiKey',
-      model: 'zaiModel'
+      model: 'zaiModel',
+      reasoning: 'zaiReasoning'
     },
     validationMessage: 'Z-AI APIキーを入力してください',
     fields: [
       { kind: 'text', element: 'apiKey', label: 'Z-AI APIキー', placeholder: 'your-api-key' },
-      { kind: 'model', element: 'model', label: 'モデル' }
+      { kind: 'model', element: 'model', label: 'モデル' },
+      reasoningField('zai')
     ],
     testRequired: [
       { key: 'zaiApiKey', message: 'Z-AI APIキーが設定されていません' },
@@ -146,18 +164,21 @@ export const PROVIDER_UI = {
       server: 'lmstudioServerInput',
       apiKey: 'lmstudioApiKeyInput',
       model: 'lmstudioModelSelect',
+      reasoning: 'lmstudioReasoningSelect',
       modelInfo: 'lmstudioModelInfo'
     },
     settingsKeys: {
       server: 'lmstudioServer',
       apiKey: 'lmstudioApiKey',
-      model: 'lmstudioModel'
+      model: 'lmstudioModel',
+      reasoning: 'lmstudioReasoning'
     },
     defaultServer: 'http://localhost:1234',
     fields: [
       { kind: 'text', element: 'server', label: 'サーバーアドレス', placeholder: 'http://localhost:1234' },
       { kind: 'text', element: 'apiKey', label: 'APIキー（任意）', placeholder: '(必要な場合のみ)' },
-      { kind: 'model', element: 'model', label: 'モデル' }
+      { kind: 'model', element: 'model', label: 'モデル' },
+      reasoningField('lmstudio')
     ],
     testRequired: [
       { key: 'lmstudioModel', message: 'LM Studio のモデルが設定されていません' }
@@ -269,8 +290,17 @@ function createProviderField(provider, field) {
     return group;
   }
 
-  const input = document.createElement('input');
-  input.type = field.kind;
+  const input = document.createElement(field.kind === 'select' ? 'select' : 'input');
+  if (field.kind === 'select') {
+    for (const [value, text] of field.options) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = text;
+      input.appendChild(option);
+    }
+  } else {
+    input.type = field.kind;
+  }
   input.id = id;
   input.placeholder = field.placeholder || '';
   if (field.min !== undefined) input.min = field.min;

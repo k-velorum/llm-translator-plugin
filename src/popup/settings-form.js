@@ -10,6 +10,7 @@ import {
   getProviderUi
 } from './provider-ui.js';
 import { restoreModelSelection } from './models.js';
+import { normalizeReasoning } from '../shared/reasoning.js';
 
 function validateApiKey(apiProvider, settings) {
   const provider = getProviderUi(apiProvider);
@@ -56,6 +57,8 @@ export function loadSettings(elements) {
       const serverInput = elements[config.elements.server];
       const modelSelect = elements[config.elements.model];
       const temperatureInput = elements[config.elements.temperature];
+      const reasoningSelect = elements[config.elements.reasoning];
+      if (reasoningSelect) reasoningSelect.value = normalizeReasoning(provider, settings[settingsKeys.reasoning]);
       if (apiKeyInput) apiKeyInput.value = settings[settingsKeys.apiKey] || '';
       if (serverInput) serverInput.value = settings[settingsKeys.server] || config.defaultServer || '';
       if (modelSelect) modelSelect.value = settings[settingsKeys.model] || '';
@@ -112,6 +115,10 @@ export function collectSettings(elements, savedSettings = {}) {
     const serverInput = elements[config.elements.server];
     const modelSelect = elements[config.elements.model];
     const temperatureInput = elements[config.elements.temperature];
+    if (settingsKeys.reasoning) {
+      settings[settingsKeys.reasoning] = normalizeReasoning(provider,
+        elements[config.elements.reasoning]?.value || savedSettings[settingsKeys.reasoning]);
+    }
     if (apiKeyInput) settings[settingsKeys.apiKey] = apiKeyInput.value.trim();
     if (serverInput) settings[settingsKeys.server] = serverInput.value.trim() || config.defaultServer;
     if (modelSelect) settings[settingsKeys.model] = modelSelect.value || savedSettings[settingsKeys.model] || '';

@@ -11,12 +11,15 @@ export const DEFAULT_SETTINGS = {
   apiProvider: 'openrouter',
   openrouterApiKey: '',
   openrouterModel: 'openai/gpt-4o-mini',
+  openrouterReasoning: 'default',
   geminiApiKey: '',
   geminiModel: 'gemini-flash-2.0',
   cerebrasApiKey: '',
   cerebrasModel: 'llama3.1-8b',
+  cerebrasReasoning: 'default',
   zaiApiKey: '',
   zaiModel: 'glm-4.7',
+  zaiReasoning: 'default',
   // 翻訳用システムプロンプト（ユーザー編集可能）
   translationSystemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT,
   // Ollama (local LLM)
@@ -26,6 +29,7 @@ export const DEFAULT_SETTINGS = {
   lmstudioServer: 'http://localhost:1234',
   lmstudioModel: '',
   lmstudioApiKey: '',
+  lmstudioReasoning: 'default',
   // Chrome Built-in Prompt API / Gemini Nano
   chromePromptTemperature: 0.2,
   // プラットフォーム別 機能有効/無効

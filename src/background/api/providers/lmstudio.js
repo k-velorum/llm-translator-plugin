@@ -3,6 +3,7 @@ import { TRANSLATION_TIMEOUT_MS } from '../../../shared/constants.js';
 import { makeApiRequest } from '../http.js';
 import { createOpenAICompatibleProvider } from '../openai-compatible.js';
 import { getSystemPrompt } from '../prompt.js';
+import { getReasoningRequestOptions } from '../../../shared/reasoning.js';
 
 function getServer(settings) {
   return (settings.lmstudioServer || 'http://localhost:1234').replace(/\/$/, '');
@@ -22,7 +23,8 @@ function getConfig(settings) {
   return {
     apiUrl: `${getServer(settings)}/v1/chat/completions`,
     model: settings.lmstudioModel,
-    headers: getHeaders(settings)
+    headers: getHeaders(settings),
+    requestBodyOptions: getReasoningRequestOptions('lmstudio', settings.lmstudioReasoning)
   };
 }
 
@@ -76,6 +78,7 @@ async function translateImage(imageInput, settings, requestOptions = {}) {
       headers: getHeaders(settings),
       body: JSON.stringify({
         model: settings.lmstudioModel,
+        ...getReasoningRequestOptions('lmstudio', settings.lmstudioReasoning, { nativeApi: true }),
         system_prompt: getSystemPrompt(settings),
         // リクエストの input はレスポンス output と型名が非対称で、テキストは 'message' ではなく 'text'
         input: [

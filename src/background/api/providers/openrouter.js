@@ -1,6 +1,7 @@
 import { createConfigurationError } from '../../../shared/errors.js';
 import { makeApiRequest } from '../http.js';
 import { createOpenAICompatibleProvider } from '../openai-compatible.js';
+import { getReasoningRequestOptions } from '../../../shared/reasoning.js';
 
 export const OPENROUTER_HEADERS_BASE = {
   'HTTP-Referer': 'chrome-extension://llm-translator',
@@ -18,6 +19,7 @@ function getConfig(settings) {
   return {
     apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
     model: settings.openrouterModel,
+    requestBodyOptions: getReasoningRequestOptions('openrouter', settings.openrouterReasoning),
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${settings.openrouterApiKey}`,
