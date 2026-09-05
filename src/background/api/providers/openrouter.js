@@ -1,3 +1,4 @@
+import { createConfigurationError } from '../../../shared/errors.js';
 import { makeApiRequest } from '../http.js';
 import { createOpenAICompatibleProvider } from '../openai-compatible.js';
 
@@ -8,10 +9,10 @@ export const OPENROUTER_HEADERS_BASE = {
 
 function getConfig(settings) {
   if (!settings.openrouterApiKey) {
-    throw new Error('OpenRouter APIキーが設定されていません');
+    throw createConfigurationError('OpenRouter APIキーが設定されていません');
   }
   if (!settings.openrouterModel) {
-    throw new Error('OpenRouter のモデルが選択されていません');
+    throw createConfigurationError('OpenRouter のモデルが選択されていません');
   }
 
   return {

@@ -1,11 +1,12 @@
+import { createConfigurationError } from '../../../shared/errors.js';
 import { createOpenAICompatibleProvider } from '../openai-compatible.js';
 
 function getConfig(settings) {
   if (!settings.zaiApiKey) {
-    throw new Error('Z-AI APIキーが設定されていません');
+    throw createConfigurationError('Z-AI APIキーが設定されていません');
   }
   if (!settings.zaiModel) {
-    throw new Error('Z-AIのモデルが選択されていません');
+    throw createConfigurationError('Z-AIのモデルが選択されていません');
   }
 
   return {

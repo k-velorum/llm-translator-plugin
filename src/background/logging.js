@@ -4,7 +4,11 @@ const LOG_MAX = 200;
 function storageLocalGet(key) {
   return new Promise((resolve) => {
     try {
-      chrome.storage.local.get(key, (data) => resolve(data || {}));
+      chrome.storage.local.get(key, (data) => {
+        // lastErrorを読み、ログ取得失敗がChromeの未処理エラーにならないようにする。
+        if (chrome.runtime.lastError) return resolve({});
+        resolve(data || {});
+      });
     } catch (_) {
       resolve({});
     }

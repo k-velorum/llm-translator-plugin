@@ -1,3 +1,4 @@
+import { createConfigurationError } from '../../../shared/errors.js';
 import { TRANSLATION_TIMEOUT_MS } from '../../../shared/constants.js';
 import { log } from '../../../shared/logger.js';
 import {
@@ -27,47 +28,40 @@ function parseStructuredBatchResponse(text, texts) {
 
 async function translate(text, settings, requestOptions = {}) {
   if (!settings.geminiApiKey) {
-    throw new Error('Gemini APIキーが設定されていません');
+    throw createConfigurationError('Gemini APIキーが設定されていません');
   }
   const apiUrl = buildGeminiGenerateContentUrl(settings);
   log.info('api', 'Gemini API リクエスト開始', {
     apiUrl: apiUrl.replace(settings.geminiApiKey, '[redacted]')
   });
 
-  try {
-    const data = await makeApiRequest(
-      apiUrl,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: `${getSystemPrompt(settings)}\n\n${text}` }
-              ]
-            }
-          ],
-          generationConfig: { temperature: 0.2 }
-        }),
-        timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
-        signal: requestOptions.signal
-      },
-      'Gemini API リクエスト中にエラーが発生'
-    );
+  const data = await makeApiRequest(
+    apiUrl,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: `${getSystemPrompt(settings)}\n\n${text}` }
+            ]
+          }
+        ],
+        generationConfig: { temperature: 0.2 }
+      }),
+      timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
+      signal: requestOptions.signal
+    },
+    'Gemini API リクエスト中にエラーが発生'
+  );
 
-    return data.candidates[0].content.parts[0].text.trim();
-  } catch (error) {
-    if (error instanceof TypeError && error.message === 'Failed to fetch') {
-      throw new Error('ネットワーク接続エラー: Gemini APIに接続できません。インターネット接続を確認してください。');
-    }
-    throw error;
-  }
+  return data.candidates[0].content.parts[0].text.trim();
 }
 
 async function translateBatchStructured(texts, settings, requestOptions = {}) {
   if (!settings.geminiApiKey) {
-    throw new Error('Gemini APIキーが設定されていません');
+    throw createConfigurationError('Gemini APIキーが設定されていません');
   }
 
   const apiUrl = buildGeminiGenerateContentUrl(settings);
@@ -107,7 +101,7 @@ async function translateBatchStructured(texts, settings, requestOptions = {}) {
 async function verify(message) {
   const apiKey = message.apiKey;
   if (!apiKey) {
-    throw new Error('Gemini APIキーが未指定です');
+    throw createConfigurationError('Gemini APIキーが未指定です');
   }
   await makeApiRequest(
     buildGeminiModelsUrl(apiKey),
@@ -120,7 +114,7 @@ async function verify(message) {
 async function getModels(message) {
   const apiKey = message.apiKey;
   if (!apiKey) {
-    throw new Error('Gemini APIキーが未指定です');
+    throw createConfigurationError('Gemini APIキーが未指定です');
   }
   const result = await makeApiRequest(
     buildGeminiModelsUrl(apiKey),

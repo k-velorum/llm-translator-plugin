@@ -28,7 +28,7 @@ async function waitBeforeRetry({
     }
     retryContext.rateLimitRetries += 1;
     logger(
-      `${errorMessage}: HTTP 429 -> ${HTTP_429_RETRY_DELAY_MS}ms 待機後にリトライ (${retryContext.rateLimitRetries}/${HTTP_429_MAX_RETRY_COUNT})`
+      `${errorMessage}: HTTP 429 -> ${HTTP_429_RETRY_DELAY_MS}ms 待機後にリトライ (${retryContext.rateLimitRetries}/${HTTP_429_MAX_RETRY_COUNT})`, { status: response.status }
     );
     await sleepWithSignal(HTTP_429_RETRY_DELAY_MS, signal);
     return true;
@@ -41,7 +41,7 @@ async function waitBeforeRetry({
   retryContext.transientHttpRetries += 1;
   const delay = Math.min(4000, 250 * Math.pow(2, retryContext.transientHttpRetries - 1));
   logger(
-    `${errorMessage}: HTTP ${response.status} -> ${delay}ms 待機後にリトライ (${retryContext.transientHttpRetries}/${TRANSIENT_HTTP_MAX_RETRIES})`
+    `${errorMessage}: HTTP ${response.status} -> ${delay}ms 待機後にリトライ (${retryContext.transientHttpRetries}/${TRANSIENT_HTTP_MAX_RETRIES})`, { status: response.status }
   );
   await sleepWithSignal(delay, signal);
   return true;
@@ -130,13 +130,13 @@ export async function makeApiRequest(url, options = {}, errorMessage, logLevel =
       if (!response.ok) {
         // Ollama の CORS で 403 が出やすいため、分かりやすいヒントを付与
         if (response.status === 403 && /\/api\/(generate|tags)/.test(url)) {
-          throw new Error(
+          throw Object.assign(new Error(
             'API Error: 403 Forbidden - おそらくOllamaのCORS設定が原因です。\n' +
             '環境変数 OLLAMA_ORIGINS を設定してサーバーを起動してください。例:\n' +
             '  macOS/Linux:  OLLAMA_ORIGINS=* ollama serve\n' +
             '  Windows(PowerShell):  $env:OLLAMA_ORIGINS="*"; ollama serve\n' +
             '特定の拡張IDのみ許可する場合は chrome-extension://<拡張ID> を指定してください。'
-          );
+          ), { status: 403 });
         }
 
         if (await waitBeforeRetry({
@@ -159,7 +159,7 @@ export async function makeApiRequest(url, options = {}, errorMessage, logLevel =
       if (timedOut) {
         const timeoutError = new Error(`API Error: request timed out after ${timeoutMs}ms`);
         timeoutError.name = 'TimeoutError';
-        logger(`${errorMessage}: ${timeoutError.message}`);
+        logger(`${errorMessage}: ${timeoutError.message}`, timeoutError);
         throw timeoutError;
       }
 
@@ -174,7 +174,7 @@ export async function makeApiRequest(url, options = {}, errorMessage, logLevel =
         retryContext.transientHttpRetries += 1;
         const delay = Math.min(4000, 250 * Math.pow(2, retryContext.transientHttpRetries - 1));
         logger(
-          `${errorMessage}: ネットワークエラー -> ${delay}ms 待機後にリトライ (${retryContext.transientHttpRetries}/${TRANSIENT_HTTP_MAX_RETRIES})`
+          `${errorMessage}: ネットワークエラー -> ${delay}ms 待機後にリトライ (${retryContext.transientHttpRetries}/${TRANSIENT_HTTP_MAX_RETRIES})`, error
         );
         await sleepWithSignal(delay, externalSignal);
         continue;
@@ -252,7 +252,7 @@ export async function makeStreamingApiRequest(url, options = {}, handlers = {}, 
       if (timedOut) {
         const timeoutError = new Error(`API Error: request timed out after ${timeoutMs}ms`);
         timeoutError.name = 'TimeoutError';
-        logger(`${errorMessage}: ${timeoutError.message}`);
+        logger(`${errorMessage}: ${timeoutError.message}`, timeoutError);
         throw timeoutError;
       }
       if (error && error.name === 'AbortError') {

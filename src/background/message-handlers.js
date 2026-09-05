@@ -1,3 +1,4 @@
+import { getErrorLogLevel } from '../shared/errors.js';
 import { loadSettings } from './settings.js';
 import {
   translateText,
@@ -110,7 +111,7 @@ async function startStreamingTranslation(message, sender, sendResponse) {
     } catch (error) {
       if (error?.name !== 'AbortError') {
         await appendLog({
-          level: 'error',
+          level: getErrorLogLevel(error),
           type: 'translate',
           event: `${kind}_stream_failed`,
           ...getProviderMeta(settings),
@@ -156,7 +157,7 @@ async function handleEmbeddedTextTranslation(message, sender, sendResponse, { ev
   } catch (error) {
     log.error('messageHandlers', logLabel, error);
     appendLog({
-      level: 'error',
+      level: getErrorLogLevel(error),
       type: 'translate',
       event: eventName,
       ...getProviderMeta(settings),
@@ -176,7 +177,7 @@ async function handleTestTranslate(message, sender, sendResponse) {
   } catch (error) {
     log.error('messageHandlers', 'テスト翻訳エラー', error);
     appendLog({
-      level: 'error',
+      level: getErrorLogLevel(error),
       type: 'translate',
       event: 'test_failed',
       ...getProviderMeta(testSettings),

@@ -79,6 +79,7 @@ export function getErrorPolicy(error) {
 
 function getRuntimeErrorPolicy(error) {
   let policy;
+  if (error?.code === 'configuration') policy = ['configuration', false, '接続先・APIキー・モデルの設定を確認してください。'];
   if (error?.name === 'TimeoutError') policy = HTTP_POLICIES[408];
   if (!policy && error?.name === 'AbortError') policy = ['cancelled', false, ''];
   if (!policy && error?.name === 'TypeError' && /Failed to fetch|fetch failed|NetworkError/.test(error.message)) {
@@ -95,11 +96,24 @@ export function canFallbackAfterError(error) {
 
 export function shouldPauseTranslationQueue(error) {
   const { code } = getErrorPolicy(error);
-  return ['authentication', 'payment_required', 'permission_denied', 'not_found',
+  return ['configuration', 'authentication', 'payment_required', 'permission_denied', 'not_found',
     'rate_limited', 'service_unavailable', 'network'].includes(code);
 }
 
 export function formatUserError(error) {
   const normalized = normalizeError(error);
   return [normalized.message, normalized.hint].filter(Boolean).join('\n');
+}
+
+// 設定不備はプログラムの不具合と区別し、文言に依存せず通信後も判定する。
+export function createConfigurationError(message) {
+  return Object.assign(new Error(message), { code: 'configuration' });
+}
+
+export function getErrorLogLevel(error) {
+  const status = error?.status ?? error?.statusCode ?? error?.cause?.status;
+  const { code } = getErrorPolicy(error);
+  if (code === 'cancelled') return 'info';
+  if (code || (status >= 400 && status < 600)) return 'warn';
+  return 'error';
 }

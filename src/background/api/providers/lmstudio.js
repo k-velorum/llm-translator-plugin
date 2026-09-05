@@ -1,3 +1,4 @@
+import { createConfigurationError } from '../../../shared/errors.js';
 import { TRANSLATION_TIMEOUT_MS } from '../../../shared/constants.js';
 import { makeApiRequest } from '../http.js';
 import { createOpenAICompatibleProvider } from '../openai-compatible.js';
@@ -15,7 +16,7 @@ function getHeaders(settings) {
 
 function getConfig(settings) {
   if (!settings.lmstudioModel) {
-    throw new Error('LM Studio のモデルが選択されていません');
+    throw createConfigurationError('LM Studio のモデルが選択されていません');
   }
 
   return {
@@ -62,7 +63,7 @@ function extractRestMessageContent(data) {
 
 async function translateImage(imageInput, settings, requestOptions = {}) {
   if (!settings.lmstudioModel) {
-    throw new Error('LM Studio のモデルが選択されていません');
+    throw createConfigurationError('LM Studio のモデルが選択されていません');
   }
   if (!imageInput?.dataUrl || !imageInput?.mimeType) {
     throw new Error('画像入力データが不正です');

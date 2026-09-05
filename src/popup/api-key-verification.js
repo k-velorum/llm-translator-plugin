@@ -92,8 +92,9 @@ function verifyApiKeyViaBackground(provider, apiKey) {
         if (chrome.runtime.lastError) {
           return reject(new Error(`バックグラウンドスクリプトエラー: ${chrome.runtime.lastError.message}`));
         }
+        if (!response) return reject(new Error('バックグラウンドから応答がありません'));
         if (response.error) {
-          return reject(new Error(response.error.message || 'APIキー検証エラー'));
+          return reject(response.error);
         }
         resolve(response.result);
       }

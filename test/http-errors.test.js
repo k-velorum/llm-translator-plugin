@@ -15,10 +15,13 @@ describe.each([
     [400, '{"message":"Unsupported parameter"}', 'Unsupported parameter'],
     [401, '{"error":"Invalid API key"}', 'Invalid API key'],
     [403, 'Access denied', 'Access denied'],
+    [404, '{"error":{"message":"Model not found"}}', 'Model not found'],
     [400, '{invalid JSON', '{invalid JSON'],
     [402, '', 'Payment Required']
   ])('HTTP %s の本文を消費後も詳細とステータスを保持する', async (status, body, detail) => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'info').mockImplementation(() => {});
     // 実際のResponseを使い、本文の二重読み取りを再現する。
     const response = new Response(body, { status });
     const fetch = vi.fn(async () => response);
@@ -30,10 +33,14 @@ describe.each([
     });
     expect(response.bodyUsed).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(1);
+    expect(console.error).not.toHaveBeenCalled();
+    expect(console.warn).not.toHaveBeenCalled();
   });
 
   it('本文の読み取り失敗時もHTTP 402の案内を残す', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'info').mockImplementation(() => {});
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: false,
       status: 402,

@@ -4,7 +4,11 @@ import { log } from '../shared/logger.js';
 function storageLocalGet(key) {
   return new Promise((resolve) => {
     try {
-      chrome.storage.local.get(key, (data) => resolve(data || {}));
+      chrome.storage.local.get(key, (data) => {
+        // lastErrorを読み、ログ取得失敗がChromeの未処理エラーにならないようにする。
+        if (chrome.runtime.lastError) return resolve({});
+        resolve(data || {});
+      });
     } catch {
       resolve({});
     }
@@ -42,7 +46,10 @@ export async function refreshLogs({ logView }) {
       const ts = new Date(entry.ts || Date.now()).toLocaleString();
       const lvl = (entry.level || 'info').toUpperCase();
       const meta = [entry.provider, entry.model].filter(Boolean).join(' ');
-      const msg = entry.message ? ` - ${entry.message}` : '';
+      const error = entry.meta?.error || entry.meta;
+      const reason = error?.message && error.message !== entry.message ? `: ${error.message}` : '';
+      const msg = entry.message ? ` - ${entry.message}${reason}` : '';
+      const status = error?.status ? ` [HTTP ${error.status}]` : '';
       const details = [];
       if (typeof entry.chunkIndex === 'number') details.push(`chunk=${entry.chunkIndex}`);
       if (typeof entry.items === 'number') details.push(`items=${entry.items}`);
@@ -53,7 +60,7 @@ export async function refreshLogs({ logView }) {
         details.push(`progress=${entry.processedItems}/${entry.totalItems}`);
       }
       const detailsStr = details.length ? ` (${details.join(', ')})` : '';
-      return `[${ts}] [${lvl}] ${entry.event || entry.type || 'log'}${meta ? ' ' + meta : ''}${detailsStr}${msg}`;
+      return `[${ts}] [${lvl}] ${entry.event || entry.type || 'log'}${meta ? ' ' + meta : ''}${detailsStr}${status}${msg}`;
     });
 
   logView.textContent = lines.join('\n');

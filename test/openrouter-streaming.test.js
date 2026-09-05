@@ -14,7 +14,7 @@ vi.mock('../src/background/settings.js', async (importOriginal) => ({
   })
 }));
 vi.mock('../src/background/logging.js', () => ({
-  appendLog: vi.fn(),
+  appendLog: vi.fn(async () => {}),
   getProviderMeta: () => ({})
 }));
 

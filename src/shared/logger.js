@@ -1,3 +1,4 @@
+import { getErrorLogLevel, normalizeError } from './errors.js';
 import { appendLog } from '../background/logging.js';
 
 const REDACTED = '[redacted]';
@@ -17,11 +18,7 @@ export function createScopedLogger(scope, level = 'error') {
 
 export function sanitizeForLog(value) {
   if (value instanceof Error) {
-    return {
-      name: value.name,
-      message: value.message,
-      details: value.stack || ''
-    };
+    return normalizeError(value);
   }
 
   if (Array.isArray(value)) {
@@ -45,7 +42,10 @@ function redactValue(value) {
 }
 
 function emit(level, scope, message, meta) {
-  const method = level === 'debug' ? 'debug' : level === 'warn' ? 'warn' : level === 'error' ? 'error' : 'info';
+  const error = meta?.error || meta;
+  if (level === 'error') level = getErrorLogLevel(error);
+  // Chromeはconsole.warnも収集する。対処可能な警告は内部ログに残し、consoleにはinfoで出す。
+  const method = level === 'debug' ? 'debug' : level === 'error' ? 'error' : 'info';
   const logger = console[method] || console.log;
   const sanitizedMeta = sanitizeForLog(meta);
   const prefix = scope ? `[${scope}]` : '[app]';
@@ -56,7 +56,7 @@ function emit(level, scope, message, meta) {
     logger(prefix, message, sanitizedMeta);
   }
 
-  if (String(scope || '').startsWith('pageTranslation')) {
+  if (level === 'warn' || level === 'error' || String(scope || '').startsWith('pageTranslation')) {
     appendLog({
       level,
       type: 'log',

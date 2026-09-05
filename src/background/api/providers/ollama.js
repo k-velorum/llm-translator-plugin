@@ -1,3 +1,4 @@
+import { createConfigurationError } from '../../../shared/errors.js';
 import { canFallbackAfterError } from '../../../shared/errors.js';
 import { TRANSLATION_TIMEOUT_MS } from '../../../shared/constants.js';
 import {
@@ -16,7 +17,7 @@ function getServer(settings) {
 
 function requireModel(settings) {
   if (!settings.ollamaModel) {
-    throw new Error('Ollamaのモデルが選択されていません');
+    throw createConfigurationError('Ollamaのモデルが選択されていません');
   }
 }
 

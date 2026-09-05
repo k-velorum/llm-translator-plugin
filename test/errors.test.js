@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { canFallbackAfterError, formatUserError, normalizeError, serializeError } from '../src/shared/errors.js';
+import { canFallbackAfterError, createConfigurationError, formatUserError, normalizeError, serializeError, shouldPauseTranslationQueue } from '../src/shared/errors.js';
 
 describe('normalizeError', () => {
   it('normalizes Error objects', () => {
@@ -31,6 +31,11 @@ describe('normalizeError', () => {
 });
 
 describe('エラーの分類と対処方法', () => {
+  it('設定不足では形式変更と新しいチャンクの送信を止める', () => {
+    const error = serializeError(createConfigurationError('モデルを選択してください'));
+    expect(canFallbackAfterError(error)).toBe(false);
+    expect(shouldPauseTranslationQueue(error)).toBe(true);
+  });
   it.each([
     [401, 'authentication', false], [402, 'payment_required', false],
     [403, 'permission_denied', false], [404, 'not_found', false],

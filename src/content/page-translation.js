@@ -209,7 +209,7 @@ function handleRetryClick() {
       if (targetSnapshotId !== pageTranslationControlsSnapshotId) return;
       if (response?.ok) return; // 以降は push 更新
       // service worker 再起動などでセッションが失われた場合は再実行を促す
-      console.warn('continuePageTranslation 失敗:', response?.error);
+      console.info('continuePageTranslation 失敗:', response?.error);
       renderSessionLost();
     }
   );

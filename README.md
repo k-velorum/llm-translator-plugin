@@ -111,6 +111,8 @@ bun run test   # Vitest
 - `src/popup/`: 設定ポップアップ（ES Modules）
 - `src/shared/`: エラー処理・ロガー・定数などの共通層
 
+Chromeのエラー一覧には、拡張の未知の例外・内部不具合を出力します。HTTP 4xx/5xx、設定不足、通信失敗、タイムアウトは画面で案内し、拡張の「ログ」に警告として保存します（最大200件）。警告はコンソールには情報レベルで出力し、キャンセルは情報として扱います。Chrome自身が出すネットワーク・CORSエラーはこの制御の対象外です。
+
 エラーの受け渡しには `normalizeError` / `serializeError` を使います。`message` / `details` / `status` に加え、分類できるエラーには `code` / `retryable` / `hint` が付きます。
 `retryable` は時間をおいた同一リクエストの再送可否を表し、自動再送を指示するものではありません。形式変更の判断は `canFallbackAfterError`、画面表示は `formatUserError` に集約しています。
 

@@ -1,3 +1,4 @@
+import { createConfigurationError } from '../../../shared/errors.js';
 import { createOpenAICompatibleProvider } from '../openai-compatible.js';
 import { makeApiRequest } from '../http.js';
 
@@ -6,10 +7,10 @@ const PUBLIC_MODELS_URL = 'https://api.cerebras.ai/public/v1/models?format=openr
 
 function getConfig(settings) {
   if (!settings.cerebrasApiKey) {
-    throw new Error('Cerebras APIキーが設定されていません');
+    throw createConfigurationError('Cerebras APIキーが設定されていません');
   }
   if (!settings.cerebrasModel) {
-    throw new Error('Cerebras のモデルが選択されていません');
+    throw createConfigurationError('Cerebras のモデルが選択されていません');
   }
 
   return {
@@ -25,7 +26,7 @@ function getConfig(settings) {
 async function verify(message) {
   const apiKey = message.apiKey;
   if (!apiKey) {
-    throw new Error('Cerebras APIキーが未指定です');
+    throw createConfigurationError('Cerebras APIキーが未指定です');
   }
   await makeApiRequest(
     MODELS_URL,

@@ -170,13 +170,14 @@ export function fetchModelsViaBackground(provider, options) {
           });
           return reject(new Error(`バックグラウンドスクリプトエラー: ${chrome.runtime.lastError.message}`));
         }
+        if (!response) return reject(new Error('バックグラウンドから応答がありません'));
         if (response.error) {
           log.warn('popup.models', 'fetchModelsViaBackground:errorResponse', {
             provider,
             action: payload.action,
             message: response.error.message || 'モデル取得エラー'
           });
-          return reject(new Error(response.error.message || 'モデル取得エラー'));
+          return reject(response.error);
         }
         log.info('popup.models', 'fetchModelsViaBackground:response', {
           provider,

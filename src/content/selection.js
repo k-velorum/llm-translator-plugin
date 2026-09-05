@@ -234,7 +234,8 @@ function createSelectionPopup({
         }, 2000);
       })
       .catch((error) => {
-        console.error('クリップボードへのコピーに失敗しました:', error);
+        console.info('クリップボードへのコピーに失敗しました:', error);
+        copyBtn.textContent = 'コピーできませんでした。再試行';
       });
   };
 
