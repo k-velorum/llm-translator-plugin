@@ -42,7 +42,7 @@ function createMockStorageArea() {
   };
 }
 
-function installChromeStub(sessionArea, { pageSnapshot = null } = {}) {
+function installChromeStub(sessionArea, { pageSnapshot = null, settings = {} } = {}) {
   const localStore = new Map();
   const sentMessages = [];
   vi.stubGlobal('chrome', {
@@ -69,7 +69,8 @@ function installChromeStub(sessionArea, { pageSnapshot = null } = {}) {
           geminiModel: 'test',
           pageTranslationDelayMs: 0,
           pageTranslationConcurrency: 1,
-          pageTranslationUseStructuredOutput: false
+          pageTranslationUseStructuredOutput: false,
+          ...settings
         }),
         set: (_items, callback) => {
           if (typeof callback === 'function') callback();
@@ -241,6 +242,37 @@ describe('page translation service: セッションの退避と破棄', () => {
       tabId: 2,
       message: { action: 'hidePageTranslationControls', snapshotId: 9 }
     });
+  });
+});
+
+describe('page translation service: LM Studioの同時実行設定', () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(async () => {
+    await discardPageTranslationSessionsForTab(1);
+    vi.unstubAllGlobals();
+  });
+
+  it.each([1, 3])('LM Studioで設定値 %i 件までチャンクを同時実行する', async (concurrency) => {
+    installChromeStub(createMockStorageArea(), {
+      pageSnapshot: { texts: Array.from({ length: 20 }, (_, i) => `text ${i}`), snapshotId: 'lmstudio' },
+      settings: {
+        apiProvider: 'lmstudio',
+        pageTranslationConcurrency: concurrency,
+        pageTranslationMaxItemsPerChunk: 5
+      }
+    });
+    // 応答を保留し、先行チャンク完了前に起動したワーカー数を検証する。
+    translateChunk.mockImplementation(() => new Promise(() => {}));
+    const running = startPageTranslation(1);
+    try {
+      await vi.waitFor(() => expect(translateChunk).toHaveBeenCalledTimes(concurrency));
+      expect(await sendRuntimeMessage({ action: 'getPageTranslationStatus', snapshotId: 'lmstudio' },
+        { tab: { id: 1 } })).toMatchObject({ activeChunks: concurrency, totalChunks: 4 });
+      expect(translateChunk.mock.calls[0][2]).toMatchObject({ concurrency });
+    } finally {
+      await discardPageTranslationSessionsForTab(1);
+      await running;
+    }
   });
 });
 

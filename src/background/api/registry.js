@@ -11,8 +11,6 @@ const DEFAULT_CAPABILITIES = {
   streamProtocol: null,
   supportsImageTranslation: false,
   // ページ全体翻訳の並列リクエスト上限。null は無制限（ユーザー設定に従う）。
-  // ローカル推論サーバーは通常リクエストを逐次処理するため、並列に投げると
-  // 互いのタイムアウトを誘発する。該当 provider は 1 に制限する。
   maxPageTranslationConcurrency: null
 };
 
@@ -93,8 +91,7 @@ export const PROVIDERS = {
       ...DEFAULT_CAPABILITIES,
       supportsStreaming: true,
       streamProtocol: 'openai-chat-sse',
-      supportsImageTranslation: true,
-      maxPageTranslationConcurrency: 1
+      supportsImageTranslation: true
     },
     ...lmstudioProvider
   },

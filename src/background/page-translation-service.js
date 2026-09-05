@@ -137,9 +137,7 @@ function resolveConcurrency(settings) {
     20,
     DEFAULT_SETTINGS.pageTranslationConcurrency
   );
-  // ローカル推論サーバー（LM Studio / Ollama 等）はリクエストを逐次処理する
-  // ため、並列に投げると互いを待たせてタイムアウト連鎖を起こす。provider の
-  // 上限 capability でユーザー設定を抑える。
+  // 逐次実行が必要な provider だけ上限を適用する。
   const maxConcurrency = getProviderCapabilities(settings).maxPageTranslationConcurrency;
   return maxConcurrency ? Math.min(userConcurrency, maxConcurrency) : userConcurrency;
 }

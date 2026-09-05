@@ -30,7 +30,7 @@ describe('provider registry', () => {
       supportsStreaming: true,
       streamProtocol: 'openai-chat-sse',
       supportsImageTranslation: true,
-      maxPageTranslationConcurrency: 1
+      maxPageTranslationConcurrency: null
     });
     expect(getProviderCapabilities({ apiProvider: 'openrouter' })).toEqual({
       supportsStreaming: true,
@@ -86,8 +86,8 @@ describe('provider registry', () => {
 });
 
 describe('page translation concurrency capability', () => {
-  it('caps page translation concurrency to 1 for local providers', () => {
-    for (const localProvider of ['ollama', 'lmstudio', 'chromePrompt']) {
+  it('caps page translation concurrency to 1 for Ollama and Chrome Prompt', () => {
+    for (const localProvider of ['ollama', 'chromePrompt']) {
       expect(
         getProviderCapabilities({ apiProvider: localProvider }).maxPageTranslationConcurrency
       ).toBe(1);
