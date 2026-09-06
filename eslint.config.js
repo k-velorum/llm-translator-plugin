@@ -57,9 +57,7 @@ const contentSharedGlobals = {
   startEmbeddedTranslationStream: 'readonly',
   styles: 'readonly',
   streamViewSessions: 'readonly',
-  TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS: 'readonly',
   translationPopup: 'writable',
-  tweetTranslationCacheSettings: 'writable',
   updateSelectionStreamPopup: 'readonly',
   updateTweetTranslationCacheScopeFromChanges: 'readonly'
 };

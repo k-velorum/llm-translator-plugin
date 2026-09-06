@@ -1,3 +1,5 @@
+import { createConnectionForm } from './connection-form.js';
+import { getActiveConnection } from '../shared/connections.js';
 import {
   DEFAULT_TRANSLATION_SYSTEM_PROMPT
 } from '../background/settings.js';
@@ -37,6 +39,7 @@ async function init() {
     elements.statusMessage.classList.remove('hidden');
     return;
   }
+  elements.connectionForm = createConnectionForm(elements, savedSettings);
   let connectionRevision = 0;
   let savedConnectionRevision = 0;
   const draft = () => collectSettings(elements, savedSettings);
@@ -68,12 +71,19 @@ async function init() {
   initSelect2();
   // Select2のプログラムによる復元は未保存扱いにせず、ユーザーの選択だけ拾う。
   $('.model-select').on('select2:select', (event) => markDirty(event.target));
-  loadModels(elements);
+  if (savedSettings.apiProvider === 'gemini') loadModels(elements);
+  if (savedSettings.apiProvider === 'openai' && elements.connectionForm.active().baseUrl) elements.connectionForm.refreshModels();
   updateTestSummary(elements, draft());
   refreshLogs(elements);
 }
 
 function updateTestSummary(elements, settings) {
+  if (settings.apiProvider === 'openai') {
+    const connection = getActiveConnection(settings);
+    elements.testProviderLabel.textContent = connection.preset.label;
+    elements.testModelLabel.textContent = connection.model || 'モデル未選択';
+    return;
+  }
   const provider = getProviderUi(settings.apiProvider);
   elements.testProviderLabel.textContent = provider?.label || settings.apiProvider;
   elements.testModelLabel.textContent = settings[provider?.settingsKeys?.model] || 'モデル未選択';
@@ -128,11 +138,17 @@ function initTabs({ tabs, tabContents }) {
 
 function setupApiProviderToggle(elements) {
   const { apiProviderSelect } = elements;
-  apiProviderSelect.addEventListener('change', () => {
+  const update = () => {
     const sections = getProviderSections(elements);
 
     Object.values(sections).forEach(section => section?.classList.add('hidden'));
     sections[apiProviderSelect.value]?.classList.remove('hidden');
+    document.getElementById('connection-preset-slot').classList.toggle('hidden', apiProviderSelect.value !== 'openai');
+  };
+  update();
+  apiProviderSelect.addEventListener('change', () => {
+    update();
+    if (apiProviderSelect.value === 'gemini') loadModels(elements);
   });
 }
 

@@ -70,6 +70,7 @@ export function createOpenAICompatibleProvider({
       {
         method: 'POST',
         headers: cfg.headers,
+        redirect: 'error',
         body: JSON.stringify({
           ...buildTranslateBody({ cfg, messages, settings, text }),
           ...cfg.requestBodyOptions
@@ -80,7 +81,9 @@ export function createOpenAICompatibleProvider({
       `${providerLabel} API リクエスト中にエラーが発生`
     );
 
-    return (data.choices?.[0]?.message?.content || '').trim();
+    const translated = extractChatMessageContent(data).trim();
+    if (!translated) throw new Error('翻訳結果が空でした。モデルと接続先を確認してください。');
+    return translated;
   }
 
   async function translateStream(text, settings, handlers = {}, requestOptions = {}) {
@@ -95,6 +98,7 @@ export function createOpenAICompatibleProvider({
       {
         method: 'POST',
         headers: cfg.headers,
+        redirect: 'error',
         body: JSON.stringify({
           model: cfg.model,
           messages,
@@ -125,7 +129,7 @@ export function createOpenAICompatibleProvider({
       }
     ];
 
-    const formats = responseFormatCandidates(settings);
+    const formats = responseFormatCandidates(settings) || getDefaultResponseFormatCandidates();
     let lastError = null;
 
     for (let i = 0; i < formats.length; i++) {
@@ -136,6 +140,7 @@ export function createOpenAICompatibleProvider({
           {
             method: 'POST',
             headers: cfg.headers,
+            redirect: 'error',
             body: JSON.stringify({
               model: cfg.model,
               messages,

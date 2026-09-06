@@ -1,3 +1,4 @@
+import { getActiveConnection } from '../shared/connections.js';
 import { formatUserError } from '../shared/errors.js';
 import { getProviderCapabilities, getProviderDefinition } from './api/registry.js';
 
@@ -9,16 +10,17 @@ export { OPENROUTER_HEADERS_BASE } from './api/providers/openrouter.js';
 export function formatErrorDetails(error, settings) {
   const providerId = settings?.apiProvider || 'unknown';
   const provider = getProviderDefinition(providerId);
+  const connection = providerId === 'openai' ? getActiveConnection(settings) : null;
   const serverKey = provider?.settingsKeys?.server;
   const modelKey = provider?.settingsKeys?.model;
   const apiKeyKey = provider?.settingsKeys?.apiKey;
-  const apiProvider = provider
+  const apiProvider = connection ? `${connection.preset.label} (${connection.baseUrl})` : provider
     ? serverKey
       ? `${provider.label} (${settings?.[serverKey] || provider.defaultServer})`
       : provider.label
     : providerId || '不明';
-  const modelName = provider?.fixedModel || (modelKey ? settings?.[modelKey] || '未選択' : '不明');
-  const maskedApiKey = apiKeyKey ? (settings?.[apiKeyKey] ? '設定済み' : '未設定') : provider ? '不要' : '不明';
+  const modelName = connection?.model || provider?.fixedModel || (modelKey ? settings?.[modelKey] || '未選択' : '不明');
+  const maskedApiKey = connection ? (connection.apiKey ? '設定済み' : '未設定') : apiKeyKey ? (settings?.[apiKeyKey] ? '設定済み' : '未設定') : provider ? '不要' : '不明';
 
   return `
 ==== 翻訳エラー ====

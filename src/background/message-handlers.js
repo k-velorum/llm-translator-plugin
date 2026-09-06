@@ -221,6 +221,10 @@ async function handleGetModels(message, _sender, sendResponse, providerOverride)
 }
 
 const ACTION_HANDLERS = {
+  getTranslationCapabilities: async (_message, _sender, sendResponse) => {
+    try { sendResponse({ capabilities: getProviderCapabilities(await loadSettings()) }); }
+    catch (error) { sendResponse({ error: normalizeError(error) }); }
+  },
   startTranslationStream: (message, sender, sendResponse) => startStreamingTranslation(message, sender, sendResponse),
   cancelTranslationStream: handleCancelTranslationStream,
   translateEmbeddedText: (message, sender, sendResponse) =>

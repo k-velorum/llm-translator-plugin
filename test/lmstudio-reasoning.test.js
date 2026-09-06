@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import provider from '../src/background/api/providers/lmstudio.js';
-import { collectSettings, loadSettings } from '../src/popup/settings-form.js';
+import { normalizeConnectionSettings } from '../src/shared/connections.js';
 
 const settings = { lmstudioModel: 'test-model' };
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
@@ -47,21 +47,13 @@ describe('LM Studio推論設定のリクエスト', () => {
   });
 });
 
-describe('LM Studio推論設定の保存・復元', () => {
-  it.each(['default', 'off', 'on', 'low', 'medium', 'high'])('保存対象の値を復元できる: %s', async (value) => {
-    const elements = { apiProviderSelect: { value: 'lmstudio' }, lmstudioReasoningSelect: { value } };
-    const saved = collectSettings(elements);
-    expect(saved.lmstudioReasoning).toBe(value);
-    vi.stubGlobal('chrome', { runtime: {}, storage: { sync: { get: (_keys, cb) => cb(saved) } } });
-    elements.lmstudioReasoningSelect.value = '';
-    await loadSettings(elements);
-    expect(elements.lmstudioReasoningSelect.value).toBe(value);
+describe('LM Studio推論設定の移行', () => {
+  it.each(['default', 'off', 'on', 'low', 'medium', 'high'])('保存値を引き継ぐ: %s', value => {
+    const migrated = normalizeConnectionSettings({ apiProvider: 'lmstudio', lmstudioReasoning: value });
+    expect(migrated.openaiConnections.lmstudio.reasoning).toBe(value);
+    expect(normalizeConnectionSettings(migrated)).toEqual(migrated);
   });
-
-  it('保存値がない場合はモデルの既定にする', async () => {
-    const elements = { apiProviderSelect: {}, lmstudioReasoningSelect: {} };
-    vi.stubGlobal('chrome', { runtime: {}, storage: { sync: { get: (_keys, cb) => cb({}) } } });
-    await loadSettings(elements);
-    expect(elements.lmstudioReasoningSelect.value).toBe('default');
+  it('保存値がない場合はモデルの既定にする', () => {
+    expect(normalizeConnectionSettings({}).openaiConnections.lmstudio.reasoning).toBe('default');
   });
 });

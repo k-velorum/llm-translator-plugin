@@ -41,7 +41,7 @@ function setupStream() {
 }
 
 function setupView() {
-  const window = { tweetTranslationCacheSettings: settings };
+  const window = { LLMT: { settings: { capabilities: { supportsStreaming: true } } } };
   const render = vi.fn();
   const sender = { tab: { id: 1 }, frameId: 0 };
   const chrome = {

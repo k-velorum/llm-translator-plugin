@@ -3,6 +3,7 @@ const EFFORT_OPTIONS = [['low', '低'], ['medium', '中'], ['high', '高']];
 
 // APIごとの受け付け値に合わせる。モデル個別の対応範囲は提供元に依存する。
 export const REASONING_OPTIONS = {
+  custom: [['default', 'モデルの既定'], ...EFFORT_OPTIONS],
   openrouter: [...DEFAULT_OPTIONS, ['minimal', '最小'], ...EFFORT_OPTIONS, ['xhigh', '最高']],
   cerebras: [...DEFAULT_OPTIONS, ...EFFORT_OPTIONS],
   zai: DEFAULT_OPTIONS,

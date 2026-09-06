@@ -56,12 +56,12 @@ describe('保存状態', () => {
 
 describe('設定の一括保存', () => {
   it('モデル取得前でも保存済みのモデルを空欄で上書きしない', () => {
-    const settings = collectSettings({ apiProviderSelect: element('cerebras'), cerebrasModelSelect: element(),
-      cerebrasApiKeyInput: element(' draft-key '), twitterFeatureCheckbox: { checked: false },
+    const settings = collectSettings({ apiProviderSelect: element('gemini'), geminiModelSelect: element(),
+      geminiApiKeyInput: element(' draft-key '), twitterFeatureCheckbox: { checked: false },
       youtubeFeatureCheckbox: { checked: true }, translationSystemPromptTextarea: element('短く翻訳')
-    }, { cerebrasModel: 'saved-model' });
-    expect(settings).toMatchObject({ apiProvider: 'cerebras', cerebrasModel: 'saved-model',
-      cerebrasApiKey: 'draft-key', enableTwitterTranslation: false, enableYoutubeTranslation: true,
+    }, { geminiModel: 'saved-model' });
+    expect(settings).toMatchObject({ apiProvider: 'gemini', geminiModel: 'saved-model',
+      geminiApiKey: 'draft-key', enableTwitterTranslation: false, enableYoutubeTranslation: true,
       translationSystemPrompt: '短く翻訳' });
   });
 

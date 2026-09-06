@@ -2,8 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import openrouter from '../src/background/api/providers/openrouter.js';
 import cerebras from '../src/background/api/providers/cerebras.js';
 import zai from '../src/background/api/providers/zai.js';
-import { collectSettings, loadSettings } from '../src/popup/settings-form.js';
-import { REASONING_OPTIONS } from '../src/shared/reasoning.js';
+import { normalizeConnectionSettings } from '../src/shared/connections.js';
 
 const cases = [
   ['openrouter', openrouter, 'off', { reasoning: { enabled: false } }],
@@ -55,27 +54,16 @@ describe.each([['openrouter', openrouter], ['cerebras', cerebras], ['zai', zai]]
   });
 });
 
-describe('接続先別の推論設定の保存・復元', () => {
-  it('接続先を切り替えてもそれぞれの選択値を維持する', async () => {
-    const elements = { apiProviderSelect: { value: 'openrouter' },
-      openrouterReasoningSelect: { value: 'xhigh' }, cerebrasReasoningSelect: { value: 'low' },
-      zaiReasoningSelect: { value: 'off' }, lmstudioReasoningSelect: { value: 'on' } };
-    const saved = collectSettings(elements);
-    vi.stubGlobal('chrome', { runtime: {}, storage: { sync: { get: (_keys, cb) => cb(saved) } } });
-    for (const id of Object.keys(REASONING_OPTIONS)) elements[`${id}ReasoningSelect`].value = '';
-    await loadSettings(elements);
-    expect(elements.openrouterReasoningSelect.value).toBe('xhigh');
-    expect(elements.cerebrasReasoningSelect.value).toBe('low');
-    expect(elements.zaiReasoningSelect.value).toBe('off');
-    expect(elements.lmstudioReasoningSelect.value).toBe('on');
-    elements.apiProviderSelect.value = 'zai';
-    expect(collectSettings(elements)).toEqual({ ...saved, apiProvider: 'zai' });
+describe('接続先別の推論設定の移行', () => {
+  it('非選択の接続先も含めて設定を維持する', () => {
+    const migrated = normalizeConnectionSettings({ apiProvider: 'zai', openrouterReasoning: 'xhigh',
+      cerebrasReasoning: 'low', zaiReasoning: 'off', lmstudioReasoning: 'on' });
+    expect(migrated).toMatchObject({ apiProvider: 'openai', openaiPreset: 'zai', openaiConnections: {
+      openrouter: { reasoning: 'xhigh' }, cerebras: { reasoning: 'low' },
+      zai: { reasoning: 'off' }, lmstudio: { reasoning: 'on' }
+    } });
   });
-
-  it('無効な保存値は既定に戻す', async () => {
-    const elements = { apiProviderSelect: {}, zaiReasoningSelect: {} };
-    vi.stubGlobal('chrome', { runtime: {}, storage: { sync: { get: (_keys, cb) => cb({ zaiReasoning: 'high' }) } } });
-    await loadSettings(elements);
-    expect(elements.zaiReasoningSelect.value).toBe('default');
+  it('無効な旧保存値は既定に戻す', () => {
+    expect(normalizeConnectionSettings({ zaiReasoning: 'high' }).openaiConnections.zai.reasoning).toBe('default');
   });
 });

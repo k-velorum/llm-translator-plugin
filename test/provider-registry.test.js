@@ -8,15 +8,7 @@ import {
 
 describe('provider registry', () => {
   it('contains the current provider ids', () => {
-    expect(Object.keys(PROVIDERS)).toEqual([
-      'openrouter',
-      'gemini',
-      'cerebras',
-      'zai',
-      'ollama',
-      'lmstudio',
-      'chromePrompt'
-    ]);
+    expect(Object.keys(PROVIDERS)).toEqual(['openai', 'gemini', 'chromePrompt']);
   });
 
   it('preserves the current capability matrix', () => {

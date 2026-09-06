@@ -58,7 +58,7 @@ describe('openrouter provider', () => {
       openrouterProvider.verify({ apiKey: 'test-openrouter-key' }, {})
     ).resolves.toEqual({
       success: true,
-      models: [{ id: 'openai/gpt-4o-mini' }]
+      models: [{ id: 'openai/gpt-4o-mini', name: 'openai/gpt-4o-mini' }]
     });
 
     const [url, options] = fetch.mock.calls[0];
@@ -75,7 +75,7 @@ describe('openrouter provider', () => {
 
     await expect(
       openrouterProvider.getModels({}, { openrouterApiKey: 'saved-openrouter-key' })
-    ).resolves.toEqual([{ id: 'anthropic/claude-haiku' }]);
+    ).resolves.toEqual([{ id: 'anthropic/claude-haiku', name: 'anthropic/claude-haiku' }]);
 
     const [url, options] = fetch.mock.calls[0];
     expect(url).toBe('https://openrouter.ai/api/v1/models');

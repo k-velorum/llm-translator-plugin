@@ -1,9 +1,18 @@
+import { getActiveConnection, validateConnection } from '../shared/connections.js';
 import { formatUserError } from '../shared/errors.js';
 import { getProviderUi } from './provider-ui.js';
 import { showStatus, showPendingStatus } from './status.js';
 import { log } from '../shared/logger.js';
 
+function buildCompatibleSettingsForTest(settings) {
+  const connection = getActiveConnection(settings);
+  try { validateConnection(connection); } catch (error) { return { error: error.message }; }
+  return { providerSettings: { apiProvider: 'openai', openaiPreset: connection.presetId,
+    openaiConnections: { [connection.presetId]: settings.openaiConnections[connection.presetId] } } };
+}
+
 function buildProviderSettingsForTest(apiProvider, settings) {
+  if (apiProvider === 'openai') return buildCompatibleSettingsForTest(settings);
   const config = getProviderUi(apiProvider);
   if (!config) {
     return { error: `未対応のプロバイダーです: ${apiProvider}` };
@@ -18,7 +27,6 @@ function buildProviderSettingsForTest(apiProvider, settings) {
   const providerSettings = { apiProvider };
   const { settingsKeys } = config;
   if (settingsKeys.apiKey) providerSettings[settingsKeys.apiKey] = settings[settingsKeys.apiKey] || '';
-  if (settingsKeys.server) providerSettings[settingsKeys.server] = settings[settingsKeys.server] || config.defaultServer;
   if (settingsKeys.model) providerSettings[settingsKeys.model] = settings[settingsKeys.model] || '';
   if (settingsKeys.temperature) {
     providerSettings[settingsKeys.temperature] = settings[settingsKeys.temperature] ?? config.defaultTemperature ?? 0.2;

@@ -45,10 +45,11 @@ export function initSelect2() {
       setupOrResetSelect2($(this));
     });
 
-    $(MODEL_PROVIDER_IDS.map((provider) => `#${provider}-model`).join(', ')).on('select2:select', function(event) {
+    $('.model-select').on('select2:select', function(event) {
       const provider = this.id.split('-')[0];
       const modelId = event.params.data.id;
-      const modelData = $(this).find(`option[value="${modelId}"]`).data('model');
+      const option = Array.from(this.options).find(option => option.value === modelId);
+      const modelData = $(option).data('model');
       if (modelData) {
         updateModelInfo(provider, modelData);
       }
@@ -149,7 +150,8 @@ export function fetchModelsViaBackground(provider, options) {
       if (typeof options === 'string') {
         payload.apiKey = options;
       } else {
-        if (options.apiKey) payload.apiKey = options.apiKey;
+        if (options.apiKey !== undefined) payload.apiKey = options.apiKey;
+        if (options.connection) { payload.connection = options.connection; payload.presetId = options.presetId; }
         if (options.server) payload.server = options.server;
       }
     }
@@ -190,39 +192,22 @@ export function fetchModelsViaBackground(provider, options) {
   });
 }
 
-export function populateModelSelect(provider, selectElement, models, preferredValue = '') {
-  const selectedModel = selectElement.value;
-  selectElement.innerHTML = '';
-
-  if (models && models.length > 0) {
-    const emptyOption = document.createElement('option');
-    emptyOption.value = '';
-    emptyOption.textContent = '';
-    selectElement.appendChild(emptyOption);
-
-    models.forEach(model => {
-      const option = document.createElement('option');
-      option.value = model.id;
-      option.textContent = `${model.name || model.id} (${model.id})`;
-      $(option).data('model', model);
-      selectElement.appendChild(option);
-    });
-
-    const hasPreferred = preferredValue && Array.from(selectElement.options).some(opt => opt.value === preferredValue);
-    const hasPrev = selectedModel && Array.from(selectElement.options).some(opt => opt.value === selectedModel);
-    const valueToSet = hasPreferred ? preferredValue : (hasPrev ? selectedModel : '');
-    if (valueToSet) selectElement.value = valueToSet;
-
-    if (typeof jQuery !== 'undefined' && jQuery.fn.select2) {
-      setupOrResetSelect2($(selectElement));
-      if (valueToSet) {
-        $(selectElement).trigger('change');
-        const modelData = $(selectElement).find(`option[value="${valueToSet}"]`).data('model');
-        if (modelData) updateModelInfo(provider, modelData);
-      }
-    }
-  } else {
-    setDefaultModels(provider, selectElement);
+export function populateModelSelect(provider, selectElement, models, preferredValue) {
+  const value = preferredValue ?? selectElement.value ?? '';
+  selectElement.replaceChildren(new Option('', ''));
+  const entries = Array.isArray(models) ? [...models] : [];
+  if (value && !entries.some(model => model.id === value)) entries.unshift({ id: value, name: value });
+  for (const model of entries) {
+    const option = new Option(model.name || model.id, model.id);
+    $(option).data('model', model);
+    selectElement.appendChild(option);
+  }
+  selectElement.value = value;
+  if (typeof jQuery !== 'undefined' && jQuery.fn.select2) {
+    setupOrResetSelect2($(selectElement));
+    $(selectElement).trigger('change');
+    const selected = entries.find(model => model.id === value);
+    if (selected) updateModelInfo(provider, selected);
   }
 }
 

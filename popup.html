@@ -86,7 +86,7 @@
     .form-group { margin-bottom: 16px; }
     .api-section > .form-group:last-child { margin-bottom: 0; }
     label { display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; color: #45546b; }
-    input[type="text"], input[type="number"], select, textarea {
+    input[type="text"], input[type="number"], input[type="url"], input[type="password"], select, textarea {
       width: 100%;
       min-height: 40px;
       padding: 9px 11px;
@@ -181,6 +181,17 @@
     .loading-spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .hidden { display: none; }
+    .connection-selectors { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .connection-selectors:has(#connection-preset-slot.hidden) { grid-template-columns: 1fr; }
+    .connection-selectors .form-group { margin-bottom: 0; }
+    .connection-details { border-top: 1px solid var(--border); padding-top: 10px; }
+    .connection-details > summary { font-size: 12px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
+    .connection-details[open] > summary { margin-bottom: 14px; }
+    .connection-details .form-group:last-child { margin-bottom: 0; }
+    .connection-checkbox > label { display: flex; align-items: center; gap: 8px; }
+    .connection-checkbox input { width: auto; }
+    #openai-refresh-models { margin-top: 8px; }
+    #openai-connection-status { overflow-wrap: anywhere; }
     .app-header { display: flex; align-items: center; gap: 12px; padding: 16px 20px 12px; flex-shrink: 0; }
     .app-header h1 { margin: 0; font-size: 18px; line-height: 1.3; }
     .app-header p { margin: 2px 0 0; color: var(--text-muted); font-size: 11px; }
@@ -229,17 +240,16 @@
   </nav>
   <main id="settings-scroll">
     <section id="settings-tab" class="tab-content active" aria-label="接続設定">
+      <div class="connection-selectors">
       <div class="form-group">
-        <label for="api-provider">接続先</label>
+        <label for="api-provider">接続方式</label>
         <select id="api-provider">
-          <option value="openrouter">OpenRouter</option>
-          <option value="gemini">Google Gemini</option>
-          <option value="cerebras">Cerebras</option>
-          <option value="zai">Z-AI</option>
-          <option value="ollama">Ollama（ローカル）</option>
-          <option value="lmstudio">LM Studio（ローカル）</option>
+          <option value="openai">OpenAI互換API</option>
+          <option value="gemini">Google Gemini API</option>
           <option value="chromePrompt">Chrome Gemini Nano</option>
         </select>
+      </div>
+      <div id="connection-preset-slot"></div>
       </div>
       <div id="provider-sections"></div>
       <template id="provider-section-template">

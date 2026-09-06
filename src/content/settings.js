@@ -10,8 +10,20 @@ const featureSettings = {
 };
 
 let featureSettingsListenerRegistered = false;
+let capabilityRevision = 0;
+
+function refreshTranslationCapabilities() {
+  const revision = ++capabilityRevision;
+  window.LLMT.settings.capabilities = {};
+  window.LLMT.messaging.sendBackgroundMessage('getTranslationCapabilities').then(result => {
+    if (revision === capabilityRevision && result.ok) {
+      window.LLMT.settings.capabilities = result.data?.capabilities || {};
+    }
+  }).catch(() => {});
+}
 
 function loadFeatureSettings(callback) {
+  refreshTranslationCapabilities();
   return new Promise((resolve) => {
     const finish = () => {
       if (typeof callback === 'function') {
@@ -21,7 +33,7 @@ function loadFeatureSettings(callback) {
     };
 
     try {
-      chrome.storage?.sync?.get?.(null, (settings) => {
+      chrome.storage?.sync?.get?.(['enableTwitterTranslation', 'enableYoutubeTranslation'], (settings) => {
         if (settings) {
           if (typeof settings.enableTwitterTranslation === 'boolean') {
             featureSettings.enableTwitterTranslation = settings.enableTwitterTranslation;
@@ -45,6 +57,7 @@ function registerFeatureSettingsListener() {
   try {
     chrome.storage?.onChanged?.addListener?.((changes, area) => {
       if (area !== 'sync') return;
+      refreshTranslationCapabilities();
       let twitterChanged = false;
       let youtubeChanged = false;
 
@@ -115,6 +128,7 @@ function createObserverController({ selector, onElement, isEnabled }) {
 window.LLMT = window.LLMT || {};
 window.LLMT.settings = {
   featureSettings,
+  capabilities: {},
   loadFeatureSettings,
   registerFeatureSettingsListener,
   createObserverController,

@@ -1,3 +1,4 @@
+import { normalizeConnectionSettings, getActiveConnection, validateConnection as validateOpenAIConnection, LEGACY_COMPATIBLE_IDS } from '../shared/connections.js';
 import { normalizeTranslationPolicy } from '../shared/translation-policy.js';
 import {
   MODEL_PROVIDER_IDS,
@@ -9,6 +10,10 @@ import { restoreModelSelection } from './models.js';
 import { normalizeReasoning } from '../shared/reasoning.js';
 
 function validateApiKey(apiProvider, settings) {
+  if (apiProvider === 'openai' || LEGACY_COMPATIBLE_IDS.includes(apiProvider)) {
+    try { validateOpenAIConnection(getActiveConnection(settings), { requireModel: false }); }
+    catch (error) { return { isValid: false, message: error.message }; }
+  }
   const provider = getProviderUi(apiProvider);
   const apiKeyKey = provider?.settingsKeys?.apiKey;
   if (provider?.needsApiKey && apiKeyKey && !settings[apiKeyKey]) {
@@ -42,10 +47,11 @@ export function loadSettings(elements) {
 
   return new Promise((resolve, reject) => chrome.storage.sync.get(null, settings => {
     if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-    const apiProvider = settings.apiProvider || 'openrouter';
+    settings = normalizeConnectionSettings(settings);
+    const apiProvider = settings.apiProvider;
     apiProviderSelect.value = apiProvider;
 
-    PROVIDER_ORDER.forEach((provider) => {
+    PROVIDER_ORDER.filter(provider => provider !== 'openai').forEach((provider) => {
       const config = getProviderUi(provider);
       const { settingsKeys } = config;
       const apiKeyInput = elements[config.elements.apiKey];
@@ -96,7 +102,7 @@ export function collectSettings(elements, savedSettings = {}) {
     apiProvider: apiProviderSelect.value
   };
 
-  PROVIDER_ORDER.forEach((provider) => {
+  PROVIDER_ORDER.filter(provider => provider !== 'openai').forEach((provider) => {
     const config = getProviderUi(provider);
     const { settingsKeys } = config;
     const apiKeyInput = elements[config.elements.apiKey];
@@ -121,7 +127,7 @@ export function collectSettings(elements, savedSettings = {}) {
   if (twitterFeatureCheckbox) settings.enableTwitterTranslation = !!twitterFeatureCheckbox.checked;
   if (youtubeFeatureCheckbox) settings.enableYoutubeTranslation = !!youtubeFeatureCheckbox.checked;
 
-  return { ...settings, ...collectFeatureSettings(elements) };
+  return { ...settings, ...elements.connectionForm?.collect(), ...collectFeatureSettings(elements) };
 }
 
 export async function saveSettings(settings, { validateConnection = true } = {}) {

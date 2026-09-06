@@ -1,27 +1,10 @@
 (() => {
   'use strict';
 
-const TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS = {
-  apiProvider: 'openrouter',
-  openrouterModel: 'openai/gpt-4o-mini',
-  geminiModel: 'gemini-flash-2.0',
-  cerebrasModel: 'llama3.1-8b',
-  zaiModel: 'glm-4.7',
-  ollamaModel: '',
-  lmstudioModel: '',
-  chromePromptTemperature: 0.2,
-  translationSystemPrompt: ''
-};
-
 const TWEET_TRANSLATION_CACHE_MAX_ENTRIES = 300;
 const tweetTranslationCache = new Map();
 const tweetTranslationInFlight = new Map();
-let tweetTranslationCacheSettings = {
-  ...TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS,
-  ...(window.tweetTranslationCacheSettings || {})
-};
-let tweetTranslationCacheScope = 'provider:openrouter|model:openai/gpt-4o-mini|prompt:0';
-window.tweetTranslationCacheSettings = tweetTranslationCacheSettings;
+let tweetTranslationCacheScope = 0;
 
 function hashStringForCache(text) {
   let hash = 2166136261;
@@ -43,53 +26,15 @@ function normalizeTweetTranslationCacheKey(text) {
   return normalized.replace(/\s+/g, ' ').trim();
 }
 
-function computeTweetTranslationCacheScope(settings) {
-  const provider = settings.apiProvider || 'openrouter';
-  const modelByProvider = {
-    openrouter: settings.openrouterModel || '',
-    gemini: settings.geminiModel || '',
-    cerebras: settings.cerebrasModel || '',
-    zai: settings.zaiModel || '',
-    ollama: settings.ollamaModel || '',
-    lmstudio: settings.lmstudioModel || '',
-    chromePrompt: 'Gemini Nano'
-  };
-  const model = modelByProvider[provider] || '';
-  const promptHash = hashStringForCache(normalizeTweetTranslationCacheKey(settings.translationSystemPrompt || ''));
-  return `provider:${provider}|model:${model}|prompt:${promptHash}`;
+// キャッシュはこのページ限り。設定変更ごとに世代を進め、古い応答を再利用しない。
+function initializeTweetTranslationCacheScope() {
+  updateTweetTranslationCacheScopeFromChanges();
 }
 
-function clearAllTweetTranslationCacheEntries() {
+function updateTweetTranslationCacheScopeFromChanges() {
+  tweetTranslationCacheScope += 1;
   tweetTranslationCache.clear();
   tweetTranslationInFlight.clear();
-}
-
-function syncTweetTranslationCacheScopeFromStorage() {
-  try {
-    chrome.storage?.sync?.get?.(TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS, (settings) => {
-      if (!settings) return;
-      tweetTranslationCacheSettings = { ...tweetTranslationCacheSettings, ...settings };
-      window.tweetTranslationCacheSettings = tweetTranslationCacheSettings;
-      tweetTranslationCacheScope = computeTweetTranslationCacheScope(tweetTranslationCacheSettings);
-    });
-  } catch {}
-}
-
-function initializeTweetTranslationCacheScope() {
-  syncTweetTranslationCacheScopeFromStorage();
-}
-
-function updateTweetTranslationCacheScopeFromChanges(changes) {
-  let changed = false;
-  Object.keys(TWEET_TRANSLATION_CACHE_SETTINGS_DEFAULTS).forEach((key) => {
-    if (!Object.prototype.hasOwnProperty.call(changes, key)) return;
-    tweetTranslationCacheSettings[key] = changes[key].newValue;
-    changed = true;
-  });
-  if (!changed) return;
-  window.tweetTranslationCacheSettings = tweetTranslationCacheSettings;
-  tweetTranslationCacheScope = computeTweetTranslationCacheScope(tweetTranslationCacheSettings);
-  clearAllTweetTranslationCacheEntries();
 }
 
 function setTweetTranslationCache(key, translatedText) {

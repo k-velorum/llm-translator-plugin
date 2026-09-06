@@ -28,15 +28,11 @@ function installChromeStorageMock(settings) {
 }
 
 describe('loadSettings', () => {
-  it('keeps the default settings keys stable', () => {
+  it('uses one compatible connection type by default', () => {
     expect(DEFAULT_SETTINGS).toMatchObject({
-      apiProvider: 'openrouter',
-      openrouterModel: 'openai/gpt-4o-mini',
+      apiProvider: 'openai',
+      openaiPreset: 'openrouter',
       geminiModel: 'gemini-flash-2.0',
-      cerebrasModel: 'llama3.1-8b',
-      zaiModel: 'glm-4.7',
-      ollamaServer: 'http://localhost:11434',
-      lmstudioServer: 'http://localhost:1234',
       chromePromptTemperature: 0.2,
       enableTwitterTranslation: true,
       enableYoutubeTranslation: true,
@@ -59,13 +55,23 @@ describe('loadSettings', () => {
     });
   });
 
-  it('returns current settings without migration when prompt is already split', async () => {
+  it('normalizes connection settings without writing during reads', async () => {
     const current = {
       translationSystemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT
     };
     const { set } = installChromeStorageMock(current);
 
-    await expect(loadSettings()).resolves.toBe(current);
+    await expect(loadSettings()).resolves.toMatchObject({ ...current, apiProvider: 'openai', openaiPreset: 'openrouter' });
     expect(set).not.toHaveBeenCalled();
   });
+  it('保存済みの任意接続を読み込み、既定の接続先へ戻さない', async () => {
+    const stored = { apiProvider: 'openai', openaiPreset: 'custom', openaiConnections: {
+      custom: { baseUrl: 'https://example.test/gateway/v3', apiKey: 'saved-key', model: 'manual/model', reasoning: 'low', streaming: false }
+    } };
+    installChromeStorageMock(stored);
+    const loaded = await loadSettings();
+    expect(globalThis.chrome.storage.sync.get.mock.calls[0][0]).toBeNull();
+    expect(loaded).toMatchObject(stored);
+  });
+
 });

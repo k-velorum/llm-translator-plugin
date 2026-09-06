@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { normalizeConnectionSettings } from '../src/shared/connections.js';
 import { invalidateTestResult, testApi } from '../src/popup/test-api.js';
 
 function element(value = '') {
@@ -15,7 +16,7 @@ describe('編集中の設定で動作確認', () => {
     let respond;
     vi.stubGlobal('chrome', { runtime: { sendMessage: (_message, cb) => { respond = cb; } } });
     const ui = elements();
-    const running = testApi(ui, { apiProvider: 'cerebras', cerebrasApiKey: 'key', cerebrasModel: 'old' });
+    const running = testApi(ui, normalizeConnectionSettings({ apiProvider: 'cerebras', cerebrasApiKey: 'key', cerebrasModel: 'old' }));
     invalidateTestResult(ui);
     respond({ result: 'old translation' });
     await running;
@@ -28,10 +29,10 @@ describe('編集中の設定で動作確認', () => {
     const sendMessage = vi.fn((_message, cb) => cb({ result: 'こんにちは' }));
     vi.stubGlobal('chrome', { runtime: { sendMessage } });
     const ui = elements();
-    await testApi(ui, { apiProvider: 'cerebras', cerebrasApiKey: 'draft-key',
-      cerebrasModel: 'draft-model', translationSystemPrompt: '日本語に翻訳' });
+    await testApi(ui, normalizeConnectionSettings({ apiProvider: 'cerebras', cerebrasApiKey: 'draft-key',
+      cerebrasModel: 'draft-model', cerebrasReasoning: 'off', translationSystemPrompt: '日本語に翻訳' }));
     expect(sendMessage.mock.calls[0][0]).toMatchObject({ text: 'hello', settings: {
-      apiProvider: 'cerebras', cerebrasModel: 'draft-model', cerebrasApiKey: 'draft-key', translationSystemPrompt: '日本語に翻訳'
+      apiProvider: 'openai', openaiPreset: 'cerebras', openaiConnections: { cerebras: { model: 'draft-model', apiKey: 'draft-key', reasoning: 'off' } }, translationSystemPrompt: '日本語に翻訳'
     } });
     expect(ui.testResult.textContent).toBe('こんにちは');
     expect(ui.testButton.disabled).toBe(false);
@@ -43,7 +44,7 @@ describe('編集中の設定で動作確認', () => {
       status: 402, message: 'Insufficient credits', details: 'trace detail'
     } }) } });
     const ui = elements();
-    await testApi(ui, { apiProvider: 'cerebras', cerebrasApiKey: 'key', cerebrasModel: 'model' });
+    await testApi(ui, normalizeConnectionSettings({ apiProvider: 'cerebras', cerebrasApiKey: 'key', cerebrasModel: 'model' }));
     expect(ui.testStatus.textContent).toContain('請求設定');
     expect(ui.testErrorBody.textContent).toBe('trace detail');
     expect(ui.testErrorDetails.open).toBe(false);

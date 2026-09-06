@@ -5,7 +5,8 @@ export function setupOrResetSelect2($select) {
   }
   const $parent = $select.closest('.api-section');
   $select.select2({
-    placeholder: 'モデルを選択',
+    placeholder: $select.attr('id') === 'openai-model' ? 'モデルを選択またはIDを入力' : 'モデルを選択',
+    tags: $select.attr('id') === 'openai-model',
     allowClear: false,
     width: '100%',
     dropdownParent: $parent.length ? $parent : undefined,
@@ -57,7 +58,7 @@ export function updateModelInfo(provider, modelData) {
     infoElement.appendChild(div);
   };
 
-  if (provider === 'openrouter') {
+  if (provider === 'openrouter' || provider === 'openai') {
     const usdPer1MFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 6 });
     const pricePerTokenToPer1M = (value) => {
       if (value === undefined || value === null || value === '') return null;
@@ -66,14 +67,14 @@ export function updateModelInfo(provider, modelData) {
       return usdPer1MFormatter.format(perToken * 1_000_000);
     };
 
-    addLine(`モデル: ${modelData.name}`);
+    addLine(`モデル: ${modelData.name || modelData.id}`);
     if (modelData.context_length) addLine(`コンテキスト長: ${modelData.context_length}`);
     const promptPer1M = pricePerTokenToPer1M(modelData.pricing?.prompt);
     const completionPer1M = pricePerTokenToPer1M(modelData.pricing?.completion);
     if (promptPer1M !== null) addLine(`入力料金: $${promptPer1M} / 1M tokens`);
     if (completionPer1M !== null) addLine(`出力料金: $${completionPer1M} / 1M tokens`);
   } else if (provider === 'gemini') {
-    addLine(`モデル: ${modelData.name}`);
+    addLine(`モデル: ${modelData.name || modelData.id}`);
     if (modelData.context_length) addLine(`入力上限: ${modelData.context_length} tokens`);
   } else if (provider === 'cerebras') {
     addLine(`モデル: ${modelData.name || modelData.id}`);

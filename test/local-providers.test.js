@@ -16,8 +16,8 @@ afterEach(() => {
 });
 
 describe('ollama provider', () => {
-  it('builds the current /api/generate translation request', async () => {
-    const fetch = vi.fn(async () => mockJsonResponse({ response: ' 翻訳済み ' }));
+  it('uses the OpenAI-compatible endpoint for legacy Ollama settings', async () => {
+    const fetch = vi.fn(async () => mockJsonResponse({ choices: [{ message: { content: ' 翻訳済み ' } }] }));
     globalThis.fetch = fetch;
 
     await expect(
@@ -28,18 +28,18 @@ describe('ollama provider', () => {
     ).resolves.toBe('翻訳済み');
 
     const [url, options] = fetch.mock.calls[0];
-    expect(url).toBe('http://localhost:11434/api/generate');
+    expect(url).toBe('http://localhost:11434/v1/chat/completions');
     expect(JSON.parse(options.body)).toMatchObject({
       model: 'qwen',
       stream: false
     });
-    expect(JSON.parse(options.body).prompt).toContain('hello');
+    expect(JSON.parse(options.body).messages[1].content).toBe('hello');
   });
 
   it('keeps structured batch format fallback order', async () => {
     const fetch = vi.fn(async () =>
       mockJsonResponse({
-        response: '{"items":[[0,"一"]]}'
+        choices: [{ message: { content: '{"items":[[0,"一"]]}' } }]
       })
     );
     globalThis.fetch = fetch;
@@ -52,21 +52,21 @@ describe('ollama provider', () => {
     ).resolves.toEqual(['一']);
 
     const body = JSON.parse(fetch.mock.calls[0][1].body);
-    expect(body.format).toMatchObject({
+    expect(body.response_format.json_schema.schema).toMatchObject({
       type: 'object',
       required: ['items']
     });
   });
 
   it('loads models from the requested server before falling back to settings', async () => {
-    const fetch = vi.fn(async () => mockJsonResponse({ models: [{ name: 'qwen3' }] }));
+    const fetch = vi.fn(async () => mockJsonResponse({ data: [{ id: 'qwen3' }] }));
     globalThis.fetch = fetch;
 
     await expect(
       ollamaProvider.getModels({ server: 'http://192.0.2.10:11434/' }, { ollamaServer: 'http://localhost:11434' })
     ).resolves.toEqual([{ id: 'qwen3', name: 'qwen3' }]);
 
-    expect(fetch.mock.calls[0][0]).toBe('http://192.0.2.10:11434/api/tags');
+    expect(fetch.mock.calls[0][0]).toBe('http://192.0.2.10:11434/v1/models');
   });
 });
 
