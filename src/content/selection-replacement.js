@@ -105,7 +105,7 @@
       background: '#fff', color: '#24354b', border: '1px solid #ccd7e6', borderRadius: '10px',
       padding: '12px', boxShadow: '0 4px 20px #0002', font: '14px sans-serif', maxWidth: '340px' });
     const label = document.createElement('div');
-    label.textContent = message || (pending ? '選択範囲を翻訳しています…' : '選択範囲を置換しました');
+    label.textContent = message || (pending ? '処理中…' : '選択範囲を置換しました');
     panel.append(label);
     if (pending) {
       const preview = document.createElement('div');

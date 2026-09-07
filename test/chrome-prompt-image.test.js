@@ -88,7 +88,7 @@ describe('Chrome Prompt image translation', () => {
 
   it('preserves text-only translation without image requirements', async () => {
     expect(await request('translate', { text: 'hello', settings: {} })).toMatchObject({ result: '翻訳済み' });
-    expect(model.create.mock.calls[0][0].expectedInputs).toBeUndefined();
+    expect(model.create.mock.calls[0][0].expectedInputs).toEqual([{ type: 'text', languages: ['en', 'ja'] }]);
     expect(session.prompt).toHaveBeenCalledWith('hello', { signal: expect.any(AbortSignal) });
   });
 });

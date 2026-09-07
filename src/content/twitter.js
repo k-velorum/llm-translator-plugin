@@ -138,7 +138,7 @@ function requestTweetTranslationStreamWithCache({ tweetElement, tweetTextElement
   }
 
   const translationElement = ensureTweetTranslationElement(tweetTextElement);
-  translationElement.textContent = '翻訳しています...';
+  translationElement.textContent = '処理中…';
   const { promise } = startEmbeddedTranslationStream({
     kind: 'tweet',
     text,

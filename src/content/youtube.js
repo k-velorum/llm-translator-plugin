@@ -112,7 +112,7 @@ function addButtonToYouTubeComment(contentTextEl) {
     };
 
     const element = ensureYouTubeTranslationElement(contentTextEl);
-    element.textContent = '翻訳しています...';
+    element.textContent = '処理中…';
     const { promise } = startEmbeddedTranslationStream({
       kind: 'youtube',
       text,

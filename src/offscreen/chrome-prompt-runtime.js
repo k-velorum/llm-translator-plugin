@@ -1,3 +1,4 @@
+import { createReadyNanoSession, nanoAvailability, nanoError, nanoInputOptions } from '../shared/chrome-prompt.js';
 import {
   STRUCTURED_BATCH_SCHEMA,
   buildStructuredBatchInstruction,
@@ -13,6 +14,7 @@ const DEFAULT_TRANSLATION_SYSTEM_PROMPT =
   '指示された文章を日本語に翻訳してください。翻訳結果のみを出力してください。';
 
 const activeAbortControllers = new Map();
+const requestIds = new WeakMap();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || message.target !== TARGET) {
@@ -30,7 +32,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const signal = createRequestSignal(message.requestId);
 
     if (action === 'availability') {
-      return await handleAvailability();
+      return await handleAvailability(payload?.kind);
     }
 
     const streamRequestId = action.endsWith('Stream') ? message.requestId : null;
@@ -70,6 +72,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 function createRequestSignal(requestId) {
   const controller = new AbortController();
   activeAbortControllers.set(requestId, controller);
+  requestIds.set(controller.signal, requestId);
   return controller.signal;
 }
 
@@ -81,25 +84,20 @@ function abortRequest(requestId) {
 
 function assertLanguageModelAvailable() {
   if (!('LanguageModel' in self)) {
-    throw new Error('この Chrome では LanguageModel / Prompt API を利用できません');
+    throw nanoError('NanoUnavailable', 'この Chrome では LanguageModel / Prompt API を利用できません');
   }
 }
 
-async function handleAvailability() {
-  if (!('LanguageModel' in self)) {
-    return {
-      supported: false,
-      availability: 'unsupported',
-      message: 'LanguageModel is not defined'
-    };
-  }
+async function handleAvailability(kind = 'text') {
+  const availability = await nanoAvailability(kind);
+  return { supported: !['unavailable', 'unsupported'].includes(availability), availability };
+}
 
-  const availability = await LanguageModel.availability();
-
-  return {
-    supported: availability !== 'unavailable',
-    availability
-  };
+async function notifyStatus(signal, phase) {
+  signal.throwIfAborted();
+  await chrome.runtime.sendMessage({
+    target: 'chromePromptClient', action: 'status', requestId: requestIds.get(signal), phase
+  });
 }
 
 async function createSession(settings = {}, signal, inputOptions = {}) {
@@ -113,15 +111,7 @@ async function createSession(settings = {}, signal, inputOptions = {}) {
         role: 'system',
         content: buildSystemPrompt(settings)
       }
-    ],
-    monitor(monitorTarget) {
-      monitorTarget.addEventListener('downloadprogress', (event) => {
-        chrome.runtime.sendMessage({
-          action: 'chromePromptDownloadProgress',
-          loaded: event.loaded
-        });
-      });
-    }
+    ]
   };
 
   const params = await getSafeParams();
@@ -132,7 +122,7 @@ async function createSession(settings = {}, signal, inputOptions = {}) {
     options.topK = params.defaultTopK;
   }
 
-  return await LanguageModel.create(options);
+  return await createReadyNanoSession(options, inputOptions.expectedInputs?.some(input => input.type === 'image') ? 'image' : 'text');
 }
 
 async function getSafeParams() {
@@ -166,8 +156,10 @@ function buildSystemPrompt(settings = {}) {
 }
 
 async function withSession(settings, signal, callback, inputOptions = {}) {
+  await notifyStatus(signal, 'loading');
   const session = await createSession(settings, signal, inputOptions);
   try {
+    await notifyStatus(signal, 'running');
     return await callback(session);
   } finally {
     try {
@@ -219,15 +211,7 @@ async function handleTranslateImage(imageInput, settings, signal, requestId) {
   if (!imageData) {
     throw new Error('画像入力データが不正です');
   }
-  const inputOptions = {
-    expectedInputs: [{ type: 'text', languages: ['en', 'ja'] }, { type: 'image' }],
-    expectedOutputs: [{ type: 'text', languages: ['ja'] }]
-  };
-  const availability = await LanguageModel.availability(inputOptions);
-  signal.throwIfAborted();
-  if (availability === 'unavailable') {
-    throw new Error('この Chrome の Gemini Nano は画像入力を利用できません。Chrome と内蔵モデルの対応状況を確認してください。');
-  }
+  const inputOptions = nanoInputOptions('image');
   // メッセージで渡せない Blob を直接復元する。data: の fetch は拡張の connect-src で拒否される。
   let bytes;
   try {

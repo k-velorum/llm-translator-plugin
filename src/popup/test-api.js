@@ -49,11 +49,18 @@ export async function testApi(elements, settings) {
     return;
   }
   testButton.disabled = true;
-  testButton.textContent = '翻訳しています…';
+  testButton.textContent = '処理中…';
   showPendingStatus(testStatus, '応答を待っています…');
+  const requestId = `test:${Date.now()}:${Math.random()}`;
+  const onStatus = (message, sender) => {
+    if (sender.id !== chrome.runtime.id || message?.action !== 'testTranslationStatus' ||
+        message.requestId !== requestId || elements.testRequestVersion !== version) return;
+    showPendingStatus(testStatus, message.phase === 'loading' ? 'モデルを読み込み中…' : '処理中…');
+  };
+  if (settings.apiProvider === 'chromePrompt') chrome.runtime.onMessage?.addListener(onStatus);
   try {
     const response = await new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({ action: 'testTranslate', text: testText,
+      chrome.runtime.sendMessage({ action: 'testTranslate', requestId, text: testText,
         settings: { ...providerSettings, translationSystemPrompt: settings.translationSystemPrompt } }, (result) => {
         if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
         if (!result) return reject(new Error('拡張から応答がありません。拡張を再読み込みしてください。'));
@@ -75,6 +82,7 @@ export async function testApi(elements, settings) {
       testErrorDetails.classList.remove('hidden');
     }
   } finally {
+    if (settings.apiProvider === 'chromePrompt') chrome.runtime.onMessage?.removeListener(onStatus);
     testButton.disabled = false;
     testButton.textContent = '翻訳して確認';
     if (elements.testRequestVersion !== version) {

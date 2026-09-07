@@ -166,7 +166,7 @@ describe('Nano: offscreenから各表示経路までのストリーム', () => {
     view.cancelLocalStreamSession(id);
     await running; await vi.advanceTimersByTimeAsync(0);
     expect(sessions[0].destroy).toHaveBeenCalledOnce();
-    expect(render).not.toHaveBeenCalled();
+    expect(render.mock.calls.map(([text]) => text)).toEqual(['モデルを読み込み中…', '処理中…']);
     expect(view.streamViewSessions.size).toBe(0);
   });
 
@@ -199,4 +199,99 @@ describe('Nano: offscreenから各表示経路までのストリーム', () => {
     expect(listeners.size).toBe(before);
     expect(sessions[0].destroy).toHaveBeenCalledOnce();
   });
+});
+
+describe('Nano の準備と生成の境界', () => {
+  it.each(['downloadable', 'downloading'])('%s では翻訳を開始せず準備画面に案内する', async availability => {
+    globalThis.LanguageModel.availability.mockResolvedValue(availability);
+    await expect(api.translateText('hello', settings)).rejects.toMatchObject({ name: 'NanoPreparationRequired' });
+    expect(globalThis.LanguageModel.create).not.toHaveBeenCalled();
+  });
+
+  it('ロード待ちは生成のタイムアウトを消費しない', async () => {
+    const create = globalThis.LanguageModel.create.getMockImplementation();
+    globalThis.LanguageModel.create.mockImplementationOnce(async options => {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return create(options);
+    });
+    const onStatus = vi.fn();
+    const running = api.translateTextStream('hello', settings, { onStatus }, { timeoutMs: 250 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(controllers).toHaveLength(1);
+    expect(onStatus.mock.calls.map(([phase]) => phase)).toEqual(['loading', 'running']);
+    controllers[0].enqueue('訳文'); controllers[0].close();
+    expect(await running).toBe('訳文');
+  });
+
+  it('同時リクエストは最初のロードを待ち、生成セッションは分ける', async () => {
+    const create = globalThis.LanguageModel.create.getMockImplementation();
+    let finishLoad;
+    globalThis.LanguageModel.create.mockImplementationOnce(async options => {
+      await new Promise(resolve => { finishLoad = resolve; });
+      return create(options);
+    });
+    const one = api.translateTextStream('one', settings);
+    const two = api.translateTextStream('two', settings);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(globalThis.LanguageModel.create).toHaveBeenCalledTimes(1);
+    finishLoad();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(globalThis.LanguageModel.create).toHaveBeenCalledTimes(2);
+    controllers.forEach((controller, index) => { controller.enqueue(String(index)); controller.close(); });
+    expect(await Promise.all([one, two])).toEqual(['0', '1']);
+    sessions.forEach(session => expect(session.destroy).toHaveBeenCalledOnce());
+  });
+
+  it('ロード待ちの中止は別のリクエストを中断しない', async () => {
+    const create = globalThis.LanguageModel.create.getMockImplementation();
+    let finishLoad;
+    globalThis.LanguageModel.create.mockImplementationOnce(async options => {
+      await new Promise(resolve => { finishLoad = resolve; });
+      return create(options);
+    });
+    const first = api.translateTextStream('one', settings);
+    const controller = new AbortController();
+    const second = api.translateTextStream('two', settings, {}, { signal: controller.signal });
+    const rejected = expect(second).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.advanceTimersByTimeAsync(0);
+    controller.abort(); await rejected;
+    finishLoad(); await vi.advanceTimersByTimeAsync(0);
+    controllers[0].enqueue('完了'); controllers[0].close();
+    expect(await first).toBe('完了');
+    expect(globalThis.LanguageModel.create).toHaveBeenCalledOnce();
+  });
+
+  it('ロードのタイムアウト後に遅れて作られたセッションも解放する', async () => {
+    const lateSession = { destroy: vi.fn() };
+    let finishLoad;
+    globalThis.LanguageModel.create.mockImplementationOnce(() => new Promise(resolve => { finishLoad = resolve; }));
+    const running = api.translateTextStream('one', settings);
+    const rejected = expect(running).rejects.toMatchObject({ name: 'NanoLoadError' });
+    await vi.advanceTimersByTimeAsync(180001); await rejected;
+    finishLoad(lateSession); await vi.advanceTimersByTimeAsync(0);
+    expect(lateSession.destroy).toHaveBeenCalledOnce();
+  });
+});
+
+
+it('ページ翻訳でもロード待ちを生成予算から除外する', async () => {
+  const create = globalThis.LanguageModel.create.getMockImplementation();
+  globalThis.LanguageModel.create.mockImplementationOnce(async options => {
+    await new Promise(resolve => setTimeout(resolve, 4000));
+    return create(options);
+  });
+  const { translateChunk } = await import('../src/background/page-translation/translator.js');
+  const start = Date.now();
+  const budget = { deadlineAt: start + 3000, preparationRemainingMs: 180000 };
+  const onPreview = vi.fn();
+  const running = translateChunk(['hello'], settings, { delayMs: 0 }, {
+    timeoutMs: 3000, budget, onPreview
+  });
+  await vi.advanceTimersByTimeAsync(4000);
+  expect(controllers).toHaveLength(1);
+  expect(budget.deadlineAt).toBe(start + 7000);
+  expect(onPreview).toHaveBeenCalledWith('モデルを読み込み中…');
+  expect(onPreview).toHaveBeenCalledWith('処理中…');
+  controllers[0].enqueue('こんにちは'); controllers[0].close();
+  expect(await running).toMatchObject({ parts: ['こんにちは'] });
 });

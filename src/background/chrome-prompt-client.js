@@ -1,3 +1,4 @@
+import { NANO_LOAD_TIMEOUT_MS } from '../shared/chrome-prompt.js';
 import {
   PROVIDER_AVAILABILITY_TIMEOUT_MS,
   TRANSLATION_TIMEOUT_MS
@@ -93,9 +94,19 @@ export async function callChromePromptRuntime(action, payload = {}, requestOptio
     let aggregated = '';
     const onRuntimeMessage = (message, sender, sendResponse) => {
       if (message?.target !== 'chromePromptClient' || message.requestId !== requestId ||
-          message.action !== 'delta' || sender.id !== chrome.runtime.id ||
+          !['delta', 'status'].includes(message.action) || sender.id !== chrome.runtime.id ||
           sender.url !== chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH)) return false;
       if (settled) return false;
+      if (message.action === 'status') {
+        if (message.phase === 'running' && !inferenceStarted) {
+          inferenceStarted = true;
+          armTimeout(timeoutMs, '翻訳がタイムアウトしました', 'TimeoutError');
+        }
+        Promise.resolve().then(() => { if (!settled) return requestOptions.onStatus?.(message.phase); })
+          .then(() => sendResponse({ accepted: !settled }))
+          .catch(error => { notifyAbort(); settle(reject, error); sendResponse({ accepted: false }); });
+        return true;
+      }
       const delta = typeof message.deltaText === 'string' ? message.deltaText : '';
       aggregated += delta;
       Promise.resolve().then(() => { if (!settled) return requestOptions.onDelta?.(delta, aggregated); })
@@ -118,14 +129,19 @@ export async function callChromePromptRuntime(action, payload = {}, requestOptio
       externalSignal.addEventListener('abort', onAbort, { once: true });
     }
 
-    if (timeoutMs > 0) {
+    let inferenceStarted = false;
+    function armTimeout(duration, message, name) {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (duration <= 0) return;
       timeoutId = setTimeout(() => {
-        const error = new Error(`Chrome Prompt runtime timeout: ${action}`);
-        error.name = 'TimeoutError';
+        const error = Object.assign(new Error(message), { name });
         notifyAbort();
         settle(reject, error);
-      }, timeoutMs);
+      }, duration);
     }
+    armTimeout(action === 'availability' ? timeoutMs : NANO_LOAD_TIMEOUT_MS,
+      action === 'availability' ? 'Gemini Nano の状態確認がタイムアウトしました' : 'Gemini Nano のモデル読み込みがタイムアウトしました。再試行してください。',
+      action === 'availability' ? 'TimeoutError' : 'NanoLoadError');
 
     try {
       chrome.runtime.sendMessage(

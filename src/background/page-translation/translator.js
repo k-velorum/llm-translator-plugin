@@ -20,7 +20,7 @@ const SPLIT_FALLBACK_MAX_DEPTH = 2;
 const BUDGET_SAFETY_MARGIN_MS = 2000;
 
 function remainingBudgetMs(requestOptions) {
-  const deadlineAt = requestOptions?.deadlineAt;
+  const deadlineAt = requestOptions?.budget?.deadlineAt ?? requestOptions?.deadlineAt;
   if (!Number.isFinite(deadlineAt)) return Infinity;
   return deadlineAt - Date.now();
 }
@@ -46,6 +46,21 @@ async function requestTranslation(operation, text, settings, options) {
   const onDelta = options.onPreview ? (_delta, fullText) => report(operation === translateBatchStructured
     ? structuredBatchPreview(fullText)
     : options.previewSeparator ? fullText.split(options.previewSeparator).join('\n\n') : fullText) : undefined;
+  if (settings.apiProvider === 'chromePrompt') {
+    let loadingAt;
+    return operation(text, settings, { ...options, ...(onDelta ? { onDelta } : {}),
+      onStatus: async phase => {
+        if (phase === 'loading') loadingAt = Date.now();
+        if (phase === 'running' && loadingAt !== undefined && options.budget) {
+          const elapsed = Math.min(Date.now() - loadingAt, options.budget.preparationRemainingMs);
+          options.budget.deadlineAt += elapsed;
+          options.budget.preparationRemainingMs -= elapsed;
+          loadingAt = undefined;
+        }
+        await report(phase === 'loading' ? 'モデルを読み込み中…' : '処理中…', { status: true });
+      }
+    });
+  }
   // provider 内部のフォーマット切替・HTTP再試行も一つの期限に含める。
   return withTimeout(
     (signal) => operation(text, settings, { ...options, signal, ...(onDelta ? { onDelta } : {}) }),

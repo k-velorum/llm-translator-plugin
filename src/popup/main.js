@@ -1,3 +1,4 @@
+import { mountNanoPreparation } from './nano-preparation.js';
 import { createConnectionForm } from './connection-form.js';
 import { getActiveConnection } from '../shared/connections.js';
 import {
@@ -29,6 +30,7 @@ document.addEventListener('DOMContentLoaded', init);
 async function init() {
   renderProviderSections(document.getElementById('provider-sections'));
   const elements = getElements();
+  mountNanoPreparation(elements.chromePromptSection);
   createVerificationUI(elements);
   let savedSettings;
   try {

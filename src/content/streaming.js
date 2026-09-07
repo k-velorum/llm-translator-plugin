@@ -97,6 +97,12 @@ function scheduleStreamSessionRender(requestId) {
   }, STREAM_RENDER_INTERVAL_MS);
 }
 
+function updateStreamSessionStatus(requestId, phase) {
+  const session = streamViewSessions.get(requestId);
+  if (!session || session.closed || session.renderedText || session.pendingText) return;
+  renderStreamSession(session, phase === 'loading' ? 'モデルを読み込み中…' : '処理中…');
+}
+
 function appendStreamSessionDelta(requestId, deltaText) {
   const session = streamViewSessions.get(requestId);
   if (!session || session.closed || typeof deltaText !== 'string' || !deltaText.length) return;
@@ -207,6 +213,7 @@ window.LLMT.streaming = {
   registerStreamSession,
   discardStreamSession,
   findStreamSessionByElement,
+  updateStreamSessionStatus,
   appendStreamSessionDelta,
   completeStreamSession,
   failStreamSession,

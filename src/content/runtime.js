@@ -69,6 +69,11 @@ const runtimeMessageHandlers = {
     return false;
   },
 
+  translationStreamStatus(message) {
+    window.updateStreamSessionStatus(message.requestId, message.phase);
+    return false;
+  },
+
   translationStreamDelta(message) {
     window.appendStreamSessionDelta(message.requestId, message.deltaText || '');
     return false;

@@ -1,0 +1,50 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>Nano 準備画面テスト</title>
+<style>body{font:16px/1.7 system-ui;margin:32px} .form-group{border:1px solid #ccc;padding:12px;margin:12px 0}button{padding:8px;margin:4px}</style>
+<h1>Nano 準備画面テスト</h1><pre id="results"></pre><div id="fixture"></div>
+<script type="module">
+import { mountNanoPreparation } from '/src/popup/nano-preparation.js';
+const output = document.getElementById('results');
+const fixture = document.getElementById('fixture');
+const checks = [];
+function check(condition, label) { if (!condition) throw Error(label); checks.push(label); output.textContent = checks.map(x => 'PASS ' + x).join('\n'); }
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+const states = { text: 'downloadable', image: 'unavailable' };
+const calls = [];
+const pending = [];
+Object.defineProperty(window, 'LanguageModel', { configurable: true, value: {
+  availability: async options => states[options.expectedInputs.some(input => input.type === 'image') ? 'image' : 'text'],
+  create(options) {
+    calls.push(options);
+    const monitor = new EventTarget(); options.monitor(monitor);
+    return new Promise((resolve, reject) => pending.push({ resolve, reject, monitor }));
+  }
+} });
+try {
+  const ui = mountNanoPreparation(fixture, { canPrepare: true });
+  await tick();
+  const rows = fixture.querySelectorAll('.form-group');
+  const button = rows[0].querySelector('button');
+  check(!button.disabled && rows[0].textContent.includes('初回ダウンロード'), '初回ダウンロードを案内');
+  check(rows[1].querySelector('button').disabled, '画像非対応をテキストと分けて表示');
+  button.click();
+  check(calls.length === 1 && button.textContent === '中止', '操作から直接準備を開始し中止を表示');
+  const progressEvent = new Event('downloadprogress'); Object.defineProperty(progressEvent, 'loaded', { value: .42 });
+  pending[0].monitor.dispatchEvent(progressEvent);
+  check(rows[0].textContent.includes('42%') && rows[0].querySelector('progress').value === .42, 'ダウンロード進捗を表示');
+  button.click(); await tick();
+  check(calls[0].signal.aborted && rows[0].textContent.includes('中止しました'), '中止と再試行の案内');
+  let destroyed = 0;
+  pending[0].resolve({ destroy() { destroyed++; } }); await tick();
+  check(destroyed === 1 && rows[0].textContent.includes('中止しました'), '中止後に完成したセッションを解放し完了表示しない');
+  button.click(); pending[1].reject(Error('通信失敗')); await tick();
+  check(rows[0].textContent.includes('通信失敗') && !button.disabled, '失敗理由と再試行');
+  button.click(); pending[2].resolve({ destroy() { destroyed++; } }); await tick();
+  check(button.disabled && rows[0].textContent.includes('利用可能') && destroyed === 2, '完了とセッション解放');
+  states.text = 'downloading'; await ui.refresh();
+  check(!button.disabled && button.textContent === '進捗を表示', '進行中のダウンロードに接続可能');
+  button.click(); ui.dispose(); await tick();
+  check(calls[3].signal.aborted, '画面終了時に準備の待機を中止');
+  pending[3].resolve({ destroy() { destroyed++; } }); await tick();
+  document.title = 'PASS Nano 準備画面テスト';
+} catch (error) { output.textContent += '\nFAIL ' + error.stack; document.title = 'FAIL Nano 準備画面テスト'; }
+</script></html>

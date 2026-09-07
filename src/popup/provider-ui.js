@@ -68,7 +68,7 @@ export const PROVIDER_UI = {
         min: '0',
         max: '2',
         step: '0.1',
-        note: 'Chrome の Built-in Prompt API / Gemini Nano を使用します。APIキー、モデル選択、外部HTTP通信は不要です。'
+        note: 'Chrome の Built-in Prompt API / Gemini Nano を使用します。APIキーは不要です。初回は Chrome によるモデルのダウンロードが必要です。'
       }
     ]
   }

@@ -300,8 +300,8 @@ function prepareSelectionTranslationStream({ kind = 'selection', anchorRect = nu
 
 function showSelectionStreamPopup(requestId, anchorRect = null, notice = '') {
   return createSelectionPopup({
-    titleText: '翻訳中',
-    bodyText: '翻訳しています...',
+    titleText: '処理中',
+    bodyText: '処理中…',
     requestId,
     anchorRect,
     notice,
@@ -316,11 +316,11 @@ function updateSelectionStreamPopup(requestId, text, { isError = false, isComple
   const copyBtn = translationPopup.__copyBtn;
   if (!content || !title || !copyBtn) return;
 
-  title.textContent = isError ? '翻訳エラー' : (isCompleted ? '翻訳結果' : '翻訳中');
+  title.textContent = isError ? '翻訳エラー' : (isCompleted ? '翻訳結果' : '処理中');
   translationPopup.__renderedText = text;
   // textContent 代入で loading 中のスピナーごと消えるため、flex レイアウトも通常表示へ戻す
   applyStyles(content, { display: '', alignItems: '', gap: '' });
-  content.textContent = text || (isCompleted ? '' : '翻訳しています...');
+  content.textContent = text || (isCompleted ? '' : '処理中…');
   copyBtn.disabled = !text;
   copyBtn.style.opacity = copyBtn.disabled ? '0.65' : '1';
 
@@ -355,14 +355,14 @@ function showLoadingPopup(anchorRect = null) {
   translationPopup.className = 'llm-translation-popup';
   translationPopup.dataset.llmtUi = '';
   translationPopup.setAttribute('role', 'dialog');
-  translationPopup.setAttribute('aria-label', '翻訳中');
+  translationPopup.setAttribute('aria-label', '処理中');
   applyStyles(translationPopup, styles.popup);
 
   const header = document.createElement('div');
   applyStyles(header, styles.header);
 
   const title = document.createElement('div');
-  title.textContent = '翻訳中';
+  title.textContent = '処理中';
   applyStyles(title, styles.title);
   header.appendChild(title);
 
@@ -377,7 +377,7 @@ function showLoadingPopup(anchorRect = null) {
   const spinner = createLoadingSpinner();
 
   const loadingText = document.createElement('span');
-  loadingText.textContent = '翻訳しています...';
+  loadingText.textContent = '処理中…';
   loadingText.style.color = '#4b5d78';
 
   content.appendChild(spinner);
@@ -409,7 +409,7 @@ function showTranslationPopup(translatedText, anchorRect = null, notice = '') {
 function showSelectionSummary(text) {
   if (typeof text !== 'string' || !text.trim()) return;
   const anchorRect = resolvePopupAnchorRect(null);
-  const popup = createSelectionPopup({ titleText: '要約中', bodyText: '要約しています...', loading: true, anchorRect });
+  const popup = createSelectionPopup({ titleText: '処理中', bodyText: '処理中…', loading: true, anchorRect });
   const content = popup.__contentEl;
   const actions = popup.lastElementChild;
   applyStyles(actions, { flexWrap: 'wrap', gap: '8px', position: 'sticky', bottom: '0', backgroundColor: '#fff' });
@@ -452,10 +452,10 @@ function showSelectionSummary(text) {
     busy = true;
     lastAdjustment = adjustment;
     retry.hidden = true;
-    popup.__titleEl.textContent = currentSummary ? '要約を調整中' : '要約中';
+    popup.__titleEl.textContent = '処理中';
     popup.setAttribute('aria-label', popup.__titleEl.textContent);
     popup.setAttribute('aria-busy', 'true');
-    status.textContent = currentSummary ? '要約を調整しています...' : '';
+    status.textContent = currentSummary ? '処理中…' : '';
     updateButtons();
     const result = await window.LLMT.streaming.requestSelectionSummary({
       text, currentSummary, adjustment, popup,

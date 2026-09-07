@@ -26,7 +26,7 @@ export async function streamToPopup({ tabId, frameId, kind, anchorRect, notice, 
   popupStreams.set(requestId, session);
   try {
     await emitter.start();
-    const text = await run({ onDelta: delta => emitter.pushDelta(delta) }, {
+    const text = await run({ onDelta: delta => emitter.pushDelta(delta), onStatus: phase => emitter.status(phase) }, {
       signal: controller.signal, timeoutMs: TRANSLATION_TIMEOUT_MS
     });
     if (session.cancelled) return { displayed: true };
@@ -122,6 +122,12 @@ export function createStreamEventEmitter({
           meta
         });
       });
+    },
+    async status(phase) {
+      if (closed) return;
+      await enqueue(() => sendMessageToFrame(tabId, frameId, {
+        action: 'translationStreamStatus', requestId, phase
+      }));
     },
     async pushDelta(deltaText) {
       if (closed || typeof deltaText !== 'string' || !deltaText.length) return;

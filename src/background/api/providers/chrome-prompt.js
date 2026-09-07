@@ -14,7 +14,7 @@ async function translateBatchStructured(texts, settings, requestOptions = {}) {
 
 function stream(action, payload, settings, handlers, requestOptions) {
   return callChromePromptRuntime(action, { ...payload, settings }, {
-    ...requestOptions, onDelta: handlers?.onDelta
+    ...requestOptions, onDelta: handlers?.onDelta, onStatus: handlers?.onStatus || requestOptions?.onStatus
   });
 }
 

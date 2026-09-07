@@ -11,6 +11,7 @@ async function requestSelectionTranslation(prepared, text, settings, signal, onP
   const result = await translateText(structured ? serializeSelectionDocument(prepared.paragraphs) : text,
     structured ? selectionDocumentSettings(settings) : settings,
     { signal, timeoutMs: TRANSLATION_TIMEOUT_MS,
+      onStatus: phase => onPreview(phase === 'loading' ? 'モデルを読み込み中…' : '処理中…', { status: true }),
       onDelta: (_delta, fullText) => onPreview(structured ? selectionDocumentPreview(fullText) : fullText) });
   const translations = structured ? parseSelectionDocument(result) : [];
   return { translations, displayText: structured ? selectionDocumentText(translations) : result };

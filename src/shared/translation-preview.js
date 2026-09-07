@@ -12,11 +12,11 @@ export function structuredBatchPreview(source) {
 // UIへ送る頻度と量を制限する。生成の再試行時は空文字で前のプレビューを消す。
 export function createPreviewReporter(send, signal) {
   let lastSentAt = -Infinity;
-  return async text => {
+  return async (text, { status = false } = {}) => {
     if (!send || signal?.aborted) return;
     const now = Date.now();
-    if (text && now - lastSentAt < 100) return;
-    lastSentAt = now;
+    if (!status && text && now - lastSentAt < 100) return;
+    lastSentAt = status ? -Infinity : now;
     await send(text.slice(-1200));
   };
 }

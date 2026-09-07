@@ -79,6 +79,9 @@ export function getErrorPolicy(error) {
 
 function getRuntimeErrorPolicy(error) {
   let policy;
+  if (['NanoPreparationRequired', 'NanoUnavailable', 'NanoLoadError', 'NanoDownloadError'].includes(error?.name)) {
+    policy = ['configuration', false, 'Chrome Gemini Nano の設定でモデルの状態を確認してください。'];
+  }
   if (error?.code === 'configuration') policy = ['configuration', false, '接続先・APIキー・モデルの設定を確認してください。'];
   if (error?.name === 'TimeoutError') policy = HTTP_POLICIES[408];
   if (!policy && error?.name === 'AbortError') policy = ['cancelled', false, ''];

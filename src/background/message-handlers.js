@@ -97,6 +97,7 @@ async function startStreamingTranslation(message, sender, sendResponse, { summar
         summaryRequest ? summaryRequest.input : text,
         settings,
         {
+          onStatus: phase => emitter.status(phase),
           onDelta: async (deltaText) => {
             await emitter.pushDelta(deltaText);
           }
@@ -172,7 +173,10 @@ async function handleTestTranslate(message, sender, sendResponse) {
   const currentSettings = await loadSettings();
   const testSettings = { ...currentSettings, ...message.settings };
   try {
-    const result = await translateText(message.text, testSettings, { timeoutMs: TRANSLATION_TIMEOUT_MS });
+    const result = await translateText(message.text, testSettings, {
+      timeoutMs: TRANSLATION_TIMEOUT_MS,
+      onStatus: phase => chrome.runtime.sendMessage({ action: 'testTranslationStatus', requestId: message.requestId, phase }).catch(() => {})
+    });
     sendResponse({ result });
   } catch (error) {
     log.error('messageHandlers', 'テスト翻訳エラー', error);

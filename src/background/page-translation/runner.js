@@ -1,3 +1,4 @@
+import { NANO_LOAD_TIMEOUT_MS } from '../../shared/chrome-prompt.js';
 import { formatUserError, shouldPauseTranslationQueue } from '../../shared/errors.js';
 import { DEFAULT_SETTINGS } from '../settings.js';
 import { appendLog, getProviderMeta } from '../logging.js';
@@ -74,14 +75,18 @@ async function translateMissingParts(session, chunk, parts, timeoutMs, onPreview
   const missing = chunk.map((_, i) => i).filter((i) => typeof parts[i] !== 'string');
   if (missing.length === 0) return { method: 'cached' };
   const budgetMs = timeoutMs * CHUNK_BUDGET_MULTIPLIER;
+  // Nanoのロード待ちは生成予算から除外し、チャンク全体では別枠の上限を設ける。
+  const preparationMs = session.settings.apiProvider === 'chromePrompt' ? NANO_LOAD_TIMEOUT_MS : 0;
+  const budget = { deadlineAt: Date.now() + budgetMs, preparationRemainingMs: preparationMs };
   const result = await withTimeout(
     (signal) => translateChunk(missing.map((i) => chunk[i]), session.settings, session.params, {
       timeoutMs,
-      deadlineAt: Date.now() + budgetMs,
+      deadlineAt: budget.deadlineAt,
+      budget,
       onPreview,
       signal
     }),
-    budgetMs,
+    budgetMs + preparationMs,
     session.abortController?.signal
   );
   mergeTranslatedParts(parts, missing, result.parts);
