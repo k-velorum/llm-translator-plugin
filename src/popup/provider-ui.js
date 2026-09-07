@@ -154,6 +154,10 @@ function createProviderField(provider, field) {
     select.appendChild(option);
     group.appendChild(select);
     if (provider === 'openai') {
+      const pricing = document.createElement('div');
+      pricing.id = 'openai-model-pricing';
+      pricing.className = 'model-pricing note';
+      group.appendChild(pricing);
       const hint = document.createElement('div');
       hint.className = 'note';
       hint.textContent = '入力例: gpt-4o-mini';

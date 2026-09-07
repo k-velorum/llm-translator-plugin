@@ -27,15 +27,32 @@ function needsPageTranslation(text) {
   return !hasKana || /\p{L}/u.test(otherLetters);
 }
 
+function orderPageTextNodes(nodes) {
+  const groups = [[], [], []];
+  const auxiliary = 'nav, aside, menu, [role~="navigation"], [role~="complementary"], ' +
+    '[role~="menu"], [role~="menubar"], [role~="listbox"], [role~="toolbar"], [role~="search"]';
+  const primary = 'main, article, [role~="main"], [role~="article"]';
+  for (const node of nodes) {
+    const parent = node.parentElement;
+    // 本文の中のメニューも後回しにするため、補助領域を先に判定する。
+    const priority = parent.closest(auxiliary) ? 2 : parent.closest(primary) ? 0 : 1;
+    groups[priority].push(node);
+  }
+  // DOM順で振り分けることで同順位の順序を保つ。DOMそのものは移動しない。
+  return groups.flat();
+}
+
 function capturePageTextSnapshot() {
   // 再実行時に旧パネルや選択翻訳ポップアップなど拡張自身の UI が
   // 翻訳対象に混入するとパネルが破壊されるため、キャプチャ時に除外する。
-  const nodes = DOMUtils.getTextNodes(document.body, { excludeExtensionUi: true }).filter((node) => {
+  const candidates = DOMUtils.getTextNodes(document.body, { excludeExtensionUi: true }).filter((node) => {
     const parent = node.parentElement;
     return parent && !parent.isContentEditable && !parent.closest(
       'textarea, input, select, code, pre, [hidden], [aria-hidden="true"], [translate="no"], .notranslate'
     ) && needsPageTranslation(getOriginalPageText(node));
   });
+  // ノードと原文を一緒に並べ替え、チャンクのoffsetを同じsnapshot内の位置に保つ。
+  const nodes = orderPageTextNodes(candidates);
   const texts = nodes.map(getOriginalPageText);
   pageTranslationSnapshot = {
     // randomUUID は通常の HTTP ページでは使えないため getRandomValues を使う。

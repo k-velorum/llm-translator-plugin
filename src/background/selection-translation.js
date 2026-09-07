@@ -12,6 +12,7 @@ import {
 } from './streaming.js';
 import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
 import { log } from '../shared/logger.js';
+import { cancelSelectionReplacement, translateSelectionReplacement } from './selection-replacement.js';
 
 const selectionStreamSessions = new Map();
 
@@ -214,6 +215,7 @@ async function openInNewTab(translatedText) {
 }
 
 export function cancelSelectionStream(requestId) {
+  if (cancelSelectionReplacement(requestId)) return true;
   const session = selectionStreamSessions.get(requestId);
   if (!session) return false;
   session.cancelled = true;
@@ -221,8 +223,10 @@ export function cancelSelectionStream(requestId) {
   return true;
 }
 
-export async function translateAndNotify(tabId, text, frameId = 0) {
+export async function translateAndNotify(tabId, text, frameId = 0, source = 'selection') {
   const settings = await loadSettings();
+  if (settings.selectionTranslationMode === 'replace' &&
+    await translateSelectionReplacement(tabId, text, frameId, settings, source)) return;
   let translatedText;
   const capabilities = getProviderCapabilities(settings);
 

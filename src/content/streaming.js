@@ -168,6 +168,36 @@ function startEmbeddedTranslationStream({ kind, text, render, element, meta }) {
   };
 }
 
+async function requestSelectionSummary({ text, currentSummary, adjustment, popup, render }) {
+  const requestId = createTranslationRequestId('summary');
+  popup.dataset.requestId = requestId;
+  const session = registerStreamSession(requestId, {
+    kind: 'summary', state: 'running',
+    render: (value, state) => {
+      if (!state.isError) render(value);
+    }
+  });
+  // 開始応答より先に完了・エラー・キャンセルが届いても未処理のrejectを残さない。
+  const completed = session.promise.then(
+    summary => ({ ok: true, data: { summary } }),
+    error => ({ ok: false, error: { message: error.message } })
+  );
+  const payload = { text, currentSummary, adjustment };
+  const response = await window.LLMT.messaging.sendBackgroundMessage('startSummaryStream', { ...payload, requestId });
+  if (!popup.isConnected) {
+    if (response.ok && response.data.accepted) cancelTranslationStream(requestId);
+    cancelLocalStreamSession(requestId);
+    return { ok: false, error: { message: 'cancelled' } };
+  }
+  if (response.ok && response.data.accepted) return completed;
+  cancelLocalStreamSession(requestId);
+  popup.dataset.requestId = '';
+  if (response.ok && response.data.reason === 'unsupported') {
+    return window.LLMT.messaging.sendBackgroundMessage('summarizeSelection', payload);
+  }
+  return { ok: false, error: response.error || response.data?.error || { message: '要約を開始できませんでした。' } };
+}
+
 window.LLMT = window.LLMT || {};
 window.LLMT.streaming = {
   streamViewSessions,
@@ -181,7 +211,8 @@ window.LLMT.streaming = {
   completeStreamSession,
   failStreamSession,
   cancelLocalStreamSession,
-  startEmbeddedTranslationStream
+  startEmbeddedTranslationStream,
+  requestSelectionSummary
 };
 Object.assign(window, window.LLMT.streaming);
 })();

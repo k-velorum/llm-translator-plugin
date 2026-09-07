@@ -1,4 +1,5 @@
 import {
+  callChromePromptRuntime,
   translateBatchStructuredWithChromePromptRuntime,
   translateWithChromePromptRuntime
 } from '../../chrome-prompt-client.js';
@@ -13,5 +14,7 @@ async function translateBatchStructured(texts, settings, requestOptions = {}) {
 
 export default {
   translate,
+  translateImage: (imageInput, settings, requestOptions = {}) =>
+    callChromePromptRuntime('translateImage', { imageInput, settings }, requestOptions),
   translateBatchStructured
 };

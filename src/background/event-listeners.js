@@ -49,6 +49,15 @@ async function setupContextMenu() {
     });
 
     await new Promise((resolve, reject) => {
+      chrome.contextMenus.create({
+        id: 'summarize-selection', title: 'LLM要約', contexts: ['selection']
+      }, () => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve();
+      });
+    });
+
+    await new Promise((resolve, reject) => {
       chrome.contextMenus.create(
         {
           id: 'translate-page',
@@ -99,6 +108,17 @@ async function setupContextMenu() {
 
 // コンテキストメニュークリック時の処理
 async function handleContextMenuClick(info, tab) {
+  if (info.menuItemId === 'summarize-selection' && info.selectionText) {
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        action: 'showSelectionSummary', text: info.selectionText
+      }, { frameId: Number.isInteger(info.frameId) ? info.frameId : 0 });
+    } catch (error) {
+      log.warn('eventListeners', '要約を表示できません。対象ページを再読み込みしてください。', error);
+    }
+    return;
+  }
+
   if (info.menuItemId === 'translate-page') {
     await startPageTranslation(tab?.id);
     return;
@@ -109,7 +129,7 @@ async function handleContextMenuClick(info, tab) {
     log.info('eventListeners', 'コンテキストメニューから翻訳', { selectedText });
     try {
       await chrome.tabs.get(tab.id);
-      await translateAndNotify(tab.id, selectedText, Number.isInteger(info?.frameId) ? info.frameId : 0);
+      await translateAndNotify(tab.id, selectedText, Number.isInteger(info?.frameId) ? info.frameId : 0, 'contextmenu');
     } catch (tabError) {
       log.error('eventListeners', 'タブへのアクセスエラー (コンテキストメニュー)', tabError);
     }
@@ -127,6 +147,18 @@ async function handleContextMenuClick(info, tab) {
 
 // キーボードショートカット処理
 async function handleCommand(command) {
+  if (command === 'summarize-selection') {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id) return;
+      // 選択のあるフォーカス中のフレーム自身が表示し、iframe内の選択にも対応する。
+      await chrome.tabs.sendMessage(tab.id, { action: 'summarizeFocusedSelection' });
+    } catch (error) {
+      log.warn('eventListeners', '要約ショートカットを実行できません。対象ページを再読み込みしてください。', error);
+    }
+    return;
+  }
+
   if (command === 'translate-selection') {
     log.info('eventListeners', '翻訳ショートカットが押されました');
     try {
@@ -136,23 +168,8 @@ async function handleCommand(command) {
         return;
       }
 
-      const response = await new Promise((resolve, reject) => {
-        chrome.tabs.sendMessage(tab.id, { action: 'getSelectedText' }, (selectedResponse) => {
-          if (chrome.runtime.lastError) {
-            return reject(chrome.runtime.lastError);
-          }
-          resolve(selectedResponse);
-        });
-      });
-
-      if (!response || !response.selectedText) {
-        log.info('eventListeners', '選択されたテキストがありません (ショートカット)');
-        return;
-      }
-
-      const selectedText = response.selectedText;
-      log.info('eventListeners', '選択テキスト (ショートカット)', { selectedText });
-      await translateAndNotify(tab.id, selectedText, 0);
+      // 応答の先着順に依存せず、選択元フレームから翻訳を開始する。
+      await chrome.tabs.sendMessage(tab.id, { action: 'translateFocusedSelection' });
     } catch (error) {
       if (error.message && error.message.includes('Could not establish connection')) {
         log.warn('eventListeners', 'コンテンツスクリプトとの接続確立失敗 (ショートカット)', error);

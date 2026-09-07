@@ -1,3 +1,4 @@
+import { buildSummaryRequest, handleSelectionSummary } from './selection-summary.js';
 import { getErrorLogLevel } from '../shared/errors.js';
 import { loadSettings } from './settings.js';
 import {
@@ -7,7 +8,7 @@ import {
 } from './api.js';
 import { getProviderDefinition } from './api/registry.js';
 import { appendLog, getProviderMeta } from './logging.js';
-import { cancelSelectionStream } from './selection-translation.js';
+import { cancelSelectionStream, translateAndNotify } from './selection-translation.js';
 import {
   createStreamEventEmitter,
   normalizeStreamError
@@ -37,10 +38,10 @@ async function cleanupActiveStream(requestId, { notifyCancelled = false } = {}) 
   }
 }
 
-async function startStreamingTranslation(message, sender, sendResponse) {
+async function startStreamingTranslation(message, sender, sendResponse, { summary = false } = {}) {
   const requestId = typeof message?.requestId === 'string' ? message.requestId.trim() : '';
   const text = typeof message?.text === 'string' ? message.text : '';
-  const kind = typeof message?.kind === 'string' ? message.kind : 'generic';
+  const kind = summary ? 'summary' : (typeof message?.kind === 'string' ? message.kind : 'generic');
   const tabId = sender?.tab?.id;
   const frameId = Number.isInteger(sender?.frameId) ? sender.frameId : 0;
 
@@ -62,7 +63,11 @@ async function startStreamingTranslation(message, sender, sendResponse) {
   }
 
   try {
-    const settings = await loadSettings();
+    const savedSettings = await loadSettings();
+    const summaryRequest = summary ? buildSummaryRequest(message) : null;
+    const settings = summaryRequest
+      ? { ...savedSettings, translationSystemPrompt: summaryRequest.systemPrompt }
+      : savedSettings;
     const capabilities = getProviderCapabilities(settings);
     if (!capabilities.supportsStreaming) {
       sendResponse({ accepted: false, reason: 'unsupported' });
@@ -95,7 +100,7 @@ async function startStreamingTranslation(message, sender, sendResponse) {
     try {
       await emitter.start(message?.meta);
       const finalText = await translateTextStream(
-        text,
+        summaryRequest ? summaryRequest.input : text,
         settings,
         {
           onDelta: async (deltaText) => {
@@ -107,7 +112,8 @@ async function startStreamingTranslation(message, sender, sendResponse) {
           timeoutMs: STREAM_TIMEOUT_MS
         }
       );
-      await emitter.complete(finalText);
+      if (summary && !finalText?.trim()) throw new Error('要約が空でした。もう一度お試しください。');
+      await emitter.complete(summary ? finalText.trim() : finalText);
     } catch (error) {
       if (error?.name !== 'AbortError') {
         await appendLog({
@@ -220,11 +226,31 @@ async function handleGetModels(message, _sender, sendResponse, providerOverride)
   }
 }
 
+async function handleSelectionTranslation(message, sender, sendResponse) {
+  const text = typeof message.text === 'string' ? message.text.trim() : '';
+  const tabId = sender?.tab?.id;
+  const frameId = sender?.frameId;
+  if (!text || !Number.isInteger(tabId) || !Number.isInteger(frameId) || frameId < 0) {
+    sendResponse({ error: normalizeError('翻訳する選択範囲または送信元フレームが不正です') });
+    return;
+  }
+  try {
+    // メッセージ本文ではなくChromeが付与した送信元へ表示・置換を返す。
+    await translateAndNotify(tabId, text, frameId, 'shortcut');
+    sendResponse({ completed: true });
+  } catch (error) {
+    sendResponse({ error: normalizeError(error) });
+  }
+}
+
 const ACTION_HANDLERS = {
+  translateSelection: handleSelectionTranslation,
   getTranslationCapabilities: async (_message, _sender, sendResponse) => {
     try { sendResponse({ capabilities: getProviderCapabilities(await loadSettings()) }); }
     catch (error) { sendResponse({ error: normalizeError(error) }); }
   },
+  summarizeSelection: handleSelectionSummary,
+  startSummaryStream: (message, sender, sendResponse) => startStreamingTranslation(message, sender, sendResponse, { summary: true }),
   startTranslationStream: (message, sender, sendResponse) => startStreamingTranslation(message, sender, sendResponse),
   cancelTranslationStream: handleCancelTranslationStream,
   translateEmbeddedText: (message, sender, sendResponse) =>

@@ -50,9 +50,7 @@ export function initSelect2() {
       const modelId = event.params.data.id;
       const option = Array.from(this.options).find(option => option.value === modelId);
       const modelData = $(option).data('model');
-      if (modelData) {
-        updateModelInfo(provider, modelData);
-      }
+      updateModelInfo(provider, modelData || { id: modelId });
     });
   } else {
     log.error('popup.models', 'Select2またはjQueryが読み込まれていません');
@@ -206,9 +204,8 @@ export function populateModelSelect(provider, selectElement, models, preferredVa
   if (typeof jQuery !== 'undefined' && jQuery.fn.select2) {
     setupOrResetSelect2($(selectElement));
     $(selectElement).trigger('change');
-    const selected = entries.find(model => model.id === value);
-    if (selected) updateModelInfo(provider, selected);
   }
+  updateModelInfo(provider, entries.find(model => model.id === value));
 }
 
 export function setDefaultModels(provider, selectElement) {

@@ -37,6 +37,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return await handleTranslate(payload?.text || '', payload?.settings || {}, signal);
     }
 
+    if (action === 'translateImage') {
+      return await handleTranslateImage(payload?.imageInput, payload?.settings || {}, signal);
+    }
+
     if (action === 'translateBatchStructured') {
       return await handleTranslateBatchStructured(payload?.texts || [], payload?.settings || {}, signal);
     }
@@ -97,10 +101,11 @@ async function handleAvailability() {
   };
 }
 
-async function createSession(settings = {}, signal) {
+async function createSession(settings = {}, signal, inputOptions = {}) {
   assertLanguageModelAvailable();
 
   const options = {
+    ...inputOptions,
     signal,
     initialPrompts: [
       {
@@ -159,8 +164,8 @@ function buildSystemPrompt(settings = {}) {
   ].join('\n');
 }
 
-async function withSession(settings, signal, callback) {
-  const session = await createSession(settings, signal);
+async function withSession(settings, signal, callback, inputOptions = {}) {
+  const session = await createSession(settings, signal, inputOptions);
   try {
     return await callback(session);
   } finally {
@@ -180,6 +185,36 @@ async function handleTranslate(text, settings, signal) {
     const result = await session.prompt(input, { signal });
     return (result || '').trim();
   });
+}
+
+async function handleTranslateImage(imageInput, settings, signal) {
+  assertLanguageModelAvailable();
+  // Chrome のメッセージは JSON シリアライズされるため、Blob は受信側で復元する。
+  if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageInput?.dataUrl || '')) {
+    throw new Error('画像入力データが不正です');
+  }
+  const inputOptions = {
+    expectedInputs: [{ type: 'text', languages: ['en', 'ja'] }, { type: 'image' }],
+    expectedOutputs: [{ type: 'text', languages: ['ja'] }]
+  };
+  const availability = await LanguageModel.availability(inputOptions);
+  signal.throwIfAborted();
+  if (availability === 'unavailable') {
+    throw new Error('この Chrome の Gemini Nano は画像入力を利用できません。Chrome と内蔵モデルの対応状況を確認してください。');
+  }
+  const image = await (await fetch(imageInput.dataUrl, { signal })).blob();
+  return await withSession(settings, signal, async (session) => {
+    const result = await session.prompt([{
+      role: 'user',
+      content: [
+        { type: 'text', value: 'この画像に含まれるテキストを読み取り、日本語に翻訳してください。翻訳結果のみを出力してください。テキストが見当たらない場合は「翻訳対象のテキストが見つかりませんでした。」とだけ出力してください。' },
+        { type: 'image', value: image }
+      ]
+    }], { signal });
+    const text = (result || '').trim();
+    if (!text) throw new Error('Gemini Nano から画像翻訳結果を取得できませんでした');
+    return text;
+  }, inputOptions);
 }
 
 async function handleTranslateBatchStructured(texts, settings, signal) {

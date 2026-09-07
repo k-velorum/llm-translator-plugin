@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8"><title>選択翻訳：実モデル出力の反映確認</title>
+<style>body{max-width:800px;margin:60px auto;font:20px/1.8 sans-serif;color:#24354b}a{color:#286bc4}h1{font-size:26px}output{font-size:14px}</style>
+<body><h1>選択翻訳：実モデル出力の反映確認</h1>
+<p id="target">Humans acquire culture through the <a href="https://en.wikipedia.org/wiki/Learning">learning</a> processes of <a href="https://en.wikipedia.org/wiki/Enculturation">enculturation</a> and <a href="https://en.wikipedia.org/wiki/Socialization">socialization</a>,</p>
+<p>この段落は選択範囲外です。</p><output id="result"></output>
+<script src="/src/content/namespace.js"></script>
+<script src="/src/content/selection-fragments.js"></script>
+<script src="/src/content/selection-replacement.js"></script>
+<script type="module">
+import {parseSelectionDocument} from '/src/shared/selection-document.js';
+const sample=await (await fetch('/test/browser/selection-model-output.json')).json();
+window.cancelTranslationStream=()=>{};
+const p=document.getElementById('target'), original=p.innerHTML;
+const links=[...p.querySelectorAll('a')];
+const range=document.createRange();range.selectNodeContents(p);
+getSelection().removeAllRanges();getSelection().addRange(range);
+const prepared=LLMT.selectionReplacement.prepare(getSelection().toString());
+const result=LLMT.selectionReplacement.finish(prepared.requestId,parseSelectionDocument(sample.output));
+getSelection().removeAllRanges();
+const retained=links.every(link=>p.contains(link));
+document.getElementById('result').textContent=result.ok&&retained?'PASS: Ornith 1.5 9B（推論low）の実出力を反映。リンク先と元の要素を保持。':'FAIL';
+document.addEventListener('click',event=>{
+ if(event.target.textContent==='原文に戻す') document.getElementById('result').textContent=p.innerHTML===original?'PASS: 元のHTML構造に復元':'FAIL: 復元';
+});
+</script>

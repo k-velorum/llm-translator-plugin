@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8"><title>選択翻訳の注釈表示テスト</title>
+<style>body{font:18px sans-serif;padding:24px} p{margin:0 0 32px} </style>
+<body><p>注釈と訳文の左端、ポップアップの画面内配置を確認します。</p>
+<script src="/src/content/ui.js"></script>
+<script src="/src/content/selection.js"></script>
+<script>
+showTranslationPopup('人間は、社会化や文化的適応という学習プロセスを通じて文化を獲得する。',
+ {left:40,top:100,right:600,bottom:140,width:560,height:40},
+ 'この範囲は構造を保って置換できないため、ポップアップで表示します。');
+requestAnimationFrame(() => {
+ const popup = document.querySelector('.llm-translation-popup');
+ const note = popup.children[1], content = popup.children[2];
+ const left = node => node.getBoundingClientRect().left + parseFloat(getComputedStyle(node).paddingLeft);
+ const rect = popup.getBoundingClientRect();
+ const valid = Math.abs(left(note) - left(content)) < 1 && rect.right <= innerWidth && rect.bottom <= innerHeight;
+ const result = document.createElement('output'); result.textContent = valid ? 'PASS: 注釈と訳文の左端が一致' : 'FAIL';
+ document.body.append(result);
+});
+</script>

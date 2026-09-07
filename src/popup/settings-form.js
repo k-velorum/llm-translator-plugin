@@ -70,6 +70,9 @@ export function loadSettings(elements) {
 
     if (twitterFeatureCheckbox) twitterFeatureCheckbox.checked = settings.enableTwitterTranslation !== false;
     if (youtubeFeatureCheckbox) youtubeFeatureCheckbox.checked = settings.enableYoutubeTranslation !== false;
+    if (elements.selectionTranslationModeSelect) {
+      elements.selectionTranslationModeSelect.value = settings.selectionTranslationMode === 'replace' ? 'replace' : 'popup';
+    }
 
     if (translationSystemPromptTextarea) {
       translationSystemPromptTextarea.value = normalizeTranslationPolicy(settings.translationSystemPrompt);
@@ -149,6 +152,7 @@ function collectFeatureSettings(elements) {
   } = elements;
 
   const partial = {
+    selectionTranslationMode: elements.selectionTranslationModeSelect?.value === 'replace' ? 'replace' : 'popup',
     enableTwitterTranslation: !!(twitterFeatureCheckbox && twitterFeatureCheckbox.checked),
     enableYoutubeTranslation: !!(youtubeFeatureCheckbox && youtubeFeatureCheckbox.checked),
     translationSystemPrompt: normalizeTranslationPolicy(translationSystemPromptTextarea?.value),

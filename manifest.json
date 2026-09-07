@@ -41,6 +41,8 @@
       "src/content/ui.js",
         "src/content/streaming.js",
         "src/content/selection.js",
+        "src/content/selection-fragments.js",
+        "src/content/selection-replacement.js",
         "src/content/page-translation.js",
         "src/content/twitter.js",
         "src/content/youtube.js",
@@ -66,6 +68,9 @@
     "extension_pages": "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http://*:* https://*:* https://openrouter.ai https://generativelanguage.googleapis.com https://api.z.ai https://api.cerebras.ai http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:*"
   },
   "commands": {
+    "summarize-selection": {
+      "description": "選択したテキストを要約"
+    },
     "translate-selection": {
       "suggested_key": {
         "default": "Ctrl+Shift+T",

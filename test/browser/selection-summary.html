@@ -1,0 +1,51 @@
+<!doctype html><meta charset="utf-8"><title>選択要約テスト</title>
+<body style="font:16px sans-serif;padding:24px"><p>選択した文章の要約と調整ボタンを確認します。</p><output id="results"></output>
+<script src="/src/content/ui.js"></script>
+<script src="/src/content/streaming.js"></script>
+<script src="/src/content/selection.js"></script>
+<script>
+let pending, messages = [];
+window.safeSendMessage = () => {};
+window.LLMT.messaging = { sendBackgroundMessage: (action, payload) => {
+ messages.push({action, ...payload});
+ if (action === 'startSummaryStream') return Promise.resolve({ok:true,data:{accepted:true}});
+ return new Promise(resolve => pending = resolve);
+}};
+const check = (condition, label) => {
+ if (!condition) throw new Error(label);
+ document.querySelector('#results').append(document.createTextNode('PASS: ' + label + '\n'));
+};
+const tick = () => new Promise(resolve => requestAnimationFrame(resolve));
+const requestId = () => messages.at(-1).requestId;
+const finish = summary => completeStreamSession(requestId(), summary);
+const delta = async text => {
+ appendStreamSessionDelta(requestId(), text);
+ await new Promise(resolve => setTimeout(resolve, 70));
+};
+(async () => {
+ showSelectionSummary('原文の結論と根拠です。');
+ let popup = document.querySelector('[role=dialog]');
+ const button = label => [...popup.querySelectorAll('button')].find(b => b.textContent === label);
+ check(button('短く').disabled, '処理中は調整不可');
+ await delta('最初の');
+ check(popup.textContent.includes('最初の') && button('短く').disabled, '完了前から表示');
+ finish('最初の要約'); await tick();
+ check(popup.textContent.includes('最初の要約'), '初回要約を表示');
+ button('長く').click();
+ check(messages[1].currentSummary === '最初の要約' && messages[1].text === '原文の結論と根拠です。', '原文と現在の要約を引き継ぐ');
+ check(popup.textContent.includes('最初の要約'), '調整中も結果を維持');
+ await delta('調整途中');
+ check(popup.textContent.includes('調整途中') && button('コピー').disabled, '調整も途中表示し未確定のコピーを防ぐ');
+ failStreamSession(requestId(), {message:'通信失敗'}); await tick();
+ check(popup.textContent.includes('最初の要約') && !button('再試行').hidden, '失敗時に結果を維持し再試行できる');
+ button('再試行').click(); check(messages[2].adjustment === 'longer', '同じ調整を再試行');
+ finish('詳しい要約と根拠'); await tick();
+ button('短く').click(); check(messages[3].currentSummary === '詳しい要約と根拠', '最新の要約から短くする');
+ removePopup(); finish('遅延応答'); await tick();
+ check(!document.querySelector('[role=dialog]'), '閉じた後に応答しても復活しない');
+ showSelectionSummary('表示確認用の原文'); finish('要約結果の表示例です。\n重要な結論を簡潔にまとめ、「短く」「長く」で調整できます。'); await tick();
+ popup = document.querySelector('[role=dialog]'); const rect = popup.getBoundingClientRect();
+ check(rect.left >= 0 && rect.right <= innerWidth, '画面幅に収まる');
+ document.title = 'PASS 選択要約テスト';
+})().catch(error => { document.title = 'FAIL'; document.querySelector('#results').textContent += error.stack; });
+</script>

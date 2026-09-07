@@ -4,7 +4,6 @@ import {
 } from '../shared/connections.js';
 import { DEFAULT_PROVIDER_MODELS } from '../shared/default-models.js';
 import { populateModelSelect, fetchModelsViaBackground } from './models.js';
-import { updateModelInfo } from './model-info.js';
 
 function comparableUrl(value) {
   try { return normalizeBaseUrl(value); } catch { return value.trim(); }
@@ -26,8 +25,6 @@ function renderConnectionFields(elements, connection, presetId) {
   streaming.checked = connection.streaming;
   model.value = '';
   populateModelSelect('openai', model, DEFAULT_PROVIDER_MODELS[presetId] || [], connection.model);
-  elements.openaiModelInfo.replaceChildren();
-  elements.openaiModelInfo.dataset.preset = presetId;
 }
 
 export function createConnectionForm(elements, settings) {
@@ -56,23 +53,26 @@ export function createConnectionForm(elements, settings) {
   async function refreshModels() {
     const version = ++requestVersion;
     const connection = read();
-    const fingerprint = JSON.stringify(connection);
+    const fingerprint = JSON.stringify([connection.baseUrl, connection.apiKey]);
     try {
       normalizeBaseUrl(connection.baseUrl);
       refresh.disabled = true;
       status.textContent = 'モデル一覧を取得しています…';
       const models = await fetchModelsViaBackground('openai', { presetId, connection });
       if (version !== requestVersion) return;
-      if (fingerprint !== JSON.stringify(read())) {
+      const current = read();
+      if (fingerprint !== JSON.stringify([current.baseUrl, current.apiKey])) {
         status.textContent = '設定が変更されています。モデル一覧をもう一度取得してください。';
         return;
       }
-      populateModelSelect('openai', model, models, connection.model);
-      const selected = models.find(item => item.id === connection.model);
-      if (selected) updateModelInfo('openai', selected);
+      // 取得中に選んだモデルを維持し、そのモデルの最新情報を表示する。
+      populateModelSelect('openai', model, models, current.model);
       status.textContent = models.length ? `${models.length}件のモデルを取得しました。` : '一覧は空です。モデルIDを直接入力できます。';
     } catch (error) {
-      if (version === requestVersion) status.textContent = `${error.message || '一覧を取得できませんでした'} モデルIDは直接入力できます。`;
+      if (version === requestVersion) {
+        populateModelSelect('openai', model, [], model.value);
+        status.textContent = `${error.message || '一覧を取得できませんでした'} モデルIDは直接入力できます。`;
+      }
     } finally {
       if (version === requestVersion) refresh.disabled = false;
     }
@@ -83,6 +83,7 @@ export function createConnectionForm(elements, settings) {
     presetId = presetSelect.value;
     requestVersion += 1;
     render();
+    if (server.value.trim()) refreshModels();
   });
   server.addEventListener('input', () => {
     const nextUrl = comparableUrl(server.value);
@@ -95,12 +96,12 @@ export function createConnectionForm(elements, settings) {
       status.textContent = '接続先URLを変更したため、APIキーをクリアしました。必要なら入力してください。';
     } else status.textContent = '';
     populateModelSelect('openai', model, [], model.value);
-    elements.openaiModelInfo.replaceChildren();
   });
   key.addEventListener('input', () => {
     requestVersion += 1;
     refresh.disabled = false;
     status.textContent = '';
+    populateModelSelect('openai', model, [], model.value);
   });
   refresh.addEventListener('click', refreshModels);
   render();

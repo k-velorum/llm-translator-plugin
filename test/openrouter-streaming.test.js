@@ -95,6 +95,45 @@ describe('OpenRouter streaming', () => {
     expect(window.streamViewSessions.size).toBe(0);
   });
 
+  it.each(['initial', 'shorter', 'longer'])('要約 %s: 専用の指示で差分を送り、完了後に確定する', async adjustment => {
+    vi.useFakeTimers();
+    const stream = setupStream();
+    const { window, render } = setupView();
+    const popup = { dataset: {}, isConnected: true };
+    window.LLMT.messaging = { sendBackgroundMessage: (action, payload) => new Promise(resolve => {
+      handleBackgroundMessage({ action, ...payload }, { tab: { id: 1 }, frameId: 0 }, data => resolve({ ok: true, data }));
+    }) };
+    const completed = window.requestSelectionSummary({
+      text: '原文と根拠', currentSummary: adjustment === 'initial' ? '' : '現在の要約', adjustment, popup, render
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(body.stream).toBe(true);
+    expect(body.messages[0].content).toContain('日本語で要約');
+    expect(JSON.parse(body.messages[1].content).originalText).toBe('原文と根拠');
+    stream.send(event('要約の途中'));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(render).toHaveBeenLastCalledWith('要約の途中');
+    expect(window.streamViewSessions.size).toBe(1);
+    stream.send(event('と結論')); stream.finish();
+    expect(await completed).toEqual({ ok: true, data: { summary: '要約の途中と結論' } });
+    expect(window.streamViewSessions.size).toBe(0);
+  });
+
+  it('要約が空で完了した場合はエラーを返す', async () => {
+    vi.useFakeTimers();
+    const stream = setupStream();
+    const { window, render } = setupView();
+    window.LLMT.messaging = { sendBackgroundMessage: (action, payload) => new Promise(resolve => {
+      handleBackgroundMessage({ action, ...payload }, { tab: { id: 1 }, frameId: 0 }, data => resolve({ ok: true, data }));
+    }) };
+    const completed = window.requestSelectionSummary({ text: '原文', adjustment: 'initial', popup: { dataset: {}, isConnected: true }, render });
+    await vi.advanceTimersByTimeAsync(0);
+    stream.finish();
+    expect(await completed).toMatchObject({ ok: false, error: { message: expect.stringContaining('要約が空') } });
+    expect(render).not.toHaveBeenCalled();
+  });
+
   it('UTF-8とSSEの境界が分割されても訳文を復元する', async () => {
     const bytes = new TextEncoder().encode(': OPENROUTER PROCESSING\n\n' + event('日本語') + 'data: [DONE]\n\n');
     const body = new ReadableStream({ start(controller) {

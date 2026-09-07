@@ -29,7 +29,7 @@ export const PROVIDERS = {
   chromePrompt: {
     id: 'chromePrompt', label: 'Chrome Gemini Nano', settingsKeys: {},
     needsApiKey: false, fixedModel: 'Gemini Nano',
-    capabilities: { ...DEFAULT_CAPABILITIES, maxPageTranslationConcurrency: 1 },
+    capabilities: { ...DEFAULT_CAPABILITIES, supportsImageTranslation: true, maxPageTranslationConcurrency: 1 },
     ...chromePromptProvider
   }
 };

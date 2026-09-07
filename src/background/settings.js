@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS = {
   // プラットフォーム別 機能有効/無効
   enableTwitterTranslation: true,
   enableYoutubeTranslation: true,
+  selectionTranslationMode: 'popup',
   // ページ全体翻訳 詳細設定（UIで変更可能）
   pageTranslationSeparator: '[[[SEP]]]',
   pageTranslationMaxChars: 3500,

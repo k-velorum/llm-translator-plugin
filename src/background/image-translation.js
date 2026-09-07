@@ -216,7 +216,7 @@ export async function translateImageAndNotify(tabId, srcUrl, frameId = 0) {
 
   if (!capabilities.supportsImageTranslation) {
     const translatedText = formatErrorDetails(
-      new Error(`現在のプロバイダー (${settings.apiProvider}) は画像翻訳に対応していません。LM Studio のマルチモーダル対応モデルを選択してください。`),
+      new Error(`現在のプロバイダー (${settings.apiProvider}) は画像翻訳に対応していません。LM Studio のマルチモーダル対応モデル、または画像入力を利用できる Chrome Gemini Nano を選択してください。`),
       settings
     );
     try {

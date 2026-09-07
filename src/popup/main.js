@@ -99,6 +99,7 @@ function getElements() {
     saveState: document.getElementById('save-state'),
     twitterFeatureCheckbox: document.getElementById('enable-twitter-translation'),
     youtubeFeatureCheckbox: document.getElementById('enable-youtube-translation'),
+    selectionTranslationModeSelect: document.getElementById('selection-translation-mode'),
     translationSystemPromptTextarea: document.getElementById('translation-system-prompt'),
     resetSystemPromptButton: document.getElementById('reset-system-prompt'),
     pageTranslationMaxCharsInput: document.getElementById('page-translation-max-chars'),

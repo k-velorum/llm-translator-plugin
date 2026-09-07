@@ -24,11 +24,11 @@ function element() {
   };
 }
 
-function setup(texts = [' one ', 'two']) {
+function setup(texts = [' one ', 'two'], parents = []) {
   const body = element();
-  const nodes = texts.map((nodeValue) => ({
+  const nodes = texts.map((nodeValue, i) => ({
     nodeValue, isConnected: true,
-    parentElement: { closest: () => null, isContentEditable: false }
+    parentElement: parents[i] || { closest: () => null, isContentEditable: false }
   }));
   const window = {};
   const send = vi.fn(() => true);
@@ -43,6 +43,94 @@ function setup(texts = [' one ', 'two']) {
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
+
+// テスト用の祖先チェーン。実際のCSSセレクタの動作はブラウザーでも確認する。
+function semanticParent(tag, role = '', parent = null) {
+  return {
+    tag, role, parent, isContentEditable: false,
+    closest(selector) {
+      for (let ancestor = this; ancestor; ancestor = ancestor.parent) {
+        const matched = selector.split(',').some((part) => {
+          const token = part.trim();
+          const roleMatch = token.match(/^\[role~="([^"]+)"\]$/);
+          return roleMatch ? ancestor.role.split(/\s+/).includes(roleMatch[1]) : ancestor.tag === token;
+        });
+        if (matched) return ancestor;
+      }
+      return null;
+    }
+  };
+}
+
+describe('ページ翻訳の意味的な優先度', () => {
+  it.each([['main', ''], ['article', ''], ['div', 'main'], ['div', 'article']])(
+    '%s role=%sの子孫を通常領域より先にする', (tag, role) => {
+      const { api } = setup(['normal', 'body'], [
+        semanticParent('div'), semanticParent('span', '', semanticParent(tag, role))
+      ]);
+      expect(api.capturePageTextSnapshot().texts).toEqual(['body', 'normal']);
+    }
+  );
+
+  it.each([['nav', ''], ['aside', ''], ['menu', ''],
+    ...['navigation', 'complementary', 'menu', 'menubar', 'listbox', 'toolbar', 'search'].map(role => ['div', role])
+  ])('本文内の%s role=%sも後回しにして対象に残す', (tag, role) => {
+    const main = semanticParent('main');
+    const { api } = setup(['helper', 'normal', 'body'], [
+      semanticParent('span', '', semanticParent(tag, role, main)), semanticParent('div'), main
+    ]);
+    expect(api.capturePageTextSnapshot().texts).toEqual(['body', 'normal', 'helper']);
+  });
+
+  it('同順位のDOM順を保ち、補助領域内のarticleも後回しにする', () => {
+    const { api } = setup(['nav-a', 'normal-a', 'main-a', 'nav-b', 'main-b', 'normal-b'], [
+      semanticParent('nav'), semanticParent('header'), semanticParent('main'),
+      semanticParent('article', '', semanticParent('aside')), semanticParent('article'), semanticParent('section')
+    ]);
+    expect(api.capturePageTextSnapshot().texts)
+      .toEqual(['main-a', 'main-b', 'normal-a', 'normal-b', 'nav-a', 'nav-b']);
+  });
+
+  it('意味的な役割がない場合は順序を変えず、既存の除外も維持する', () => {
+    const { api } = setup(['normal-a', '123', 'code', 'これは日本語です', 'normal-b'], [
+      semanticParent('div'), semanticParent('main'), semanticParent('code', '', semanticParent('main')),
+      semanticParent('nav'), semanticParent('section')
+    ]);
+    expect(api.capturePageTextSnapshot().texts).toEqual(['normal-a', 'normal-b']);
+  });
+
+  it('並べ替え後のチャンク・再試行・再実行で元ノードへの対応を保つ', () => {
+    const main = semanticParent('main');
+    const nav = semanticParent('nav');
+    const { api, nodes } = setup([' nav ', 'normal', ' body ', 'menu'], [nav, semanticParent('div'), main,
+      semanticParent('div', 'menu', main)]);
+    const first = api.capturePageTextSnapshot();
+    expect(first.texts).toEqual([' body ', 'normal', ' nav ', 'menu']);
+    // 完了順序が逆でも、失敗項目のnullを挟んでも位置は動かない。
+    api.applyPageTranslationChunk(first.snapshotId, 2, ['案内', 'メニュー']);
+    api.applyPageTranslationChunk(first.snapshotId, 0, ['本文', null]);
+    expect(nodes.map(node => node.nodeValue)).toEqual([' 案内 ', 'normal', ' 本文 ', 'メニュー']);
+    api.applyPageTranslationChunk(first.snapshotId, 0, [null, '通常']);
+    expect(nodes.map(node => node.nodeValue)).toEqual([' 案内 ', '通常', ' 本文 ', 'メニュー']);
+    const next = api.capturePageTextSnapshot();
+    expect(next.texts).toEqual(first.texts);
+    expect(api.applyPageTranslationChunk(first.snapshotId, 0, ['stale']).ok).toBe(false);
+    api.applyPageTranslationChunk(next.snapshotId, 0, ['本文再訳']);
+    expect(nodes[2].nodeValue).toBe(' 本文再訳 ');
+  });
+
+  it('翻訳中に役割が変わってもsnapshotの対応を変えない', () => {
+    const main = semanticParent('main');
+    const normal = semanticParent('div');
+    const { api, nodes } = setup(['normal', 'body'], [normal, main]);
+    const first = api.capturePageTextSnapshot();
+    normal.tag = 'main';
+    main.tag = 'nav';
+    api.applyPageTranslationChunk(first.snapshotId, 0, ['本文']);
+    expect(nodes.map(node => node.nodeValue)).toEqual(['normal', '本文']);
+    expect(api.capturePageTextSnapshot().texts).toEqual(['normal', 'body']);
+  });
+});
 
 describe('ページ翻訳の対象判定', () => {
   it.each([

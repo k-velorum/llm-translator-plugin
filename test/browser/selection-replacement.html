@@ -1,0 +1,169 @@
+<!doctype html><meta charset="utf-8"><title>Selection replacement browser checks</title>
+<script>
+(async () => {
+  const source = await (await fetch('/src/content/selection-replacement.js')).text();
+  const fragmentsSource = await (await fetch('/src/content/selection-fragments.js')).text();
+  const results = [];
+  function assert(value, message) { if (!value) throw Error(message); }
+  function select(start, from, end = start, to = start.length) {
+    const range = document.createRange(); range.setStart(start, from); range.setEnd(end, to);
+    const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    return selection.toString();
+  }
+  function prepare(start, from, end, to) {
+    const text = select(start, from, end, to);
+    return window.LLMT.selectionReplacement.prepare(text);
+  }
+  function finish(prepared, translations) {
+    return window.LLMT.selectionReplacement.finish(prepared.requestId, translations.map((item, id) => typeof item === 'string' ? {id, children:[item]} : item));
+  }
+  async function check(name, html, run) {
+    document.body.innerHTML = '<main id="fixture">' + html + '</main>';
+    window.LLMT = {}; window.cancelTranslationStream = () => {};
+    Function(fragmentsSource)(); Function(source)();
+    try { await run(document.querySelector('#fixture'), window.LLMT.selectionReplacement); results.push({name, ok:true}); }
+    catch (error) { results.push({name, ok:false, error: error.message}); }
+  }
+  await check('partial selection and exact undo', '<p>Before hello after</p>', (root, api) => {
+    const node = root.firstChild.firstChild;
+    const prepared = prepare(node, 7, node, 12);
+    assert(prepared.paragraphs[0].children[0] === 'hello', 'selected source');
+    assert(finish(prepared, ['こんにちは']).ok, 'apply');
+    assert(root.textContent === 'Before こんにちは after', 'outside preserved');
+    assert(api.undo().ok && root.textContent === 'Before hello after', 'undo');
+  });
+  await check('paragraphs, headings, list items', '<h2>Title</h2><p>First paragraph</p><ul><li>Last item</li></ul>', (root, api) => {
+    const prepared = prepare(root.firstChild.firstChild, 2, root.querySelector('li').firstChild, 4);
+    assert(JSON.stringify(prepared.paragraphs.map(p => p.children.join(''))) === JSON.stringify(['tle','First paragraph','Last']), 'block segmentation');
+    assert(finish(prepared, ['題','第一段落','最後']).ok, 'apply');
+    assert(root.querySelector('h2').textContent === 'Ti題' && root.querySelector('li').textContent === '最後 item', 'boundaries');
+    assert(root.querySelectorAll('h2,p,ul,li').length === 4, 'elements preserved');
+    assert(api.undo().ok, 'undo');
+  });
+  await check('inline emphasis is one translation; identity restored', '<p>This is <strong>important</strong> information.</p>', (root, api) => {
+    const p = root.firstChild, strong = p.querySelector('strong'), original = p.innerHTML;
+    const prepared = prepare(p.firstChild, 0, p.lastChild, p.lastChild.length);
+    assert(prepared.paragraphs.length === 1 && prepared.paragraphs[0].children[1].id === 'strong0', 'whole sentence');
+    assert(finish(prepared, [{id:0,children:['これは',{id:'strong0',children:['重要な']},'情報です。']}]).ok && p.textContent === 'これは重要な情報です。', 'apply');
+    assert(api.undo().ok && p.innerHTML === original && p.querySelector('strong') === strong, 'identity');
+  });
+  for (const html of ['<p contenteditable="true">Editable text</p>',
+    '<p>Text <input value="test"> tail</p>', '<p>Text <img alt="photo"> tail</p>']) {
+    await check('unsupported selection: ' + html, html, (root, api) => {
+      const range = document.createRange(); range.selectNodeContents(root.firstChild);
+      getSelection().removeAllRanges(); getSelection().addRange(range);
+      const original = root.innerHTML;
+      assert(api.prepare(getSelection().toString()).reason && root.innerHTML === original, 'fallback without mutation');
+    });
+  }
+  await check('translation inserted as text', '<p>Hello</p>', root => {
+    const node = root.firstChild.firstChild, prepared = prepare(node, 0);
+    assert(finish(prepared, ['<img src=x onerror=alert(1)>']).ok, 'apply');
+    assert(!root.querySelector('img') && root.textContent.includes('<img'), 'literal');
+  });
+  await check('selection changed during translation', '<p>Hello</p><p>Other</p>', root => {
+    const prepared = prepare(root.firstChild.firstChild, 0);
+    select(root.lastChild.firstChild, 0);
+    assert(finish(prepared, ['こんにちは']).ok && root.lastChild.textContent === 'Other', 'original selection');
+  });
+  await check('page text changed while waiting', '<p>Hello</p>', root => {
+    const node = root.firstChild.firstChild, prepared = prepare(node, 0);
+    node.nodeValue = 'New article';
+    assert(finish(prepared, ['訳']).reason && node.nodeValue === 'New article', 'no overwrite');
+  });
+  await check('DOM replaced while waiting', '<p>Hello</p>', root => {
+    const prepared = prepare(root.firstChild.firstChild, 0);
+    root.innerHTML = '<p>Hello</p>';
+    assert(finish(prepared, ['訳']).reason && root.textContent === 'Hello', 'no overwrite');
+  });
+  await check('page changed before undo', '<p>Hello</p>', (root, api) => {
+    const node = root.firstChild.firstChild;
+    finish(prepare(node, 0), ['訳']); root.firstChild.firstChild.nodeValue = 'Updated';
+    assert(!api.undo().ok && root.textContent === 'Updated', 'undo protects update');
+  });
+  await check('successive overlapping replacements undo in reverse', '<p>Hello world</p>', (root, api) => {
+    const node = root.firstChild.firstChild;
+    assert(finish(prepare(node, 0), ['こんにちは世界']).ok, 'first');
+    assert(finish(prepare(root.firstChild.firstChild, 0), ['再翻訳']).ok, 'second');
+    assert(api.undo().ok && root.textContent === 'こんにちは世界', 'undo second');
+    assert(api.undo().ok && node.nodeValue === 'Hello world', 'undo first');
+  });
+  await check('cancel and superseded responses do not replace', '<p>Hello</p>', root => {
+    const node = root.firstChild.firstChild, first = prepare(node, 0), second = prepare(node, 0);
+    assert(finish(first, ['old']).ignored, 'old ignored');
+    [...document.querySelectorAll('button')].find(button => button.textContent === 'キャンセル').click();
+    assert(finish(second, ['late']).ignored && node.nodeValue === 'Hello', 'cancel ignored');
+  });
+  await check('context menu captures range before selection disappears', '<p>Hello</p>', (root, api) => {
+    const text = select(root.firstChild.firstChild, 0); api.remember('contextmenu'); getSelection().removeAllRanges();
+    const prepared = api.prepare(text, 'contextmenu');
+    assert(finish(prepared, ['訳']).ok, 'remembered range');
+  });
+  await check('failed or missing paragraph leaves all unchanged', '<p>One</p><p>Two</p>', root => {
+    const prepared = prepare(root.firstChild.firstChild, 0, root.lastChild.firstChild, 3);
+    assert(finish(prepared, ['一']).reason && root.textContent === 'OneTwo', 'atomic apply');
+  });
+  await check('moving the original block prevents replacement', '<section><p>Hello</p></section><aside></aside>', root => {
+    const p = root.querySelector('p'), prepared = prepare(p.firstChild, 0);
+    root.querySelector('aside').append(p);
+    assert(finish(prepared, ['訳']).reason && p.textContent === 'Hello', 'reparent rejected');
+  });
+  await check('noninteractive main role and unselected link', '<section role="main"><p>Hello <a href="#">link</a></p></section>', root => {
+    const node = root.querySelector('p').firstChild, prepared = prepare(node, 0, node, 5);
+    assert(finish(prepared, ['訳']).ok && root.querySelector('a').textContent === 'link', 'outside link unchanged');
+  });
+  await check('observer detects a page edit even if text is restored', '<p>Hello</p>', async root => {
+    const node = root.firstChild.firstChild, prepared = prepare(node, 0);
+    node.nodeValue = 'New'; node.nodeValue = 'Hello';
+    await Promise.resolve();
+    assert(finish(prepared, ['訳']).reason, 'mutation detected');
+  });
+  await check('links reorder with original href and click listener', '<p>Learn <a href="/culture">culture</a> from <a href="/people">people</a>.</p>', (root, api) => {
+    const p = root.firstChild, links = [...p.querySelectorAll('a')], original = p.innerHTML;
+    let clicks = 0; links[0].addEventListener('click', event => { event.preventDefault(); clicks++; });
+    const prepared = prepare(p.firstChild, 0, p.lastChild, p.lastChild.length);
+    assert(prepared.paragraphs[0].children.length === 5, 'full sentence structure');
+    assert(finish(prepared, [{id:0,children:[{id:'a1',children:['人々']},'から',{id:'a0',children:['文化']},'を学ぶ。']}]).ok, 'apply reordered');
+    assert(p.textContent === '人々から文化を学ぶ。' && p.querySelector('a') === links[1], 'translated order');
+    assert(links[0].getAttribute('href') === '/culture', 'href preserved');
+    links[0].click(); assert(clicks === 1, 'listener preserved');
+    assert(api.undo().ok && p.innerHTML === original && p.querySelector('a') === links[0], 'exact undo');
+  });
+  await check('nested bold and link preserve parentage', '<p>A <strong>very <a href="#">good</a></strong> result.</p>', (root, api) => {
+    const p=root.firstChild, original=p.innerHTML;
+    const prepared=prepare(p.firstChild,0,p.lastChild,p.lastChild.length);
+    assert(finish(prepared,[{id:0,children:['結果は',{id:'strong0',children:['非常に',{id:'a1',children:['良い']}]},'。']}]).ok,'nested apply');
+    assert(p.querySelector('strong a').textContent==='良い','nested link');
+    assert(api.undo().ok && p.innerHTML===original,'undo');
+  });
+  for (const children of [
+    ['missing link'],
+    [{id:'a9',children:['unknown']}],
+    [{id:'a0',children:['one']},{id:'a0',children:['duplicate']}],
+    [{id:'a0',children:['changed'],href:'javascript:bad()'}],
+    [{id:'a0',children:[]}]
+  ]) await check('reject invalid identity '+JSON.stringify(children), '<p>Hello <a href="/original">world</a>!</p>', root => {
+    const p=root.firstChild, original=p.innerHTML;
+    const prepared=prepare(p.firstChild,0,p.lastChild,p.lastChild.length);
+    assert(finish(prepared,[{id:0,children}]).reason && p.innerHTML===original,'no mutation');
+  });
+  await check('partial link crossing falls back without splitting the link', '<p>Before <a href="#">culture</a> after</p>', root => {
+    const p=root.firstChild;
+    const prepared=prepare(p.querySelector('a').firstChild,2,p.lastChild,p.lastChild.length);
+    assert(prepared.reason,'partial element fallback');
+  });
+  await check('selection inside a link preserves its outer element', '<p><a href="/culture">the culture</a></p>', (root,api) => {
+    const link=root.querySelector('a'), prepared=prepare(link.firstChild,4);
+    assert(finish(prepared,['文化']).ok && link.textContent==='the 文化' && link.getAttribute('href')==='/culture','partial text');
+    assert(api.undo().ok && link.textContent==='the culture','undo');
+  });
+  await check('line break is an existing immutable element', '<p>Hello<br>world</p>', (root,api) => {
+    const p=root.firstChild,br=p.querySelector('br'), prepared=prepare(p.firstChild,0,p.lastChild,p.lastChild.length);
+    assert(finish(prepared,[{id:0,children:['こんにちは',{id:'br0',children:[]},'世界']}]).ok && p.querySelector('br')===br,'br preserved');
+    assert(api.undo().ok,'undo');
+  });
+  window.checkResults = results;
+  document.body.innerHTML = '<pre></pre>';
+  document.querySelector('pre').textContent = JSON.stringify(results, null, 2);
+})();
+</script>

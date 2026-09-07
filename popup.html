@@ -168,6 +168,7 @@
       overflow-wrap: anywhere;
     }
     .model-info:empty { display: none; }
+    .model-pricing:empty { display: none; }
     .select2-container { width: 100% !important; }
     select.model-select { position: absolute !important; left: -9999px !important; width: 1px !important; height: 1px !important; opacity: 0 !important; pointer-events: none !important; }
     .select2-container--default .select2-selection--single { height: 40px; padding: 5px 3px; border: 1px solid var(--border); border-radius: 8px; background: white; }
@@ -259,6 +260,14 @@
     </section>
 
     <section id="features-tab" class="tab-content" aria-label="翻訳設定">
+      <div class="api-section">
+        <label for="selection-translation-mode">選択したテキストの翻訳結果</label>
+        <select id="selection-translation-mode">
+          <option value="popup">ポップアップで表示</option>
+          <option value="replace">ページ内で置換</option>
+        </select>
+        <div class="note">右クリック・ショートカットによる選択翻訳に適用。文章全体を翻訳し、リンクや装飾を保って置換します。置換後は原文に戻せます。入力欄など対応できない範囲はポップアップで表示します。</div>
+      </div>
       <div class="api-section">
         <div class="api-heading">翻訳ボタンを表示する場所</div>
         <label class="check-label setting-switch"><span>X（Twitter）<small>ポストの横に翻訳ボタンを表示</small></span><input type="checkbox" id="enable-twitter-translation"></label>

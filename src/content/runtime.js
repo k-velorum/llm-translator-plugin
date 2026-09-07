@@ -2,13 +2,25 @@
   'use strict';
 
 const runtimeMessageHandlers = {
+  summarizeFocusedSelection(message, sender, sendResponse) {
+    const text = document.hasFocus() ? window.getSelection()?.toString().trim() : '';
+    if (text) window.LLMT.selection.showSelectionSummary(text);
+    sendResponse({ started: !!text });
+    return false;
+  },
+
+  showSelectionSummary(message) {
+    window.LLMT.selection.showSelectionSummary(message.text);
+    return false;
+  },
+
   showLoading(message) {
     window.showLoadingPopup(message?.anchorRect || null);
     return false;
   },
 
   showTranslation(message) {
-    window.showTranslationPopup(message.translatedText, message?.anchorRect || null);
+    window.showTranslationPopup(message.translatedText, message?.anchorRect || null, message.notice || '');
     return false;
   },
 
@@ -30,6 +42,16 @@ const runtimeMessageHandlers = {
 
   prepareSelectionTranslationStream(message, sender, sendResponse) {
     sendResponse({ requestId: window.prepareSelectionTranslationStream() });
+    return true;
+  },
+
+  prepareSelectionReplacement(message, sender, sendResponse) {
+    sendResponse(window.LLMT.selectionReplacement.prepare(message.text, message.source));
+    return true;
+  },
+
+  finishSelectionReplacement(message, sender, sendResponse) {
+    sendResponse(window.LLMT.selectionReplacement.finish(message.requestId, message.translations, message.error));
     return true;
   },
 
@@ -61,10 +83,18 @@ const runtimeMessageHandlers = {
     return false;
   },
 
-  getSelectedText(message, sender, sendResponse) {
-    const selectedText = window.getSelection().toString().trim();
-    sendResponse({ selectedText });
-    return true;
+  translateFocusedSelection(message, sender, sendResponse) {
+    // 子フレームにフォーカスがある親documentもhasFocus()がtrueになる。
+    const childFocused = ['IFRAME', 'FRAME'].includes(document.activeElement?.tagName);
+    const text = document.hasFocus() && !childFocused ? window.getSelection()?.toString().trim() : '';
+    if (text) {
+      window.LLMT.selectionReplacement.remember('shortcut');
+      window.LLMT.messaging.sendBackgroundMessage('translateSelection', { text }).then(result => {
+        if (!result.ok) window.showTranslationPopup(`翻訳エラー: ${result.error.message}`);
+      });
+    }
+    sendResponse({ started: !!text });
+    return false;
   },
 
   getPageTexts(message, sender, sendResponse) {

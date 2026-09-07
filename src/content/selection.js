@@ -158,13 +158,23 @@ function resolvePopupAnchorRect(anchorRect) {
   };
 }
 
+function appendSelectionNotice(popup, notice) {
+  if (!notice) return;
+  const note = document.createElement('div');
+  note.textContent = notice;
+  applyStyles(note, { fontSize: '12px', lineHeight: '1.6', color: '#627188',
+    margin: '0', padding: '12px 16px 0', overflowWrap: 'anywhere', textAlign: 'left' });
+  popup.appendChild(note);
+}
+
 function createSelectionPopup({
   titleText,
   bodyText,
   isError = false,
   requestId = '',
   loading = false,
-  anchorRect = null
+  anchorRect = null,
+  notice = ''
 }) {
   removePopup();
 
@@ -253,6 +263,7 @@ function createSelectionPopup({
   translationPopup.__renderedText = bodyText;
 
   translationPopup.appendChild(header);
+  appendSelectionNotice(translationPopup, notice);
   translationPopup.appendChild(content);
   translationPopup.appendChild(actions);
 
@@ -383,13 +394,98 @@ function showLoadingPopup(anchorRect = null) {
   document.addEventListener('click', closePopupOnClickOutside);
 }
 
-function showTranslationPopup(translatedText, anchorRect = null) {
+function showTranslationPopup(translatedText, anchorRect = null, notice = '') {
   createSelectionPopup({
     titleText: ErrorUtils.isTranslationError(translatedText) ? '翻訳エラー' : '翻訳結果',
     bodyText: translatedText,
     isError: ErrorUtils.isTranslationError(translatedText),
-    anchorRect
+    anchorRect,
+    notice
   });
+}
+
+function showSelectionSummary(text) {
+  if (typeof text !== 'string' || !text.trim()) return;
+  const anchorRect = resolvePopupAnchorRect(null);
+  const popup = createSelectionPopup({ titleText: '要約中', bodyText: '要約しています...', loading: true, anchorRect });
+  const content = popup.__contentEl;
+  const actions = popup.lastElementChild;
+  applyStyles(actions, { flexWrap: 'wrap', gap: '8px', position: 'sticky', bottom: '0', backgroundColor: '#fff' });
+  content.setAttribute('aria-live', 'polite');
+  let currentSummary = '';
+  let busy = false;
+  let lastAdjustment = 'initial';
+  const buttons = [];
+  const status = document.createElement('div');
+  status.setAttribute('role', 'status');
+  applyStyles(status, { padding: '0 16px 12px', fontSize: '12px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' });
+  popup.insertBefore(status, actions);
+
+  function addButton(label, adjustment) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    applyStyles(button, styles.copyBtn);
+    button.onclick = () => run(adjustment || lastAdjustment);
+    actions.appendChild(button);
+    buttons.push(button);
+    return button;
+  }
+  addButton('短く', 'shorter');
+  addButton('長く', 'longer');
+  const retry = addButton('再試行');
+  retry.hidden = true;
+
+  function updateButtons() {
+    buttons.forEach(button => {
+      button.disabled = busy || (button !== retry && !currentSummary);
+      button.style.opacity = button.disabled ? '0.5' : '1';
+    });
+    popup.__copyBtn.disabled = busy || !currentSummary;
+    popup.__copyBtn.style.opacity = popup.__copyBtn.disabled ? '0.5' : '1';
+  }
+
+  async function run(adjustment) {
+    if (busy || translationPopup !== popup) return;
+    busy = true;
+    lastAdjustment = adjustment;
+    retry.hidden = true;
+    popup.__titleEl.textContent = currentSummary ? '要約を調整中' : '要約中';
+    popup.setAttribute('aria-label', popup.__titleEl.textContent);
+    popup.setAttribute('aria-busy', 'true');
+    status.textContent = currentSummary ? '要約を調整しています...' : '';
+    updateButtons();
+    const result = await window.LLMT.streaming.requestSelectionSummary({
+      text, currentSummary, adjustment, popup,
+      render: value => {
+        if (translationPopup !== popup) return;
+        applyStyles(content, { display: '', alignItems: '', gap: '' });
+        content.textContent = value;
+        positionPopupInViewport(popup, anchorRect);
+      }
+    });
+    // 閉じた画面や別の選択結果を、遅れて届いた応答で上書きしない。
+    if (translationPopup !== popup) return;
+    busy = false;
+    popup.setAttribute('aria-busy', 'false');
+    applyStyles(content, { display: '', alignItems: '', gap: '' });
+    if (result.ok && result.data.summary) {
+      currentSummary = result.data.summary;
+      popup.__renderedText = currentSummary;
+      content.textContent = currentSummary;
+      status.textContent = '';
+      popup.__titleEl.textContent = '要約結果';
+    } else {
+      content.textContent = currentSummary;
+      popup.__titleEl.textContent = currentSummary ? '要約結果' : '要約エラー';
+      status.textContent = result.error?.message || '要約を取得できませんでした。もう一度お試しください。';
+      retry.hidden = false;
+    }
+    popup.setAttribute('aria-label', popup.__titleEl.textContent);
+    updateButtons();
+    positionPopupInViewport(popup, anchorRect);
+  }
+  run('initial');
 }
 
 function resolveImageAnchorRect(srcUrl) {
@@ -405,6 +501,7 @@ function closePopupOnClickOutside(event) {
 window.LLMT = window.LLMT || {};
 window.LLMT.selection = {
   getSelectionAnchorRect,
+  showSelectionSummary,
   rememberImageContextFromEvent,
   resolveImageDataUrl,
   prepareSelectionTranslationStream,
