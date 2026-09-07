@@ -221,6 +221,10 @@ function createPageTranslationControls() {
   wrap.appendChild(progressText);
   wrap.appendChild(barTrack);
   wrap.appendChild(note);
+  const previewText = document.createElement('div');
+  previewText.id = 'llm-page-translation-preview';
+  Object.assign(previewText.style, { whiteSpace: 'pre-wrap', maxHeight: '140px', overflowY: 'auto', margin: '8px 0' });
+  wrap.appendChild(previewText);
   wrap.appendChild(row);
   document.body.appendChild(wrap);
   return wrap;
@@ -365,6 +369,7 @@ function showPageTranslationControls(message = {}) {
   if (!pageTranslationControls) {
     pageTranslationControls = createPageTranslationControls();
   }
+  pageTranslationControls.dataset.translationStatus = status;
 
   if (pageTranslationAutoHideTimer) {
     clearTimeout(pageTranslationAutoHideTimer);
@@ -376,6 +381,8 @@ function showPageTranslationControls(message = {}) {
   updateControlsView({ status, processedItems, totalItems, failedItems,
     noteText: noteText || (status === 'running' ? runningNote : '') });
   updateStatusPolling(status);
+
+  if (status !== 'running') preview(snapshotId, '');
 
   if (status === 'completed') {
     pageTranslationAutoHideTimer = setTimeout(() => hidePageTranslationControls(), 3000);
@@ -430,13 +437,21 @@ function hidePageTranslationControls(snapshotId) {
   pageTranslationControlsSnapshotId = null;
 }
 
+function preview(snapshotId, text) {
+  if (snapshotId !== pageTranslationSnapshot.id || pageTranslationControlsDismissed ||
+      (text && pageTranslationControls?.dataset.translationStatus !== 'running')) return;
+  const element = pageTranslationControls?.querySelector('#llm-page-translation-preview');
+  if (element) { element.textContent = text; element.scrollTop = element.scrollHeight; }
+}
+
 window.LLMT = window.LLMT || {};
 window.LLMT.pageTranslation = {
   capturePageTextSnapshot,
   applyPageTranslation,
   applyPageTranslationChunk,
   showPageTranslationControls,
-  hidePageTranslationControls
+  hidePageTranslationControls,
+  preview
 };
 Object.assign(window, window.LLMT.pageTranslation);
 })();

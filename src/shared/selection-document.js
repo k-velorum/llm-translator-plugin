@@ -35,6 +35,12 @@ function decodeText(text) {
   });
 }
 
+export function selectionDocumentPreview(text) {
+  const visible = text.replace(/^```[^\n]*\n/, '').replace(/<\/p\s*>/gi, '\n\n')
+    .replace(/<[^>]*>/g, '').replace(/<[^>]*$/, '').replace(/&(?:#x?[\da-f]*|[a-z]*)$/i, '');
+  return decodeText(visible).replace(/\n?```$/, '').trim();
+}
+
 // 小さなタグ文法だけを解析する。生成HTMLをDOMへ挿入したり、属性を適用したりしない。
 export function parseSelectionDocument(text) {
   const source = text.trim().replace(/^```(?:html|xml)?\s*\n([\s\S]*?)\n```$/i, '$1');

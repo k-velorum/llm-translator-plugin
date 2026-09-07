@@ -1,15 +1,17 @@
-import { translateText, formatErrorDetails } from './api.js';
-import { sendMessageToFrame } from './streaming.js';
+import { translateText, translateTextStream, formatErrorDetails } from './api.js';
+import { sendMessageToFrame, streamToPopup } from './streaming.js';
 import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
-import { selectionDocumentSettings, serializeSelectionDocument, parseSelectionDocument, selectionDocumentText } from '../shared/selection-document.js';
+import { selectionDocumentSettings, serializeSelectionDocument, parseSelectionDocument, selectionDocumentText, selectionDocumentPreview } from '../shared/selection-document.js';
+import { createPreviewReporter } from '../shared/translation-preview.js';
 
 const active = new Map();
 
-async function requestSelectionTranslation(prepared, text, settings, signal) {
+async function requestSelectionTranslation(prepared, text, settings, signal, onPreview) {
   const structured = !!prepared.requestId;
   const result = await translateText(structured ? serializeSelectionDocument(prepared.paragraphs) : text,
     structured ? selectionDocumentSettings(settings) : settings,
-    { signal, timeoutMs: TRANSLATION_TIMEOUT_MS });
+    { signal, timeoutMs: TRANSLATION_TIMEOUT_MS,
+      onDelta: (_delta, fullText) => onPreview(structured ? selectionDocumentPreview(fullText) : fullText) });
   const translations = structured ? parseSelectionDocument(result) : [];
   return { translations, displayText: structured ? selectionDocumentText(translations) : result };
 }
@@ -32,14 +34,26 @@ export async function translateSelectionReplacement(tabId, text, frameId, settin
   const prepared = await send({ action: 'prepareSelectionReplacement', text, source }).catch(() => null);
   if (!prepared) return false;
   const { requestId, reason } = prepared;
+  if (!requestId) {
+    const streamed = await streamToPopup({ tabId, frameId, kind: 'selection', notice: reason,
+      run: (handlers, options) => translateTextStream(text, settings, handlers, options) });
+    if (streamed.displayed) return true;
+    if (streamed.error) {
+      await showFallback(send, null, '', formatErrorDetails(streamed.error, settings));
+      return true;
+    }
+  }
   if (!requestId) await send({ action: 'showLoading' });
   const controller = new AbortController();
   if (requestId) active.set(requestId, controller);
   let translations = [];
   let displayText = '';
   let error = '';
+  const report = createPreviewReporter(requestId ? previewText => send({
+    action: 'previewSelectionReplacement', requestId, previewText
+  }) : null, controller.signal);
   try {
-    ({ translations, displayText } = await requestSelectionTranslation(prepared, text, settings, controller.signal));
+    ({ translations, displayText } = await requestSelectionTranslation(prepared, text, settings, controller.signal, report));
   } catch (cause) {
     error = formatErrorDetails(cause, settings);
   } finally {

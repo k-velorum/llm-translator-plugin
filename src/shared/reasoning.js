@@ -14,7 +14,7 @@ export function normalizeReasoning(provider, value) {
   return REASONING_OPTIONS[provider]?.some(([option]) => option === value) ? value : 'default';
 }
 
-export function getReasoningRequestOptions(provider, value, { nativeApi = false } = {}) {
+export function getReasoningRequestOptions(provider, value) {
   const selected = normalizeReasoning(provider, value);
   if (selected === 'default') return {};
 
@@ -26,8 +26,6 @@ export function getReasoningRequestOptions(provider, value, { nativeApi = false 
   if (provider === 'zai') {
     return { thinking: { type: selected === 'off' ? 'disabled' : 'enabled' } };
   }
-  // LM StudioのNative APIはChat Completionsとフィールド名・OFFの値が異なる。
-  if (provider === 'lmstudio' && nativeApi) return { reasoning: selected };
   const effort = { off: 'none', on: 'medium' }[selected] || selected;
   return { reasoning_effort: effort };
 }

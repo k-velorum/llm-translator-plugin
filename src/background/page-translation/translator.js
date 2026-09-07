@@ -11,6 +11,7 @@ import {
 import { createAbortError, sleepWithSignal, withTimeout } from '../../shared/async-utils.js';
 import { log } from '../../shared/logger.js';
 import { splitTextByNaturalBoundaries } from './chunking.js';
+import { structuredBatchPreview, createPreviewReporter } from '../../shared/translation-preview.js';
 
 // 分割フォールバックの再帰上限。これを超えたら per-item 翻訳へ落とす。
 const SPLIT_FALLBACK_MAX_DEPTH = 2;
@@ -39,10 +40,15 @@ function stepRequestOptions(requestOptions, stepTimeoutMs) {
   return { ...requestOptions, timeoutMs };
 }
 
-function requestTranslation(operation, text, settings, options) {
+async function requestTranslation(operation, text, settings, options) {
+  const report = createPreviewReporter(options.onPreview, options.signal);
+  await report('');
+  const onDelta = options.onPreview ? (_delta, fullText) => report(operation === translateBatchStructured
+    ? structuredBatchPreview(fullText)
+    : options.previewSeparator ? fullText.split(options.previewSeparator).join('\n\n') : fullText) : undefined;
   // provider 内部のフォーマット切替・HTTP再試行も一つの期限に含める。
   return withTimeout(
-    (signal) => operation(text, settings, { ...options, signal }),
+    (signal) => operation(text, settings, { ...options, signal, ...(onDelta ? { onDelta } : {}) }),
     options.timeoutMs,
     options.signal
   );
@@ -195,7 +201,7 @@ async function translateBySeparatorOrSplit(chunk, settings, resolved, requestOpt
       translateText,
       joined,
       { ...settings, translationSystemPrompt: settings.translationSystemPrompt + '\n' + buildSeparatorInstruction(resolved.sep) },
-      stepRequestOptions(requestOptions, getTimeoutMsForPromptLen(joined.length))
+      { ...stepRequestOptions(requestOptions, getTimeoutMsForPromptLen(joined.length)), previewSeparator: resolved.sep }
     );
     const parts = translated.split(resolved.sep);
     if (parts.length === chunk.length) {

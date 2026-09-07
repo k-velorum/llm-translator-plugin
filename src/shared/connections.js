@@ -21,7 +21,7 @@ export const CONNECTION_PRESETS = {
   },
   lmstudio: {
     label: 'LM Studio', baseUrl: 'http://localhost:1234/v1', streaming: true,
-    reasoning: 'lmstudio', nativeImages: true, legacyServer: 'lmstudioServer'
+    reasoning: 'lmstudio', legacyServer: 'lmstudioServer'
   },
   ollama: {
     label: 'Ollama', baseUrl: 'http://localhost:11434/v1', streaming: false,
@@ -110,7 +110,8 @@ export function getConnectionCapabilities(settings) {
   return {
     supportsStreaming: connection.streaming !== false,
     streamProtocol: connection.streaming !== false ? 'openai-chat-sse' : null,
-    supportsImageTranslation: !!connection.preset.nativeImages && /\/v1\/*$/.test(connection.baseUrl),
+    // 拡張の送信経路の対応を示す。画像を扱えるかは選択中のモデル・サーバーに依存する。
+    supportsImageTranslation: true,
     maxPageTranslationConcurrency: connection.preset.maxPageTranslationConcurrency || null
   };
 }

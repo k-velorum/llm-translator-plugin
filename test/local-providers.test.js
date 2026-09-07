@@ -106,15 +106,10 @@ describe('lmstudio provider', () => {
 });
 
 describe('lmstudio provider image and model endpoints', () => {
-  it('sends the image translation request in the /api/v1/chat shape', async () => {
+  it('sends the image translation request through chat completions', async () => {
     const fetch = vi.fn(async () =>
       mockJsonResponse({
-        output: [
-          {
-            type: 'message',
-            content: [{ text: '画像内テキスト' }]
-          }
-        ]
+        choices: [{ message: { content: [{ type: 'text', text: '画像内テキスト' }] } }]
       })
     );
     globalThis.fetch = fetch;
@@ -130,16 +125,18 @@ describe('lmstudio provider image and model endpoints', () => {
     ).resolves.toBe('画像内テキスト');
 
     const [url, options] = fetch.mock.calls[0];
-    expect(url).toBe('http://localhost:1234/api/v1/chat');
+    expect(url).toBe('http://localhost:1234/v1/chat/completions');
     expect(JSON.parse(options.body)).toMatchObject({
       model: 'vision-model',
-      input: [
-        { type: 'text', content: expect.any(String) },
-        { type: 'image', data_url: 'data:image/png;base64,xxx' }
+      messages: [
+        { role: 'system', content: expect.any(String) },
+        { role: 'user', content: [
+          { type: 'text', text: expect.any(String) },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,xxx' } }
+        ] }
       ],
       temperature: 0.2,
-      stream: false,
-      store: false
+      stream: false
     });
   });
 

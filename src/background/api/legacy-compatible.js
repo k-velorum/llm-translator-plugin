@@ -15,6 +15,8 @@ export function createLegacyCompatibleProvider(id) {
     translateStream: (text, settings, handlers, options) => openai.translateStream(text, convert(settings), handlers, options),
     translateBatchStructured: (texts, settings, options) => openai.translateBatchStructured(texts, convert(settings), options),
     translateImage: (image, settings, options) => openai.translateImage(image, convert(settings), options),
+    translateImageStream: (image, settings, handlers, options) => openai.translateImageStream(image, convert(settings), handlers, options),
+    translateBatchStructuredStream: (texts, settings, handlers, options) => openai.translateBatchStructuredStream(texts, convert(settings), handlers, options),
     getModels,
     verify: async (message, settings) => {
       if (getConnectionPreset(id).needsApiKey && !message.apiKey) throw new Error('APIキーを入力してください');

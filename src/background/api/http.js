@@ -243,6 +243,17 @@ export async function makeStreamingApiRequest(url, options = {}, handlers = {}, 
         throw await createHttpError(response);
       }
 
+      // stream指定を無視して通常JSONを返す互換サーバーも、再送せず一括結果として扱う。
+      if (response.headers?.get?.('content-type')?.includes('application/json')) {
+        const data = await response.json();
+        if (data?.error?.message) throw new Error(`API Error: ${data.error.message}`);
+        const text = normalizeOpenAICompatibleDeltaText(data?.choices?.[0]?.message?.content);
+        if (!text.trim()) throw new Error('API Error: 一括応答から翻訳結果を取得できませんでした');
+        await handlers.onDelta?.(text, text, data);
+        await handlers.onDone?.(text);
+        return text;
+      }
+
       if (!response.body) {
         throw new Error('API Error: ストリーム応答ボディが取得できませんでした');
       }
@@ -309,29 +320,34 @@ export async function readOpenAICompatibleSSE(stream, handlers = {}) {
     return false;
   };
 
-  while (true) {
-    const { value, done } = await reader.read();
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
 
-    let boundaryIndex = buffer.search(/\r?\n\r?\n/);
-    while (boundaryIndex >= 0) {
-      const rawEvent = buffer.slice(0, boundaryIndex);
-      const separatorLength = buffer[boundaryIndex] === '\r' ? (buffer[boundaryIndex + 1] === '\n' && buffer[boundaryIndex + 2] === '\r' ? 4 : 2) : 2;
-      buffer = buffer.slice(boundaryIndex + separatorLength);
-      if (await processEvent(rawEvent)) {
+      let boundaryIndex = buffer.search(/\r?\n\r?\n/);
+      while (boundaryIndex >= 0) {
+        const rawEvent = buffer.slice(0, boundaryIndex);
+        const separatorLength = buffer[boundaryIndex] === '\r' ? (buffer[boundaryIndex + 1] === '\n' && buffer[boundaryIndex + 2] === '\r' ? 4 : 2) : 2;
+        buffer = buffer.slice(boundaryIndex + separatorLength);
+        if (await processEvent(rawEvent)) {
+          await handlers.onDone?.(aggregated);
+          return aggregated;
+        }
+        boundaryIndex = buffer.search(/\r?\n\r?\n/);
+      }
+
+      if (done) {
+        const rest = buffer.trim();
+        if (rest) {
+          await processEvent(rest);
+        }
         await handlers.onDone?.(aggregated);
         return aggregated;
       }
-      boundaryIndex = buffer.search(/\r?\n\r?\n/);
     }
-
-    if (done) {
-      const rest = buffer.trim();
-      if (rest) {
-        await processEvent(rest);
-      }
-      await handlers.onDone?.(aggregated);
-      return aggregated;
-    }
+  } finally {
+    try { await reader.cancel(); } catch (_) {}
+    reader.releaseLock();
   }
 }

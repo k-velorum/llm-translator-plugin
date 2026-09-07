@@ -66,7 +66,7 @@ export async function callChromePromptRuntime(action, payload = {}, requestOptio
           target: TARGET,
           requestId,
           action: 'abort'
-        });
+        })?.catch?.(() => {});
       } catch (_) {
         // no-op
       }
@@ -75,6 +75,7 @@ export async function callChromePromptRuntime(action, payload = {}, requestOptio
     const settle = (fn, value) => {
       if (settled) return;
       settled = true;
+      chrome.runtime.onMessage.removeListener(onRuntimeMessage);
       if (timeoutId) clearTimeout(timeoutId);
       if (externalSignal) {
         try { externalSignal.removeEventListener('abort', onAbort); } catch (_) {}
@@ -88,6 +89,25 @@ export async function callChromePromptRuntime(action, payload = {}, requestOptio
       notifyAbort();
       settle(reject, error);
     };
+
+    let aggregated = '';
+    const onRuntimeMessage = (message, sender, sendResponse) => {
+      if (message?.target !== 'chromePromptClient' || message.requestId !== requestId ||
+          message.action !== 'delta' || sender.id !== chrome.runtime.id ||
+          sender.url !== chrome.runtime.getURL(OFFSCREEN_DOCUMENT_PATH)) return false;
+      if (settled) return false;
+      const delta = typeof message.deltaText === 'string' ? message.deltaText : '';
+      aggregated += delta;
+      Promise.resolve().then(() => { if (!settled) return requestOptions.onDelta?.(delta, aggregated); })
+        .then(() => sendResponse({ accepted: !settled }))
+        .catch(error => {
+          notifyAbort();
+          settle(reject, error);
+          sendResponse({ accepted: false });
+        });
+      return true;
+    };
+    chrome.runtime.onMessage.addListener(onRuntimeMessage);
 
     if (externalSignal?.aborted) {
       onAbort();
@@ -107,35 +127,39 @@ export async function callChromePromptRuntime(action, payload = {}, requestOptio
       }, timeoutMs);
     }
 
-    chrome.runtime.sendMessage(
-      {
-        target: TARGET,
-        requestId,
-        action,
-        payload
-      },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          settle(reject, new Error(chrome.runtime.lastError.message));
-          return;
-        }
+    try {
+      chrome.runtime.sendMessage(
+        {
+          target: TARGET,
+          requestId,
+          action,
+          payload
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            settle(reject, new Error(chrome.runtime.lastError.message));
+            return;
+          }
 
-        if (!response) {
-          settle(reject, new Error('Chrome Prompt runtime returned empty response'));
-          return;
-        }
+          if (!response) {
+            settle(reject, new Error('Chrome Prompt runtime returned empty response'));
+            return;
+          }
 
-        if (response.error) {
-          const error = new Error(response.error.message || 'Chrome Prompt runtime error');
-          error.name = response.error.name || 'ChromePromptRuntimeError';
-          error.details = response.error.details;
-          settle(reject, error);
-          return;
-        }
+          if (response.error) {
+            const error = new Error(response.error.message || 'Chrome Prompt runtime error');
+            error.name = response.error.name || 'ChromePromptRuntimeError';
+            error.details = response.error.details;
+            settle(reject, error);
+            return;
+          }
 
-        settle(resolve, response.result);
-      }
-    );
+          settle(resolve, response.result);
+        }
+      );
+    } catch (error) {
+      settle(reject, error);
+    }
   });
 }
 

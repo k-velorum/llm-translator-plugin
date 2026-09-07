@@ -1,7 +1,7 @@
 import { loadSettings } from './settings.js';
 import { appendLog, getProviderMeta } from './logging.js';
-import { formatErrorDetails, getProviderCapabilities, translateImage } from './api.js';
-import { sendMessageToFrame } from './streaming.js';
+import { formatErrorDetails, getProviderCapabilities, translateImage, translateImageStream } from './api.js';
+import { sendMessageToFrame, streamToPopup } from './streaming.js';
 import {
   IMAGE_FETCH_TIMEOUT_MS,
   MAX_IMAGE_BYTES,
@@ -216,7 +216,7 @@ export async function translateImageAndNotify(tabId, srcUrl, frameId = 0) {
 
   if (!capabilities.supportsImageTranslation) {
     const translatedText = formatErrorDetails(
-      new Error(`現在のプロバイダー (${settings.apiProvider}) は画像翻訳に対応していません。LM Studio のマルチモーダル対応モデル、または画像入力を利用できる Chrome Gemini Nano を選択してください。`),
+      new Error(`現在のプロバイダー (${settings.apiProvider}) は画像翻訳に対応していません。OpenAI互換APIの画像入力対応モデル、または画像入力を利用できる Chrome Gemini Nano を選択してください。`),
       settings
     );
     try {
@@ -237,6 +237,12 @@ export async function translateImageAndNotify(tabId, srcUrl, frameId = 0) {
   let translatedText;
   try {
     const imageInput = await normalizeImageInput(srcUrl, { tabId, frameId });
+    const streamed = await streamToPopup({
+      tabId, frameId, kind: 'image', anchorRect,
+      run: (handlers, options) => translateImageStream(imageInput, settings, handlers, options)
+    });
+    if (streamed.displayed) return;
+    if (streamed.error) throw streamed.error;
     translatedText = await translateImage(imageInput, settings, { timeoutMs: TRANSLATION_TIMEOUT_MS });
   } catch (error) {
     log.error('imageTranslation', '画像翻訳処理中のエラー', error);

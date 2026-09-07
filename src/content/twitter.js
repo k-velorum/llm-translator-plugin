@@ -3,7 +3,6 @@
 
 const TWEET_TRANSLATION_CACHE_MAX_ENTRIES = 300;
 const tweetTranslationCache = new Map();
-const tweetTranslationInFlight = new Map();
 let tweetTranslationCacheScope = 0;
 
 function hashStringForCache(text) {
@@ -34,7 +33,6 @@ function initializeTweetTranslationCacheScope() {
 function updateTweetTranslationCacheScopeFromChanges() {
   tweetTranslationCacheScope += 1;
   tweetTranslationCache.clear();
-  tweetTranslationInFlight.clear();
 }
 
 function setTweetTranslationCache(key, translatedText) {
@@ -125,53 +123,6 @@ function ensureTweetTranslationElement(tweetTextElement) {
   return translationElement;
 }
 
-function requestTweetTranslationWithCache({ tweetElement, tweetTextElement, text }) {
-  const keys = buildTweetTranslationCacheKeys({ tweetElement, tweetTextElement, text });
-
-  if (!keys) {
-    return Promise.resolve('翻訳エラー: 翻訳対象テキストが見つかりません');
-  }
-
-  for (const key of keys.lookupKeys) {
-    const cached = tweetTranslationCache.get(key);
-    if (typeof cached === 'string') {
-      return Promise.resolve(cached);
-    }
-  }
-
-  for (const key of keys.lookupKeys) {
-    const pending = tweetTranslationInFlight.get(key);
-    if (pending) {
-      return pending;
-    }
-  }
-
-  const requestPromise = new Promise((resolve) => {
-    safeSendMessage({ action: 'translateEmbeddedText', text }, (response) => {
-      resolve(extractTranslatedTextFromResponse(response));
-    });
-  })
-    .then((translatedText) => {
-      if (!ErrorUtils.isTranslationError(translatedText)) {
-        keys.storeKeys.forEach((key) => {
-          setTweetTranslationCache(key, translatedText);
-        });
-      }
-      return translatedText;
-    })
-    .finally(() => {
-      keys.storeKeys.forEach((key) => {
-        tweetTranslationInFlight.delete(key);
-      });
-    });
-
-  keys.storeKeys.forEach((key) => {
-    tweetTranslationInFlight.set(key, requestPromise);
-  });
-
-  return requestPromise;
-}
-
 function requestTweetTranslationStreamWithCache({ tweetElement, tweetTextElement, text }) {
   const keys = buildTweetTranslationCacheKeys({ tweetElement, tweetTextElement, text });
   if (!keys) {
@@ -218,7 +169,6 @@ function clearTweetTranslationEntriesForElements(tweetElement, tweetTextElements
     if (!keys) return;
     keys.storeKeys.forEach((key) => {
       tweetTranslationCache.delete(key);
-      tweetTranslationInFlight.delete(key);
     });
   });
 }
@@ -316,20 +266,12 @@ function addButtonToTweet(tweetElement) {
     translateIcon.style.display = 'none';
     spinner.style.display = 'block';
 
-    const useStreaming = providerSupportsStreaming();
     let pending = tweetTextElements.length;
     tweetTextElements.forEach((element) => {
       const text = element.textContent || '';
-      const requestPromise = useStreaming
-        ? requestTweetTranslationStreamWithCache({ tweetElement, tweetTextElement: element, text })
-        : requestTweetTranslationWithCache({ tweetElement, tweetTextElement: element, text });
+      const requestPromise = requestTweetTranslationStreamWithCache({ tweetElement, tweetTextElement: element, text });
 
       requestPromise
-        .then((translatedText) => {
-          if (!useStreaming) {
-            showTweetTranslation(element, translatedText);
-          }
-        })
         .catch((error) => {
           if (error?.message === 'cancelled') {
             return;

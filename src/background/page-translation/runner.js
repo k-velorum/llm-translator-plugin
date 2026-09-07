@@ -70,7 +70,7 @@ function mergeTranslatedParts(parts, indexes, translated) {
   });
 }
 
-async function translateMissingParts(session, chunk, parts, timeoutMs) {
+async function translateMissingParts(session, chunk, parts, timeoutMs, onPreview) {
   const missing = chunk.map((_, i) => i).filter((i) => typeof parts[i] !== 'string');
   if (missing.length === 0) return { method: 'cached' };
   const budgetMs = timeoutMs * CHUNK_BUDGET_MULTIPLIER;
@@ -78,6 +78,7 @@ async function translateMissingParts(session, chunk, parts, timeoutMs) {
     (signal) => translateChunk(missing.map((i) => chunk[i]), session.settings, session.params, {
       timeoutMs,
       deadlineAt: Date.now() + budgetMs,
+      onPreview,
       signal
     }),
     budgetMs,
@@ -97,7 +98,7 @@ async function processChunk(session, idx, hooks) {
   const startedAt = Date.now();
   const parts = session.chunkResults[idx]?.parts?.slice() || new Array(chunk.length).fill(null);
   try {
-    const result = await translateMissingParts(session, chunk, parts, timeoutMs);
+    const result = await translateMissingParts(session, chunk, parts, timeoutMs, hooks.preview);
     if (session.canceled) return;
 
     if (result.error) recordSessionError(session, result.error);

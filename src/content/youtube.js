@@ -111,34 +111,25 @@ function addButtonToYouTubeComment(contentTextEl) {
       spinner.style.display = 'none';
     };
 
-    const useStreaming = providerSupportsStreaming();
-    if (useStreaming) {
-      const element = ensureYouTubeTranslationElement(contentTextEl);
-      element.textContent = '翻訳しています...';
-      const { promise } = startEmbeddedTranslationStream({
-        kind: 'youtube',
-        text,
-        element,
-        meta: { platform: 'youtube' },
-        render: (currentText, { isError = false } = {}) => {
-          renderYouTubeTranslationElement(element, currentText, isError);
-        }
-      });
-      promise
-        .catch((error) => {
-          if (error?.message === 'cancelled') {
-            return;
-          }
-          showYouTubeCommentTranslation(contentTextEl, `翻訳エラー: ${error?.message || 'unknown error'}`);
-        })
-        .finally(onFinally);
-      return;
-    }
-
-    safeSendMessage({ action: 'translateEmbeddedText', text }, (response) => {
-      showYouTubeCommentTranslation(contentTextEl, extractTranslatedTextFromResponse(response));
-      onFinally();
+    const element = ensureYouTubeTranslationElement(contentTextEl);
+    element.textContent = '翻訳しています...';
+    const { promise } = startEmbeddedTranslationStream({
+      kind: 'youtube',
+      text,
+      element,
+      meta: { platform: 'youtube' },
+      render: (currentText, { isError = false } = {}) => {
+        renderYouTubeTranslationElement(element, currentText, isError);
+      }
     });
+    promise
+      .catch((error) => {
+        if (error?.message === 'cancelled') {
+          return;
+        }
+        showYouTubeCommentTranslation(contentTextEl, `翻訳エラー: ${error?.message || 'unknown error'}`);
+      })
+      .finally(onFinally);
   });
 }
 

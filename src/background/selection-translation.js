@@ -2,26 +2,19 @@ import { loadSettings } from './settings.js';
 import {
   translateText,
   translateTextStream,
-  formatErrorDetails,
-  getProviderCapabilities
+  formatErrorDetails
 } from './api.js';
 import { appendLog, getProviderMeta } from './logging.js';
 import {
-  createStreamEventEmitter,
+  streamToPopup,
+  cancelPopupStream,
   sendMessageToFrame
 } from './streaming.js';
-import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
 import { log } from '../shared/logger.js';
 import { cancelSelectionReplacement, translateSelectionReplacement } from './selection-replacement.js';
 
-const selectionStreamSessions = new Map();
-
 async function sendToContentScript(tabId, translatedText, frameId) {
   await sendMessageToFrame(tabId, frameId, { action: 'showTranslation', translatedText });
-}
-
-async function prepareSelectionStreamingSession(tabId, frameId) {
-  return sendMessageToFrame(tabId, frameId, { action: 'prepareSelectionTranslationStream' });
 }
 
 async function injectFallbackPopup(tabId, translatedText) {
@@ -215,12 +208,7 @@ async function openInNewTab(translatedText) {
 }
 
 export function cancelSelectionStream(requestId) {
-  if (cancelSelectionReplacement(requestId)) return true;
-  const session = selectionStreamSessions.get(requestId);
-  if (!session) return false;
-  session.cancelled = true;
-  session.abortController.abort();
-  return true;
+  return cancelSelectionReplacement(requestId) || cancelPopupStream(requestId);
 }
 
 export async function translateAndNotify(tabId, text, frameId = 0, source = 'selection') {
@@ -228,115 +216,18 @@ export async function translateAndNotify(tabId, text, frameId = 0, source = 'sel
   if (settings.selectionTranslationMode === 'replace' &&
     await translateSelectionReplacement(tabId, text, frameId, settings, source)) return;
   let translatedText;
-  const capabilities = getProviderCapabilities(settings);
-
-  if (capabilities.supportsStreaming) {
-    let emitter = null;
-    let requestId = '';
-    let streamSendFailed = false;
-    const abortController = new AbortController();
-
-    try {
-      const prepared = await prepareSelectionStreamingSession(tabId, frameId);
-      requestId = prepared?.requestId || '';
-      if (!requestId) {
-        throw new Error('selection streaming session の初期化に失敗しました');
-      }
-
-      emitter = createStreamEventEmitter({
-        tabId,
-        frameId,
-        requestId,
-        kind: 'selection',
-        onFatalError: () => {
-          streamSendFailed = true;
-          abortController.abort();
-        }
-      });
-      selectionStreamSessions.set(requestId, {
-        abortController,
-        cancelled: false
-      });
-
-      await emitter.start();
-      translatedText = await translateTextStream(
-        text,
-        settings,
-        {
-          onDelta: async (deltaText) => {
-            await emitter.pushDelta(deltaText);
-          }
-        },
-        { signal: abortController.signal, timeoutMs: TRANSLATION_TIMEOUT_MS }
-      );
-
-      await emitter.complete(translatedText);
-      return;
-    } catch (error) {
-      const selectionSession = requestId ? selectionStreamSessions.get(requestId) : null;
-      if (!requestId) {
-        try {
-          translatedText = await translateText(text, settings);
-        } catch (fallbackError) {
-          translatedText = formatErrorDetails(fallbackError, settings);
-        }
-      } else if (abortController.signal.aborted && selectionSession?.cancelled) {
-        return;
-      } else if (abortController.signal.aborted && streamSendFailed) {
-        log.warn('selectionTranslation', '選択翻訳ストリームの表示先フレーム送信に失敗', error);
-      } else {
-        log.error('selectionTranslation', '選択翻訳ストリーム中のエラー', error);
-      }
-
-      if (requestId) {
-        await appendLog({
-          level: 'error',
-          type: 'translate',
-          event: 'selection_failed',
-          ...getProviderMeta(settings),
-          tabId,
-          message: error?.message || String(error)
-        });
-        translatedText = formatErrorDetails(error, settings);
-      }
-
-      if (emitter && requestId && !streamSendFailed) {
-        try {
-          await emitter.error(error);
-          return;
-        } catch (_) {
-          // no-op and fall through to fallback rendering
-        }
-      }
-    } finally {
-      if (requestId) {
-        selectionStreamSessions.delete(requestId);
-      }
-      if (emitter) {
-        await emitter.dispose();
-      }
-    }
-  } else {
-    try {
-      await sendMessageToFrame(tabId, frameId, { action: 'showLoading' });
-    } catch (_) {
-      // content script が未接続な場合は、後続の fallback 表示へ進む
-    }
-
-    try {
-      translatedText = await translateText(text, settings);
-    } catch (error) {
-      log.error('selectionTranslation', '翻訳処理中のエラー', error);
-      await appendLog({
-        level: 'error',
-        type: 'translate',
-        event: 'selection_failed',
-        ...getProviderMeta(settings),
-        tabId,
-        message: error?.message || String(error)
-      });
-      translatedText = formatErrorDetails(error, settings);
-    }
+  const streamed = await streamToPopup({
+    tabId, frameId, kind: 'selection',
+    run: (handlers, options) => translateTextStream(text, settings, handlers, options)
+  });
+  if (streamed.displayed) return;
+  try {
+    if (streamed.error) throw streamed.error;
+    translatedText = await translateText(text, settings);
+  } catch (error) {
+    await appendLog({ level: 'error', type: 'translate', event: 'selection_failed',
+      ...getProviderMeta(settings), tabId, message: error?.message || String(error) });
+    translatedText = formatErrorDetails(error, settings);
   }
 
   try {

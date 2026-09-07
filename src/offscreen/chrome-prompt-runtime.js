@@ -33,16 +33,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return await handleAvailability();
     }
 
-    if (action === 'translate') {
-      return await handleTranslate(payload?.text || '', payload?.settings || {}, signal);
+    const streamRequestId = action.endsWith('Stream') ? message.requestId : null;
+    if (action === 'translate' || action === 'translateStream') {
+      return await handleTranslate(payload?.text || '', payload?.settings || {}, signal, streamRequestId);
     }
 
-    if (action === 'translateImage') {
-      return await handleTranslateImage(payload?.imageInput, payload?.settings || {}, signal);
+    if (action === 'translateImage' || action === 'translateImageStream') {
+      return await handleTranslateImage(payload?.imageInput, payload?.settings || {}, signal, streamRequestId);
     }
 
-    if (action === 'translateBatchStructured') {
-      return await handleTranslateBatchStructured(payload?.texts || [], payload?.settings || {}, signal);
+    if (action === 'translateBatchStructured' || action === 'translateBatchStructuredStream') {
+      return await handleTranslateBatchStructured(payload?.texts || [], payload?.settings || {}, signal, streamRequestId);
     }
 
     throw new Error(`Unknown Chrome Prompt runtime action: ${action}`);
@@ -160,7 +161,7 @@ function buildSystemPrompt(settings = {}) {
     prompt || DEFAULT_TRANSLATION_SYSTEM_PROMPT,
     '',
     '入力言語は明示されない場合があります。必要に応じて自動で判断してください。',
-    '翻訳結果のみを出力してください。余計な説明、前置き、Markdownコードフェンスは出力しないでください。'
+    '指定された回答本文または出力形式のみを返してください。余計な説明、前置き、Markdownコードフェンスは出力しないでください。'
   ].join('\n');
 }
 
@@ -177,20 +178,45 @@ async function withSession(settings, signal, callback, inputOptions = {}) {
   }
 }
 
-async function handleTranslate(text, settings, signal) {
+async function promptSession(session, input, options, requestId) {
+  if (!requestId || typeof session.promptStreaming !== 'function') {
+    const result = await session.prompt(input, options);
+    if (requestId) await sendDelta(requestId, result, options.signal);
+    return result;
+  }
+  let result = '';
+  for await (const delta of session.promptStreaming(input, options)) {
+    options.signal.throwIfAborted();
+    result += delta;
+    await sendDelta(requestId, delta, options.signal);
+  }
+  options.signal.throwIfAborted();
+  return result;
+}
+
+async function sendDelta(requestId, deltaText, signal) {
+  signal.throwIfAborted();
+  if (!deltaText) return;
+  const response = await chrome.runtime.sendMessage({
+    target: 'chromePromptClient', action: 'delta', requestId, deltaText
+  });
+  if (!response?.accepted) throw new Error('翻訳結果の受信先が閉じられました');
+}
+
+async function handleTranslate(text, settings, signal, requestId) {
   const input = typeof text === 'string' ? text.trim() : '';
   if (!input) return '';
 
   return await withSession(settings, signal, async (session) => {
-    const result = await session.prompt(input, { signal });
+    const result = await promptSession(session, input, { signal }, requestId);
     return (result || '').trim();
   });
 }
 
-async function handleTranslateImage(imageInput, settings, signal) {
+async function handleTranslateImage(imageInput, settings, signal, requestId) {
   assertLanguageModelAvailable();
-  // Chrome のメッセージは JSON シリアライズされるため、Blob は受信側で復元する。
-  if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageInput?.dataUrl || '')) {
+  const imageData = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(imageInput?.dataUrl || '');
+  if (!imageData) {
     throw new Error('画像入力データが不正です');
   }
   const inputOptions = {
@@ -202,22 +228,29 @@ async function handleTranslateImage(imageInput, settings, signal) {
   if (availability === 'unavailable') {
     throw new Error('この Chrome の Gemini Nano は画像入力を利用できません。Chrome と内蔵モデルの対応状況を確認してください。');
   }
-  const image = await (await fetch(imageInput.dataUrl, { signal })).blob();
+  // メッセージで渡せない Blob を直接復元する。data: の fetch は拡張の connect-src で拒否される。
+  let bytes;
+  try {
+    bytes = Uint8Array.from(atob(imageData[2]), char => char.charCodeAt(0));
+  } catch (_) {
+    throw new Error('画像入力のBase64データが不正です');
+  }
+  const image = new Blob([bytes], { type: imageData[1] });
   return await withSession(settings, signal, async (session) => {
-    const result = await session.prompt([{
+    const result = await promptSession(session, [{
       role: 'user',
       content: [
         { type: 'text', value: 'この画像に含まれるテキストを読み取り、日本語に翻訳してください。翻訳結果のみを出力してください。テキストが見当たらない場合は「翻訳対象のテキストが見つかりませんでした。」とだけ出力してください。' },
         { type: 'image', value: image }
       ]
-    }], { signal });
+    }], { signal }, requestId);
     const text = (result || '').trim();
     if (!text) throw new Error('Gemini Nano から画像翻訳結果を取得できませんでした');
     return text;
   }, inputOptions);
 }
 
-async function handleTranslateBatchStructured(texts, settings, signal) {
+async function handleTranslateBatchStructured(texts, settings, signal, requestId) {
   if (!Array.isArray(texts) || texts.length === 0) return [];
 
   const items = buildStructuredBatchItems(texts);
@@ -228,10 +261,10 @@ async function handleTranslateBatchStructured(texts, settings, signal) {
   const prompt = `${instruction}\n\nitems = ${JSON.stringify(items)}`;
 
   return await withSession(settings, signal, async (session) => {
-    const result = await session.prompt(prompt, {
+    const result = await promptSession(session, prompt, {
       signal,
       responseConstraint: STRUCTURED_BATCH_SCHEMA
-    });
+    }, requestId);
     return parseStructuredBatchResponse(result, texts);
   });
 }

@@ -68,12 +68,6 @@ async function startStreamingTranslation(message, sender, sendResponse, { summar
     const settings = summaryRequest
       ? { ...savedSettings, translationSystemPrompt: summaryRequest.systemPrompt }
       : savedSettings;
-    const capabilities = getProviderCapabilities(settings);
-    if (!capabilities.supportsStreaming) {
-      sendResponse({ accepted: false, reason: 'unsupported' });
-      return;
-    }
-
     let streamSendFailed = false;
     const abortController = new AbortController();
     const emitter = createStreamEventEmitter({

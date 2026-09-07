@@ -114,6 +114,25 @@ export function createOpenAICompatibleProvider({
     );
   }
 
+  async function translateImage(imageInput, settings, requestOptions = {}) {
+    return translate(imageMessage(imageInput), settings, requestOptions);
+  }
+
+  async function translateImageStream(imageInput, settings, handlers, requestOptions) {
+    return translateStream(imageMessage(imageInput), settings, handlers, requestOptions);
+  }
+
+  function imageMessage(imageInput) {
+    if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageInput?.dataUrl || '')) {
+      throw new Error('画像入力データが不正です');
+    }
+    // テキストと同じ接続・認証・推論設定で、ユーザーメッセージの内容だけを切り替える。
+    return [
+      { type: 'text', text: 'この画像に含まれるテキストを読み取り、日本語に翻訳してください。翻訳結果のみを出力してください。テキストが見当たらない場合は「翻訳対象のテキストが見つかりませんでした。」とだけ出力してください。' },
+      { type: 'image_url', image_url: { url: imageInput.dataUrl } }
+    ];
+  }
+
   async function translateBatchStructured(texts, settings, requestOptions = {}) {
     const cfg = getConfig(settings);
     const items = buildStructuredBatchItems(texts);
@@ -135,7 +154,9 @@ export function createOpenAICompatibleProvider({
     for (let i = 0; i < formats.length; i++) {
       const responseFormat = formats[i];
       try {
-        const data = await makeApiRequest(
+        const streaming = typeof requestOptions.onDelta === 'function';
+        const request = streaming ? makeStreamingApiRequest : makeApiRequest;
+        const data = await request(
           cfg.apiUrl,
           {
             method: 'POST',
@@ -145,17 +166,18 @@ export function createOpenAICompatibleProvider({
               model: cfg.model,
               messages,
               temperature: 0.2,
-              stream: false,
+              stream: streaming,
               response_format: responseFormat,
               ...cfg.requestBodyOptions
             }),
             timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
             signal: requestOptions.signal
           },
+          ...(streaming ? [{ onDelta: requestOptions.onDelta }] : []),
           `${providerLabel} API (structured batch) リクエスト中にエラーが発生`
         );
 
-        return parseStructuredBatchResponse(extractChatMessageContent(data), texts);
+        return parseStructuredBatchResponse(streaming ? data : extractChatMessageContent(data), texts);
       } catch (error) {
         if (!canFallbackAfterError(error)) throw error;
         lastError = error;
@@ -168,8 +190,12 @@ export function createOpenAICompatibleProvider({
 
   return {
     translate,
+    translateImage,
+    translateImageStream,
     translateStream,
     translateBatchStructured,
+    translateBatchStructuredStream: (texts, settings, handlers, options) =>
+      translateBatchStructured(texts, settings, { ...options, onDelta: handlers.onDelta }),
     ...extras
   };
 }

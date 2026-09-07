@@ -107,6 +107,12 @@
     const label = document.createElement('div');
     label.textContent = message || (pending ? '選択範囲を翻訳しています…' : '選択範囲を置換しました');
     panel.append(label);
+    if (pending) {
+      const preview = document.createElement('div');
+      preview.dataset.translationPreview = '';
+      Object.assign(preview.style, { whiteSpace: 'pre-wrap', maxHeight: '160px', overflowY: 'auto', marginTop: '8px' });
+      panel.append(preview);
+    }
     const button = (text, action) => {
       const element = document.createElement('button');
       element.type = 'button';
@@ -220,5 +226,11 @@
     return { ok: valid };
   }
 
-  window.LLMT.selectionReplacement = { prepare, finish, undo, remember };
+  function preview(requestId, text) {
+    if (pending?.id !== requestId) return;
+    const element = panel?.querySelector('[data-translation-preview]');
+    if (element) { element.textContent = text; element.scrollTop = element.scrollHeight; }
+  }
+
+  window.LLMT.selectionReplacement = { prepare, finish, undo, remember, preview };
 })();

@@ -15,6 +15,8 @@ beforeEach(async () => {
   };
   vi.stubGlobal('self', globalThis);
   vi.stubGlobal('LanguageModel', model);
+  // 実際の拡張では connect-src が data: の fetch を許可していない。
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
   vi.stubGlobal('chrome', { runtime: {
     onMessage: { addListener: (handler) => { listener = handler; } },
     sendMessage: vi.fn()
@@ -42,12 +44,27 @@ describe('Chrome Prompt image translation', () => {
     expect(content[1].value).toBeInstanceOf(Blob);
     expect(content[1].value.type).toBe('image/png');
     expect(await content[1].value.text()).toBe('hello');
+    expect(fetch).not.toHaveBeenCalled();
     expect(session.destroy).toHaveBeenCalledOnce();
   });
 
   it('reports unavailable image support without creating a session', async () => {
     model.availability.mockResolvedValue('unavailable');
     expect(await request()).toMatchObject({ error: { message: expect.stringContaining('画像入力を利用できません') } });
+    expect(model.create).not.toHaveBeenCalled();
+  });
+
+  it('preserves binary image bytes without fetching the data URL', async () => {
+    expect(await request('translateImage', { imageInput: { dataUrl: 'data:image/png;base64,AP+A/g==' } }))
+      .toMatchObject({ result: '翻訳済み' });
+    const blob = session.prompt.mock.calls[0][0][0].content[1].value;
+    expect(Array.from(new Uint8Array(await blob.arrayBuffer()))).toEqual([0, 255, 128, 254]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('reports invalid Base64 before creating a session', async () => {
+    expect(await request('translateImage', { imageInput: { dataUrl: 'data:image/png;base64,%%%' } }))
+      .toMatchObject({ error: { message: '画像入力のBase64データが不正です' } });
     expect(model.create).not.toHaveBeenCalled();
   });
 

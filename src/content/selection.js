@@ -278,10 +278,10 @@ function createSelectionPopup({
   return translationPopup;
 }
 
-function prepareSelectionTranslationStream() {
-  const requestId = createTranslationRequestId('selection');
+function prepareSelectionTranslationStream({ kind = 'selection', anchorRect = null, notice = '' } = {}) {
+  const requestId = createTranslationRequestId(kind);
   const session = registerStreamSession(requestId, {
-    kind: 'selection',
+    kind,
     state: 'running',
     withPromise: false,
     render: (text, { isError = false, isCompleted = false } = {}) => {
@@ -289,7 +289,7 @@ function prepareSelectionTranslationStream() {
     }
   });
 
-  const popup = showSelectionStreamPopup(requestId);
+  const popup = showSelectionStreamPopup(requestId, anchorRect, notice);
   if (!popup) {
     discardStreamSession(requestId);
     return '';
@@ -298,11 +298,13 @@ function prepareSelectionTranslationStream() {
   return session.requestId;
 }
 
-function showSelectionStreamPopup(requestId) {
+function showSelectionStreamPopup(requestId, anchorRect = null, notice = '') {
   return createSelectionPopup({
     titleText: '翻訳中',
     bodyText: '翻訳しています...',
     requestId,
+    anchorRect,
+    notice,
     loading: true
   });
 }

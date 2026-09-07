@@ -15,7 +15,7 @@ describe('provider registry', () => {
     expect(getProviderCapabilities({ apiProvider: 'cerebras' })).toEqual({
       supportsStreaming: true,
       streamProtocol: 'openai-chat-sse',
-      supportsImageTranslation: false,
+      supportsImageTranslation: true,
       maxPageTranslationConcurrency: null
     });
     expect(getProviderCapabilities({ apiProvider: 'lmstudio' })).toEqual({
@@ -27,7 +27,7 @@ describe('provider registry', () => {
     expect(getProviderCapabilities({ apiProvider: 'openrouter' })).toEqual({
       supportsStreaming: true,
       streamProtocol: 'openai-chat-sse',
-      supportsImageTranslation: false,
+      supportsImageTranslation: true,
       maxPageTranslationConcurrency: null
     });
     expect(getProviderCapabilities({ apiProvider: 'unknown' })).toEqual({
@@ -68,7 +68,7 @@ describe('provider registry', () => {
   it('requires streaming providers to expose translateStream', () => {
     for (const provider of Object.values(PROVIDERS)) {
       if (provider.capabilities.supportsStreaming) {
-        expect(provider.capabilities.streamProtocol).toBe('openai-chat-sse');
+        expect(provider.capabilities.streamProtocol).toEqual(expect.any(String));
         expect(provider.translateStream).toEqual(expect.any(Function));
       } else {
         expect(provider.capabilities.streamProtocol).toBeNull();

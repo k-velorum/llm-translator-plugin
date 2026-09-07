@@ -96,14 +96,14 @@ describe('OpenAI互換の共通経路', () => {
     }), { onDelta: delta })).resolves.toBe('訳文');
     expect(delta).toHaveBeenCalledWith('訳文', '訳文', expect.anything());
   });
-  it('LM Studio画像翻訳は編集したホストのNative APIへ送る', async () => {
-    const fetch = vi.fn(async () => new Response(JSON.stringify({ output: [{ type: 'message', content: '画像の訳文' }] })));
+  it('LM Studio画像翻訳も編集したホストの共通APIへ送る', async () => {
+    const fetch = vi.fn(async () => mockResponse('画像の訳文'));
     vi.stubGlobal('fetch', fetch);
     await expect(translateImage({ dataUrl: 'data:image/png;base64,AA==', mimeType: 'image/png' }, connectionSettings('lmstudio', {
       baseUrl: 'http://192.0.2.2:1234/proxy/v1/', apiKey: 'image-key', model: 'vision', reasoning: 'off'
     }))).resolves.toBe('画像の訳文');
-    expect(fetch.mock.calls[0][0]).toBe('http://192.0.2.2:1234/proxy/api/v1/chat');
-    expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({ model: 'vision', reasoning: 'off', store: false });
+    expect(fetch.mock.calls[0][0]).toBe('http://192.0.2.2:1234/proxy/v1/chat/completions');
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({ model: 'vision', reasoning_effort: 'none' });
   });
 });
 

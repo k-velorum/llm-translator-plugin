@@ -7,7 +7,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 function mockResponse(content = '訳文') {
   const fetch = vi.fn(async () => ({ ok: true, json: async () => ({
-    choices: [{ message: { content } }], output: [{ type: 'message', content }]
+    choices: [{ message: { content } }]
   }) }));
   vi.stubGlobal('fetch', fetch);
   return fetch;
@@ -37,13 +37,13 @@ describe('LM Studio推論設定のリクエスト', () => {
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({ reasoning_effort: 'none', stream: true });
   });
 
-  it.each(['off', 'on', 'low', 'medium', 'high', 'default'])('画像翻訳ではNative API用の値を使う: %s', async (value) => {
+  it.each([['off', 'none'], ['on', 'medium'], ['low', 'low'], ['medium', 'medium'], ['high', 'high'], ['default', undefined]])('画像翻訳も %s を %s に変換する', async (value, effort) => {
     const fetch = mockResponse();
     await provider.translateImage({ dataUrl: 'data:image/png;base64,AA==', mimeType: 'image/png' },
       { ...settings, lmstudioReasoning: value });
     const body = JSON.parse(fetch.mock.calls[0][1].body);
-    expect(body.reasoning).toBe(value === 'default' ? undefined : value);
-    expect(body).not.toHaveProperty('reasoning_effort');
+    expect(body.reasoning_effort).toBe(effort);
+    expect(body).not.toHaveProperty('reasoning');
   });
 });
 

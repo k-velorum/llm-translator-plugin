@@ -188,6 +188,10 @@ async function runSession(session, chunkIndexes) {
     await notifyControls(session, 'running').catch(() => {});
     await runChunkQueue(session, chunkIndexes, {
       applyChunk: (idx, parts) => applyChunkToTab(session, idx, parts),
+      preview: async previewText => {
+        if (session.canceled || session.runToken !== runToken) return;
+        await sendToPage(session.tabId, { action: 'pageTranslationPreview', snapshotId: session.snapshotId, previewText });
+      },
       notifyProgress: async () => {
         if (session.canceled) return;
         await persistSession(session);

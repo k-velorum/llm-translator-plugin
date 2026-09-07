@@ -1,0 +1,64 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><title>Nano 実機ストリーム確認</title>
+<style>body{font:16px/1.7 sans-serif;max-width:800px;margin:40px}pre{white-space:pre-wrap}button{padding:10px}</style>
+<h1>Nano 実機ストリーム確認</h1>
+<p>通常のWebページから内蔵モデルを呼び出します。利用可能なモデルが既にある場合だけ実行し、ダウンロードは開始しません。</p>
+<button id="start" disabled>テキスト・画像・構造化出力を確認</button>
+<pre id="output">利用可否を確認しています…</pre>
+<script>
+addEventListener('error', event => {
+  if (event.error) document.querySelector('#output').textContent = event.message;
+});
+addEventListener('unhandledrejection', event => {
+  document.querySelector('#output').textContent = event.reason?.stack || String(event.reason);
+});
+</script>
+<script type="module">
+const output = document.querySelector('#output');
+const button = document.querySelector('#start');
+const listeners = [];
+let deltas = [];
+window.chrome = { runtime: {
+  onMessage: { addListener: listener => listeners.push(listener) },
+  sendMessage: async message => {
+    if (message.action === 'delta') {
+      deltas.push(message.deltaText);
+      output.textContent = deltas.join('');
+    }
+    return { accepted: true };
+  }
+} };
+await import('/src/offscreen/chrome-prompt-runtime.js').catch(error => {
+  output.textContent = error.stack;
+  throw error;
+});
+const imageOptions = { expectedInputs: [{type:'text',languages:['en','ja']},{type:'image'}],
+  expectedOutputs: [{type:'text',languages:['ja']}] };
+try {
+  if (!('LanguageModel' in window)) throw Error('この通常ページでは LanguageModel を利用できません。拡張機能内での実機確認が必要です。');
+  const status = await LanguageModel.availability(imageOptions);
+  output.textContent = '画像入力の利用状態: ' + status;
+  button.disabled = status !== 'available';
+} catch (error) { output.textContent = error.message; }
+button.onclick = async () => {
+  button.disabled = true;
+  const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 120;
+  const ctx = canvas.getContext('2d'); ctx.fillStyle = 'white'; ctx.fillRect(0,0,400,120);
+  ctx.fillStyle = 'black'; ctx.font = '40px sans-serif'; ctx.fillText('Welcome',30,75);
+  const cases = [
+    ['translateStream', {text:'Welcome to our city. The museum is open every day from nine in the morning until five in the afternoon. Please ask the staff if you need any help.'}],
+    ['translateImageStream', {imageInput:{dataUrl:canvas.toDataURL('image/png'),mimeType:'image/png'}}],
+    ['translateBatchStructuredStream', {texts:['Hello','Thank you']}]
+  ];
+  const results = [];
+  for (const [action,payload] of cases) {
+    deltas = [];
+    const response = await new Promise(resolve => listeners[0]({target:'chromePromptRuntime',requestId:action,action,payload}, {}, resolve));
+    results.push({action,chunks:deltas.length,...response});
+    if (response.error) break;
+  }
+  output.textContent = JSON.stringify(results,null,2);
+  document.title = results.length === cases.length && results.every(result => !result.error && result.chunks > 0)
+    ? 'PASS Nano 実機ストリーム確認' : 'FAIL Nano 実機ストリーム確認';
+  button.disabled = false;
+};
+</script></html>

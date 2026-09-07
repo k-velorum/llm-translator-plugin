@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja"><meta charset="utf-8"><title>ストリーム表示テスト</title>
+<style>body{font:16px/1.7 sans-serif;margin:40px;max-width:750px}#results{white-space:pre-wrap;color:#245b32}</style>
+<h1>ストリーム表示の確認</h1>
+<p id="source">Hello world.</p>
+<pre id="results" data-llmt-ui></pre>
+<script>
+window.chrome = { runtime: { onMessage: { addListener() {} } } };
+window.safeSendMessage = () => {};
+window.DOMUtils = { getTextNodes: () => [document.querySelector('#source').firstChild] };
+</script>
+<script src="/src/content/namespace.js"></script>
+<script src="/src/content/ui.js"></script>
+<script src="/src/content/streaming.js"></script>
+<script src="/src/content/selection.js"></script>
+<script src="/src/content/selection-fragments.js"></script>
+<script src="/src/content/selection-replacement.js"></script>
+<script src="/src/content/page-translation.js"></script>
+<script src="/src/content/runtime.js"></script>
+<script>
+(async () => {
+  const output = document.querySelector('#results');
+  const check = (condition, label) => {
+    if (!condition) throw Error(label);
+    output.textContent += 'PASS: ' + label + '\n';
+  };
+  const tick = () => new Promise(resolve => setTimeout(resolve, 80));
+  const handlers = window.LLMT.runtime.runtimeMessageHandlers;
+  const paragraph = document.querySelector('#source');
+  const anchorRect = paragraph.getBoundingClientRect();
+  let id = prepareSelectionTranslationStream({kind:'image',anchorRect});
+  handlers.translationStreamDelta({requestId:id,deltaText:'画像内の'}); await tick();
+  check(document.querySelector('[role=dialog]').textContent.includes('画像内の'), '画像翻訳を完了前に表示');
+  handlers.translationStreamComplete({requestId:id,finalText:'画像内の文字を翻訳しました。'});
+  check(!streamViewSessions.has(id), '完了後のストリームを解放');
+  handlers.translationStreamDelta({requestId:id,deltaText:'遅延した差分'}); await tick();
+  check(!document.querySelector('[role=dialog]').textContent.includes('遅延した差分'), '完了後の差分を無視');
+  removePopup();
+
+  const range = document.createRange(); range.selectNodeContents(paragraph);
+  getSelection().removeAllRanges(); getSelection().addRange(range);
+  const replacement = window.LLMT.selectionReplacement;
+  const prepared = replacement.prepare('Hello world.');
+  check(!!prepared.requestId, '選択置換を開始');
+  handlers.previewSelectionReplacement({requestId:prepared.requestId,previewText:'<img src=x onerror=alert(1)>こんにちは'});
+  const preview = document.querySelector('[data-translation-preview]');
+  check(preview.textContent.includes('<img') && !preview.querySelector('img'), 'プレビューはHTMLとして解釈しない');
+  check(paragraph.textContent === 'Hello world.', '生成中は原文を維持');
+  check(replacement.finish(prepared.requestId,[{id:0,children:['こんにちは、世界。']}]).ok, '検証後に置換を確定');
+  check(paragraph.textContent === 'こんにちは、世界。', '確定した訳文を反映');
+  check(replacement.undo().ok && paragraph.textContent === 'Hello world.', '原文へ戻せる');
+
+  const snapshot = capturePageTextSnapshot();
+  handlers.pageTranslationPreview({snapshotId:snapshot.snapshotId,previewText:'翻訳途中'});
+  const panel = document.querySelector('#llm-page-translation-preview');
+  check(panel.textContent === '翻訳途中', 'ページ翻訳も途中の訳文を表示');
+  check(paragraph.textContent === 'Hello world.', 'ページ翻訳のプレビュー中も原文を維持');
+  showPageTranslationControls({snapshotId:snapshot.snapshotId,status:'completed',processedItems:1,totalItems:1});
+  handlers.pageTranslationPreview({snapshotId:snapshot.snapshotId,previewText:'遅延したプレビュー'});
+  check(panel.textContent === '', '完了後の遅延プレビューを無視');
+  hidePageTranslationControls(snapshot.snapshotId);
+  document.title = 'PASS ストリーム表示テスト';
+})().catch(error => {
+  document.title = 'FAIL ストリーム表示テスト';
+  document.querySelector('#results').textContent += error.stack;
+});
+</script></html>

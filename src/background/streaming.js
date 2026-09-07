@@ -1,4 +1,50 @@
 import { normalizeError } from '../shared/errors.js';
+import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
+
+const popupStreams = new Map();
+
+export function cancelPopupStream(requestId) {
+  const session = popupStreams.get(requestId);
+  if (!session) return false;
+  session.cancelled = true;
+  session.controller.abort();
+  return true;
+}
+
+// 選択翻訳と画像翻訳は同じ表示・中断のライフサイクルを使う。
+export async function streamToPopup({ tabId, frameId, kind, anchorRect, notice, run }) {
+  const prepared = await sendMessageToFrame(tabId, frameId, {
+    action: 'prepareSelectionTranslationStream', kind, anchorRect, notice
+  }).catch(() => null);
+  const requestId = prepared?.requestId;
+  if (!requestId) return { displayed: false };
+  const controller = new AbortController();
+  const session = { controller, cancelled: false };
+  const emitter = createStreamEventEmitter({
+    tabId, frameId, requestId, kind, onFatalError: () => controller.abort()
+  });
+  popupStreams.set(requestId, session);
+  try {
+    await emitter.start();
+    const text = await run({ onDelta: delta => emitter.pushDelta(delta) }, {
+      signal: controller.signal, timeoutMs: TRANSLATION_TIMEOUT_MS
+    });
+    if (session.cancelled) return { displayed: true };
+    await emitter.complete(text);
+    return { displayed: true };
+  } catch (error) {
+    if (session.cancelled) return { displayed: true };
+    try {
+      await emitter.error(error);
+      return { displayed: true };
+    } catch (_) {
+      return { displayed: false, error };
+    }
+  } finally {
+    popupStreams.delete(requestId);
+    await emitter.dispose();
+  }
+}
 
 function buildFrameSendOptions(frameId) {
   return Number.isInteger(frameId) && frameId >= 0 ? { frameId } : undefined;

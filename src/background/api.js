@@ -35,6 +35,9 @@ ${error.stack ? '\nスタックトレース:\n' + error.stack : ''}
 
 // テキスト翻訳関数
 export async function translateText(text, settings, requestOptions = {}) {
+  if (requestOptions.onDelta) {
+    return translateTextStream(text, settings, { onDelta: requestOptions.onDelta }, requestOptions);
+  }
   const provider = getProviderDefinition(settings?.apiProvider) || getProviderDefinition('gemini');
   return await provider.translate(text, settings, requestOptions);
 }
@@ -54,15 +57,29 @@ export async function translateImage(imageInput, settings, requestOptions = {}) 
 }
 
 export async function translateTextStream(text, settings, handlers = {}, requestOptions = {}) {
-  const capabilities = getProviderCapabilities(settings);
-  if (!capabilities.supportsStreaming) {
-    throw new Error(`streaming is not supported for provider: ${settings?.apiProvider || 'unknown'}`);
-  }
+  return translateWithUpdates('translate', 'translateStream', text, settings, handlers, requestOptions);
+}
+
+// 表示側は通信方式を判断しない。非対応の場合も同じ更新・完了の契約で一括結果を返す。
+// 通信エラー時の自動再送は、二重課金や生成途中の結果の混在につながるため行わない。
+async function translateWithUpdates(method, streamMethod, input, settings, handlers, requestOptions) {
   const provider = getProviderDefinition(settings?.apiProvider);
-  if (provider?.translateStream) {
-    return provider.translateStream(text, settings, handlers, requestOptions);
+  if (!provider?.[method]) throw new Error(`翻訳経路が未実装です: ${settings?.apiProvider || 'unknown'}`);
+  const streaming = getProviderCapabilities(settings).supportsStreaming && provider[streamMethod];
+  const result = streaming
+    ? await provider[streamMethod](input, settings, { ...handlers, onDone: undefined }, requestOptions)
+    : await provider[method](input, settings, requestOptions);
+  if (requestOptions.signal?.aborted) throw new DOMException('The operation was aborted', 'AbortError');
+  if (!streaming) await handlers.onDelta?.(result, result);
+  await handlers.onDone?.(result);
+  return result;
+}
+
+export async function translateImageStream(imageInput, settings, handlers = {}, requestOptions = {}) {
+  if (!getProviderCapabilities(settings).supportsImageTranslation) {
+    throw new Error(`現在のプロバイダー (${settings?.apiProvider || 'unknown'}) は画像翻訳に対応していません`);
   }
-  throw new Error(`streaming is not implemented for provider: ${settings?.apiProvider || 'unknown'}`);
+  return translateWithUpdates('translateImage', 'translateImageStream', imageInput, settings, handlers, requestOptions);
 }
 
 // 構造化バッチ翻訳（全Provider対応）。
@@ -72,6 +89,9 @@ export async function translateBatchStructured(texts, settings, requestOptions =
 
   const providerId = settings?.apiProvider || 'gemini';
   const provider = getProviderDefinition(providerId);
+  if (requestOptions.onDelta && getProviderCapabilities(settings).supportsStreaming && provider?.translateBatchStructuredStream) {
+    return provider.translateBatchStructuredStream(texts, settings, { onDelta: requestOptions.onDelta }, requestOptions);
+  }
   if (provider?.translateBatchStructured) {
     return provider.translateBatchStructured(texts, settings, requestOptions);
   }

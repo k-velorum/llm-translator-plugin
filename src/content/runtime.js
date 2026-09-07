@@ -41,7 +41,7 @@ const runtimeMessageHandlers = {
   },
 
   prepareSelectionTranslationStream(message, sender, sendResponse) {
-    sendResponse({ requestId: window.prepareSelectionTranslationStream() });
+    sendResponse({ requestId: window.prepareSelectionTranslationStream(message) });
     return true;
   },
 
@@ -53,6 +53,16 @@ const runtimeMessageHandlers = {
   finishSelectionReplacement(message, sender, sendResponse) {
     sendResponse(window.LLMT.selectionReplacement.finish(message.requestId, message.translations, message.error));
     return true;
+  },
+
+  previewSelectionReplacement(message) {
+    window.LLMT.selectionReplacement.preview(message.requestId, message.previewText || '');
+    return false;
+  },
+
+  pageTranslationPreview(message) {
+    window.LLMT.pageTranslation.preview(message.snapshotId, message.previewText || '');
+    return false;
   },
 
   translationStreamStart() {

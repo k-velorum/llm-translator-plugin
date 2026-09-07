@@ -4,7 +4,6 @@ import { getReasoningRequestOptions } from '../../../shared/reasoning.js';
 import { PROVIDER_AVAILABILITY_TIMEOUT_MS } from '../../../shared/constants.js';
 import { createOpenAICompatibleProvider } from '../openai-compatible.js';
 import { makeApiRequest } from '../http.js';
-import { translateImage as translateLMStudioImage } from './lmstudio-image.js';
 import { DEFAULT_PROVIDER_MODELS } from '../../../shared/default-models.js';
 
 function getHeaders(connection, { json = false } = {}) {
@@ -47,22 +46,6 @@ async function getModels(message, settings) {
   return models.filter(model => typeof model?.id === 'string').map(model => ({ ...model, name: model.name || model.id }));
 }
 
-async function translateImage(imageInput, settings, requestOptions) {
-  const connection = getActiveConnection(settings);
-  validateConnection(connection);
-  const baseUrl = normalizeBaseUrl(connection.baseUrl);
-  if (!connection.preset.nativeImages || !baseUrl.endsWith('/v1')) {
-    throw createConfigurationError('画像翻訳はLM Studioプリセットで /v1 を含むベースURLを指定してください');
-  }
-  return translateLMStudioImage(imageInput, {
-    ...settings,
-    lmstudioServer: baseUrl.slice(0, -3),
-    lmstudioApiKey: connection.apiKey,
-    lmstudioModel: connection.model,
-    lmstudioReasoning: connection.reasoning
-  }, requestOptions);
-}
-
 export default createOpenAICompatibleProvider({
   providerLabel: 'OpenAI互換',
   getConfig,
@@ -72,6 +55,5 @@ export default createOpenAICompatibleProvider({
   }),
   responseFormatCandidates: (settings) => getActiveConnection(settings).preset.jsonObjectOnly
     ? [{ type: 'json_object' }] : undefined,
-  getModels,
-  translateImage
+  getModels
 });
