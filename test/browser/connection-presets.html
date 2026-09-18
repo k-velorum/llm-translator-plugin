@@ -1,0 +1,52 @@
+<!doctype html><meta charset="utf-8"><title>接続プリセットテスト</title>
+<style>body{font:14px sans-serif;width:400px}input,select,button{box-sizing:border-box;max-width:100%}.hidden{display:none}#results{white-space:pre-wrap}</style>
+<body><div id="connection-preset-slot"></div><div id="provider-sections"></div>
+<template id="provider-section-template"><section class="api-section"><h2 class="api-heading"></h2></section></template>
+<output id="results"></output>
+<script src="/lib/jquery.min.js"></script>
+<script type="module">
+import {renderProviderSections,getProviderElementRefs} from '/src/popup/provider-ui.js';
+import {createConnectionForm} from '/src/popup/connection-form.js';
+import {saveSettings} from '/src/popup/settings-form.js';
+import {loadSettings} from '/src/background/settings.js';
+let stored = {}, resolveModels;
+window.chrome = {runtime:{sendMessage:(message, callback) => {resolveModels = callback;}},storage:{sync:{
+ get:(_keys,callback)=>callback(structuredClone(stored)),
+ set:(settings,callback)=>{stored={...stored,...structuredClone(settings)};callback?.();}
+}}};
+const check = (condition,label) => {if(!condition)throw new Error(label);document.querySelector('#results').textContent += 'PASS: '+label+'\n';};
+const boot = settings => {renderProviderSections(document.querySelector('#provider-sections'));const elements=getProviderElementRefs();return {elements,form:createConnectionForm(elements,settings)};};
+const controls = () => {const root=document.querySelector('.preset-controls');return {root,name:root.querySelector('input'),add:root.querySelectorAll('button')[0],remove:root.querySelectorAll('button')[1]};};
+(async()=>{
+ let {elements,form}=boot({apiProvider:'openai',openaiPreset:'lmstudio',openaiConnections:{lmstudio:{
+  baseUrl:'http://192.0.2.1:1234/v1',model:'original-model',apiKey:'dummy-key',reasoning:'off',streaming:false
+ }}});
+ let changes=0;
+ elements.openaiPresetSelect.addEventListener('input',()=>changes++);
+ check(controls().remove.disabled,'組み込みプリセットは削除不可');
+ controls().add.click();check(changes===0 && controls().root.textContent.includes('1〜80'),'空の名前を拒否');
+ controls().name.value=' 自宅サーバー ';controls().add.click();
+ const first=form.collect().openaiPreset;
+ check(first.startsWith('saved:') && form.active().name==='自宅サーバー' && changes===1,'独自名で追加して未保存変更を通知');
+ check(form.active().preset.reasoning==='lmstudio' && form.active().reasoning==='off' && !form.active().streaming,'接続種別・推論・ストリームを維持');
+ controls().name.value='自宅サーバー';controls().add.click();check(changes===1,'同名の追加を拒否');
+ const pending=form.refreshModels();
+ controls().name.value='外出先サーバー';controls().add.click();const second=form.collect().openaiPreset;
+ resolveModels({models:[{id:'stale-model'}]});await pending;
+ check(![...elements.openaiModelSelect.options].some(option=>option.value==='stale-model'),'追加前のモデル一覧応答を無視');
+ elements.openaiServerInput.value='http://192.0.2.2:1234/v1';elements.openaiServerInput.dispatchEvent(new Event('input'));
+ check(elements.openaiApiKeyInput.value==='','複製後のURL変更で認証をクリア');
+ elements.openaiPresetSelect.value=first;elements.openaiPresetSelect.dispatchEvent(new Event('change'));
+ check(form.active().apiKey==='dummy-key' && form.active().baseUrl.includes('192.0.2.1'),'切替後も元プリセットのURLとキーを維持');
+ await saveSettings({apiProvider:'openai',...form.collect()});
+ ({elements,form}=boot(await loadSettings()));
+ check(form.collect().openaiPreset===first && [...elements.openaiPresetSelect.options].some(o=>o.value===second),'保存・再読み込みで複数のプリセットと選択を復元');
+ controls().remove.click();
+ check(form.collect().openaiPreset==='lmstudio' && !form.collect().openaiConnections[first],'削除した接続の基になった組み込みプリセットへ戻る');
+ check(stored.openaiConnections[first] && stored.openaiConnections[second],'削除は保存するまで永続設定に影響しない');
+ await saveSettings({apiProvider:'openai',...form.collect()});
+ ({elements,form}=boot(await loadSettings()));
+ check(!form.collect().openaiConnections[first] && form.collect().openaiConnections[second],'保存後の再読み込みで削除が確定し他のプリセットを保持');
+ document.title='PASS 接続プリセットテスト';
+})().catch(error=>{document.title='FAIL';document.querySelector('#results').textContent+=error.stack;});
+</script>

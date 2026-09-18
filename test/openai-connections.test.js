@@ -140,3 +140,46 @@ describe('モデル一覧と対応機能', () => {
       supportsImageTranslation: true, maxPageTranslationConcurrency: null } });
   });
 });
+
+describe('名前付きの接続プリセット', () => {
+  const id = 'saved:home-server';
+  const saved = { name: '自宅のLM Studio', presetType: 'lmstudio', baseUrl: 'http://192.0.2.9:1234/v1',
+    model: 'home-model', apiKey: 'home-key', reasoning: 'off', streaming: false };
+  it('再読み込み・正規化後も独自名と選択・設定を維持する', () => {
+    const settings = normalizeConnectionSettings(connectionSettings(id, saved));
+    expect(normalizeConnectionSettings(settings)).toEqual(settings);
+    expect(getActiveConnection(settings)).toMatchObject({ ...saved, presetId: id,
+      preset: { label: saved.name, reasoning: 'lmstudio' } });
+    expect(getConnectionCapabilities(settings).supportsStreaming).toBe(false);
+  });
+  it('保存プリセットの接続先・認証・推論設定をAPIへ渡す', async () => {
+    const fetch = vi.fn(async () => mockResponse('訳文'));
+    vi.stubGlobal('fetch', fetch);
+    await translateText('hello', connectionSettings(id, saved));
+    expect(fetch.mock.calls[0][0]).toBe('http://192.0.2.9:1234/v1/chat/completions');
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBe('Bearer home-key');
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({ model: 'home-model', reasoning_effort: 'none' });
+  });
+  it('未保存の名前付き接続でも一覧取得に下書きのURLと認証を使う', async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ data: [{ id: 'local' }] })));
+    vi.stubGlobal('fetch', fetch);
+    await getProviderDefinition('openai').getModels({ presetId: id, connection: saved }, {});
+    expect(fetch.mock.calls[0][0]).toBe('http://192.0.2.9:1234/v1/models');
+    expect(fetch.mock.calls[0][1].headers.Authorization).toBe('Bearer home-key');
+  });
+  it('Z-AIの固定モデル一覧とOllamaの同時実行制限を引き継ぐ', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    const models = await getProviderDefinition('openai').getModels({ presetId: id, connection: {
+      name: '仕事用Z-AI', presetType: 'zai', baseUrl: 'https://api.z.ai/api/paas/v4', apiKey: 'dummy'
+    } }, {});
+    expect(models.length).toBeGreaterThan(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(getConnectionCapabilities(connectionSettings(id, { name: '自宅Ollama', presetType: 'ollama' }))
+      .maxPageTranslationConcurrency).toBe(1);
+  });
+  it('削除済みのIDを復活させず、不明な接続種別はカスタムとして扱う', () => {
+    expect(normalizeConnectionSettings({ apiProvider: 'openai', openaiPreset: id }).openaiPreset).toBe('openrouter');
+    expect(getActiveConnection(connectionSettings(id, { ...saved, presetType: 'unknown' })))
+      .toMatchObject({ presetType: 'custom', preset: { reasoning: 'custom' } });
+  });
+});

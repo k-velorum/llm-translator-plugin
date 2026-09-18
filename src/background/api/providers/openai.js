@@ -33,7 +33,7 @@ async function getModels(message, settings) {
   const baseUrl = normalizeBaseUrl(connection.baseUrl);
   const isDefaultEndpoint = baseUrl === connection.preset.baseUrl;
   if (isDefaultEndpoint && connection.preset.staticModels) {
-    return DEFAULT_PROVIDER_MODELS[connection.presetId] || [];
+    return DEFAULT_PROVIDER_MODELS[connection.presetType] || [];
   }
   const url = isDefaultEndpoint && !connection.apiKey && connection.preset.publicModelsUrl
     ? connection.preset.publicModelsUrl : `${baseUrl}/models`;

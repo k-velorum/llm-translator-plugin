@@ -1,6 +1,7 @@
+import { mountPresetControls } from './connection-presets.js';
 import {
   normalizeConnectionSettings, getConnectionPreset, connectionReasoningOptions,
-  normalizeBaseUrl, getActiveConnection
+  normalizeBaseUrl, getActiveConnection, CONNECTION_PRESETS, isSavedConnection
 } from '../shared/connections.js';
 import { DEFAULT_PROVIDER_MODELS } from '../shared/default-models.js';
 import { populateModelSelect, fetchModelsViaBackground } from './models.js';
@@ -9,22 +10,22 @@ function comparableUrl(value) {
   try { return normalizeBaseUrl(value); } catch { return value.trim(); }
 }
 
-function renderConnectionFields(elements, connection, presetId) {
+function renderConnectionFields(elements, connection, presetId, connections) {
   const { openaiPresetSelect: presetSelect, openaiServerInput: server, openaiApiKeyInput: key,
     openaiModelSelect: model, openaiReasoningSelect: reasoning, openaiStreamingInput: streaming } = elements;
-  const preset = getConnectionPreset(presetId);
+  const preset = getConnectionPreset(presetId, connections);
   presetSelect.value = presetId;
   server.value = connection.baseUrl;
   key.value = connection.apiKey;
   const keyLabel = document.querySelector('label[for="openai-api-key"]');
   keyLabel.textContent = preset.needsApiKey ? 'APIキー' : 'APIキー（必要な場合のみ）';
-  reasoning.replaceChildren(...connectionReasoningOptions(presetId).map(([value, label]) => new Option(label, value)));
+  reasoning.replaceChildren(...connectionReasoningOptions(presetId, connections).map(([value, label]) => new Option(label, value)));
   reasoning.value = connection.reasoning;
   if (!reasoning.value) reasoning.value = 'default';
   reasoning.closest('.form-group').classList.toggle('hidden', reasoning.options.length === 1);
   streaming.checked = connection.streaming;
   model.value = '';
-  populateModelSelect('openai', model, DEFAULT_PROVIDER_MODELS[presetId] || [], connection.model);
+  populateModelSelect('openai', model, DEFAULT_PROVIDER_MODELS[connection.presetType || presetId] || [], connection.model);
 }
 
 export function createConnectionForm(elements, settings) {
@@ -39,12 +40,15 @@ export function createConnectionForm(elements, settings) {
   const status = document.getElementById('openai-connection-status');
 
   function read() {
-    return { baseUrl: server.value.trim(), apiKey: key.value.trim(), model: model.value || '',
+    return { ...connections[presetId], baseUrl: server.value.trim(), apiKey: key.value.trim(), model: model.value || '',
       reasoning: reasoning.value || 'default', streaming: streaming.checked };
   }
 
   function render() {
-    renderConnectionFields(elements, connections[presetId], presetId);
+    const ids = [...Object.keys(CONNECTION_PRESETS), ...Object.keys(connections).filter(id => isSavedConnection(id, connections))];
+    presetSelect.replaceChildren(...ids.map(id => new Option(getConnectionPreset(id, connections).label, id)));
+    renderConnectionFields(elements, connections[presetId], presetId, connections);
+    presetControls.update(isSavedConnection(presetId, connections));
     previousUrl = comparableUrl(server.value);
     status.textContent = '';
     refresh.disabled = false;
@@ -104,6 +108,29 @@ export function createConnectionForm(elements, settings) {
     populateModelSelect('openai', model, [], model.value);
   });
   refresh.addEventListener('click', refreshModels);
+  const presetControls = mountPresetControls(presetSelect, {
+    container: elements.openaiSection,
+    add(value) {
+      const name = value.trim();
+      if (!name || name.length > 80) throw new Error('プリセット名を1〜80文字で入力してください。');
+      const names = Object.keys(connections).map(id => getConnectionPreset(id, connections).label.toLowerCase());
+      if (names.includes(name.toLowerCase())) throw new Error('同じ名前のプリセットがあります。別の名前を入力してください。');
+      connections[presetId] = read();
+      const connection = { ...connections[presetId], name, presetType: connections[presetId].presetType || presetId };
+      presetId = `saved:${crypto.randomUUID()}`;
+      connections[presetId] = connection;
+      requestVersion += 1;
+      render();
+    },
+    remove() {
+      if (!isSavedConnection(presetId, connections)) return;
+      const fallback = connections[presetId].presetType;
+      delete connections[presetId];
+      presetId = fallback;
+      requestVersion += 1;
+      render();
+    }
+  });
   render();
 
   return {

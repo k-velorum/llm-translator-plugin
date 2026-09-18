@@ -31,8 +31,18 @@ export const CONNECTION_PRESETS = {
 
 export const LEGACY_COMPATIBLE_IDS = Object.keys(CONNECTION_PRESETS).filter(id => id !== 'custom');
 
-export function getConnectionPreset(id) {
-  return Object.hasOwn(CONNECTION_PRESETS, id) ? CONNECTION_PRESETS[id] : CONNECTION_PRESETS.custom;
+export function isSavedConnection(id, connections = {}) {
+  return typeof id === 'string' && id.startsWith('saved:') && Object.hasOwn(connections, id)
+    && typeof connections[id]?.name === 'string' && !!connections[id].name.trim();
+}
+
+export function getConnectionPreset(id, connections = {}) {
+  if (Object.hasOwn(CONNECTION_PRESETS, id)) return CONNECTION_PRESETS[id];
+  if (isSavedConnection(id, connections)) {
+    const base = getConnectionPreset(connections[id].presetType);
+    return { ...base, label: connections[id].name };
+  }
+  return CONNECTION_PRESETS.custom;
 }
 
 export function defaultConnection(id) {
@@ -62,12 +72,19 @@ export function normalizeConnectionSettings(settings = {}) {
     }
     connections[id] = { ...legacy, ...connections[id] };
   }
+  for (const [id, connection] of Object.entries(connections)) {
+    if (isSavedConnection(id, connections)) {
+      const presetType = Object.hasOwn(CONNECTION_PRESETS, connection.presetType) ? connection.presetType : 'custom';
+      connections[id] = { ...defaultConnection(presetType), ...connection, presetType };
+    }
+  }
   const legacyProvider = LEGACY_COMPATIBLE_IDS.includes(settings.apiProvider);
   return {
     ...settings,
     apiProvider: legacyProvider || !settings.apiProvider ? 'openai' : settings.apiProvider,
     openaiPreset: legacyProvider ? settings.apiProvider
-      : Object.hasOwn(CONNECTION_PRESETS, settings.openaiPreset) ? settings.openaiPreset : 'openrouter',
+      : (Object.hasOwn(CONNECTION_PRESETS, settings.openaiPreset) || isSavedConnection(settings.openaiPreset, connections))
+        ? settings.openaiPreset : 'openrouter',
     openaiConnections: connections
   };
 }
@@ -75,9 +92,9 @@ export function normalizeConnectionSettings(settings = {}) {
 export function getActiveConnection(settings = {}) {
   const normalized = normalizeConnectionSettings(settings);
   const presetId = normalized.openaiPreset;
-  const preset = getConnectionPreset(presetId);
+  const preset = getConnectionPreset(presetId, normalized.openaiConnections);
   const connection = normalized.openaiConnections[presetId] || defaultConnection(presetId);
-  return { ...connection, presetId, preset };
+  return { ...connection, presetId, presetType: connection.presetType || presetId, preset };
 }
 
 export function normalizeBaseUrl(value) {
@@ -101,8 +118,8 @@ export function validateConnection(connection, { requireModel = true } = {}) {
   if (requireModel && !connection.model?.trim()) throw new Error('モデルを選択または入力してください');
 }
 
-export function connectionReasoningOptions(presetId) {
-  return REASONING_OPTIONS[getConnectionPreset(presetId).reasoning] || [['default', 'モデルの既定']];
+export function connectionReasoningOptions(presetId, connections) {
+  return REASONING_OPTIONS[getConnectionPreset(presetId, connections).reasoning] || [['default', 'モデルの既定']];
 }
 
 export function getConnectionCapabilities(settings) {

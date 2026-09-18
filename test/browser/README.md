@@ -38,3 +38,5 @@ bun -e 'Bun.serve({hostname:"127.0.0.1",port:18763,fetch:request=>new Response(B
 `/test/browser/nano-preparation.html` はモデルAPIを模擬し、実際の準備UIで初回案内・画像非対応・進捗・中止・再試行・遅延完了時の解放を確認します。成功時のタイトルは `PASS Nano 準備画面テスト` です。実際の初回ダウンロードは、拡張を再読み込みして設定の「モデルを準備」から確認してください。
 
 `/test/browser/selection-conversation.html` は、選択翻訳後の追加指示、複数ターン、途中表示、失敗時の回答と入力の復元、閉じた後の遅延応答を確認します。成功時のタイトルは `PASS 選択翻訳の会話テスト` です。APIの回答は模擬しています。
+
+`/test/browser/connection-presets.html` は、名前付き接続の追加・重複名の拒否・切り替え・保存後の復元・削除・接続種別の保持・遅延したモデル一覧応答の無視を確認します。成功時のタイトルは `PASS 接続プリセットテスト` です。Chromeの保存APIとモデル一覧取得は模擬しています。
