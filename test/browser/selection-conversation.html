@@ -16,7 +16,7 @@ const check = (condition, label) => {
 };
 const tick = () => new Promise(resolve => requestAnimationFrame(resolve));
 (async () => {
-  const first = prepareSelectionTranslationStream({conversationId:'test-conversation'});
+  const first = prepareSelectionTranslationStream({conversationId:'test-conversation',kind:new URLSearchParams(location.search).get('kind') || 'selection'});
   let popup = document.querySelector('[role=dialog]');
   const input = popup.querySelector('textarea');
   const submit = popup.querySelector('[type=submit]');

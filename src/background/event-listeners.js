@@ -1,3 +1,4 @@
+import { clearConversationImages } from './conversation-images.js';
 import { discardSelectionConversationsForTab } from './selection-conversation.js';
 import { initializeDefaultSettings } from './settings.js';
 import {
@@ -192,6 +193,10 @@ function handleTabRemoved(tabId) {
 
 // イベントリスナーの登録
 export function registerEventListeners() {
+  // storage.sessionの会話が消えるブラウザ再起動時に、画像の実体も破棄する。
+  chrome.runtime.onStartup.addListener(() => {
+    clearConversationImages().catch(error => log.warn('eventListeners', '会話画像の破棄に失敗しました', error));
+  });
   chrome.runtime.onInstalled.addListener((details) => {
     log.info('eventListeners', `拡張機能が ${details.reason} されました。`);
     initializeDefaultSettings();

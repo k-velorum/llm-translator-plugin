@@ -4,6 +4,14 @@ import { runInNewContext } from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../src/background/logging.js', () => ({ appendLog: vi.fn(async () => {}), getProviderMeta: () => ({}) }));
+vi.mock('../src/background/conversation-images.js', () => {
+  const images = new Map();
+  return {
+    saveConversationImage: async (id, image) => { images.set(id, structuredClone(image)); },
+    loadConversationImage: async id => images.get(id),
+    deleteConversationImage: async id => { images.delete(id); }
+  };
+});
 const settings = { apiProvider: 'chromePrompt' };
 const source = name => readFileSync(new URL(`../src/content/${name}.js`, import.meta.url), 'utf8');
 let listeners, controllers, sessions, api, handlers, view, render, sender;
@@ -127,6 +135,33 @@ describe('Nano: offscreenから各表示経路までのストリーム', () => {
     const nonStreaming = await api.translateText('日本語にして', settings, { messages });
     expect(nonStreaming).toBe('一括結果');
     expect(sessions[2].prompt.mock.calls[0][0]).toEqual(messages);
+  });
+
+  it('画像翻訳から同じ元画像・回答を引き継いで複数回対話できる', async () => {
+    const { translateImageAndNotify } = await import('../src/background/image-translation.js');
+    const initial = translateImageAndNotify(1, 'data:image/png;base64,AA==', 3);
+    const controller = await startGeneration();
+    controller.enqueue('中文回答'); controller.close();
+    await initial;
+    const preparation = globalThis.chrome.tabs.sendMessage.mock.calls.map(call => call[1])
+      .find(message => message.action === 'prepareSelectionTranslationStream');
+    expect(preparation.conversationId).toBeTruthy();
+    const firstSystem = globalThis.LanguageModel.create.mock.calls[0][0].initialPrompts;
+    for (const [index, instruction, answer] of [[1, '日本語にして', '日本語の回答'], [2, '短くして', '短い回答']]) {
+      const running = view.requestSelectionConversation({ text: instruction, conversationId: preparation.conversationId,
+        popup: { dataset: {}, isConnected: true }, render });
+      await vi.advanceTimersByTimeAsync(0);
+      const input = sessions[index].promptStreaming.mock.calls[0][0];
+      expect(input).toHaveLength(index * 2 + 1);
+      expect(input[0].content[1].value).toBeInstanceOf(Blob);
+      expect(new Uint8Array(await input[0].content[1].value.arrayBuffer())).toEqual(new Uint8Array([0]));
+      expect(input[1]).toEqual({ role: 'assistant', content: '中文回答' });
+      expect(input.at(-1)).toEqual({ role: 'user', content: instruction });
+      expect(globalThis.LanguageModel.create.mock.calls[index][0].initialPrompts).toEqual(firstSystem);
+      controllers[index].enqueue(answer); controllers[index].close();
+      expect(await running).toEqual({ ok: true, data: { answer } });
+    }
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it.each(['initial', 'shorter', 'longer'])('要約 %s も途中表示する', async adjustment => {

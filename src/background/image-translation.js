@@ -1,3 +1,5 @@
+import { IMAGE_TRANSLATION_PROMPT } from '../shared/image-translation.js';
+import { createSelectionConversation, saveSelectionAnswer } from './selection-conversation.js';
 import { loadSettings } from './settings.js';
 import { appendLog, getProviderMeta } from './logging.js';
 import { formatErrorDetails, getProviderCapabilities, translateImage, translateImageStream } from './api.js';
@@ -235,15 +237,22 @@ export async function translateImageAndNotify(tabId, srcUrl, frameId = 0) {
   }
 
   let translatedText;
+  let conversation;
   try {
     const imageInput = await normalizeImageInput(srcUrl, { tabId, frameId });
+    conversation = await createSelectionConversation(tabId, frameId, IMAGE_TRANSLATION_PROMPT, settings, imageInput);
     const streamed = await streamToPopup({
-      tabId, frameId, kind: 'image', anchorRect,
-      run: (handlers, options) => translateImageStream(imageInput, settings, handlers, options)
+      tabId, frameId, kind: 'image', anchorRect, conversationId: conversation.id,
+      run: async (handlers, options) => {
+        const answer = await translateImageStream(imageInput, settings, handlers, options);
+        if (!options.signal.aborted) await saveSelectionAnswer(tabId, frameId, conversation, answer);
+        return answer;
+      }
     });
     if (streamed.displayed) return;
     if (streamed.error) throw streamed.error;
     translatedText = await translateImage(imageInput, settings, { timeoutMs: TRANSLATION_TIMEOUT_MS });
+    await saveSelectionAnswer(tabId, frameId, conversation, translatedText);
   } catch (error) {
     log.error('imageTranslation', '画像翻訳処理中のエラー', error);
     await appendLog({
@@ -258,7 +267,7 @@ export async function translateImageAndNotify(tabId, srcUrl, frameId = 0) {
   }
 
   try {
-    await sendMessageToFrame(tabId, frameId, { action: 'showTranslation', translatedText, anchorRect });
+    await sendMessageToFrame(tabId, frameId, { action: 'showTranslation', translatedText, anchorRect, conversationId: conversation?.id });
     return;
   } catch (sendMessageError) {
     log.warn('imageTranslation', 'コンテンツスクリプトへの送信に失敗 (画像翻訳)', sendMessageError);

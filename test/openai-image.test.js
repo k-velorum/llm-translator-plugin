@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { translateImage } from '../src/background/api.js';
+import { translateImage, translateImageStream } from '../src/background/api.js';
 import { CONNECTION_PRESETS, getConnectionCapabilities } from '../src/shared/connections.js';
 
 const image = { dataUrl: 'data:image/png;base64,AA==', mimeType: 'image/png' };
@@ -85,5 +85,30 @@ describe('OpenAI互換の画像入力', () => {
     }));
     await expect(translateImage(image, settingsFor('custom'), { signal: controller.signal }))
       .rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+
+describe('OpenAI互換の画像会話', () => {
+  it.each([true, false])('streaming=%s: 元画像は初回ユーザー入力にだけ添付する', async streaming => {
+    const settings = settingsFor('custom', { streaming });
+    const fetch = vi.fn(async () => streaming
+      ? new Response('data: {"choices":[{"delta":{"content":"日本語の回答"}}]}\n\ndata: [DONE]\n\n')
+      : response('日本語の回答'));
+    vi.stubGlobal('fetch', fetch);
+    await translateImageStream(image, settings);
+    const initial = JSON.parse(fetch.mock.calls[0][1].body);
+    const messages = [
+      { role: 'user', content: initial.messages[1].content[0].text },
+      { role: 'assistant', content: '中文回答' },
+      { role: 'user', content: '日本語にして' },
+      { role: 'assistant', content: '日本語の回答' },
+      { role: 'user', content: '右下の文字も訳して' }
+    ];
+    await translateImageStream(image, settings, {}, { messages });
+    const followup = JSON.parse(fetch.mock.calls[1][1].body);
+    expect(followup.messages).toEqual([...initial.messages, ...messages.slice(1)]);
+    expect(JSON.stringify(followup).split(image.dataUrl)).toHaveLength(2);
+    expect(messages[0].content).toBe(initial.messages[1].content[0].text);
   });
 });

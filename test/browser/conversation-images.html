@@ -1,0 +1,38 @@
+<!doctype html><meta charset="utf-8"><title>画像会話の保存テスト</title><pre id="results"></pre>
+<script type="module">
+import {createSelectionConversation,loadSelectionConversation,saveSelectionAnswer,discardSelectionConversation,discardSelectionConversationsForTab} from '/src/background/selection-conversation.js';
+import {loadConversationImage,clearConversationImages} from '/src/background/conversation-images.js';
+import {createSessionStorage} from '/test/helpers/session-storage.js';
+window.chrome={storage:{session:createSessionStorage()}};
+const check=(condition,label)=>{if(!condition)throw new Error(label);document.querySelector('#results').textContent+='PASS: '+label+'\n';};
+const missing=async id=>{try{await loadConversationImage(id);return false;}catch{return true;}};
+(async()=>{
+ await clearConversationImages();
+ const settings={apiProvider:'openai'};
+ const image={dataUrl:'data:image/png;base64,AA==',mimeType:'image/png'};
+ const initial=await createSelectionConversation(1,3,'画像の翻訳指示',settings,image);
+ await saveSelectionAnswer(1,3,initial,'中文回答');
+ const restarted=await import('/src/background/conversation-images.js?restart=1');
+ check((await restarted.loadConversationImage(initial.id)).dataUrl===image.dataUrl,'別のモジュール実体から元画像を復元');
+ check((await loadSelectionConversation(1,3,initial.id)).messages[1].content==='中文回答','会話履歴も復元');
+ check(!JSON.stringify(await chrome.storage.session.get(null)).includes(image.dataUrl),'storage.sessionへ画像データを重複保存しない');
+ const next=await createSelectionConversation(1,3,'別の画像',settings,image);
+ check(await missing(initial.id),'同じフレームの次の翻訳で前の画像を削除');
+ await discardSelectionConversation(1,3,initial.id);
+ check((await loadConversationImage(next.id)).dataUrl===image.dataUrl,'古いポップアップの終了で新しい画像を削除しない');
+ await discardSelectionConversation(1,3,next.id);
+ check(await missing(next.id),'ポップアップ終了で画像を削除');
+ const large={...image,dataUrl:'data:image/png;base64,'+'A'.repeat(Math.ceil(8*1024*1024/3)*4)};
+ const big=await createSelectionConversation(2,0,'画像',settings,large);
+ check((await loadConversationImage(big.id)).dataUrl.length===large.dataUrl.length,'8MB相当の画像をBase64のまま保存できる');
+ const other=await createSelectionConversation(3,0,'画像',settings,image);
+ await discardSelectionConversationsForTab(2);
+ check(await missing(big.id) && !(await missing(other.id)),'タブ終了でそのタブの画像だけを削除');
+ await createSelectionConversation(3,0,'テキスト翻訳',settings);
+ check(await missing(other.id),'テキスト翻訳への切り替えでも画像を削除');
+ const last=await createSelectionConversation(4,0,'画像',settings,image);
+ await clearConversationImages();
+ check(await missing(last.id),'ブラウザ起動時の画像削除');
+ document.title='PASS 画像会話の保存テスト';
+})().catch(error=>{document.title='FAIL';document.querySelector('#results').textContent+=error.stack;});
+</script>

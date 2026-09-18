@@ -1,3 +1,4 @@
+import { imageConversationMessages } from '../../shared/image-translation.js';
 import { canFallbackAfterError } from '../../shared/errors.js';
 import { TRANSLATION_TIMEOUT_MS } from '../../shared/constants.js';
 import {
@@ -114,23 +115,22 @@ export function createOpenAICompatibleProvider({
     );
   }
 
-  async function translateImage(imageInput, settings, requestOptions = {}) {
-    return translate(imageMessage(imageInput), settings, requestOptions);
-  }
-
-  async function translateImageStream(imageInput, settings, handlers, requestOptions) {
-    return translateStream(imageMessage(imageInput), settings, handlers, requestOptions);
-  }
-
-  function imageMessage(imageInput) {
+  function imageMessages(imageInput, messages) {
     if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(imageInput?.dataUrl || '')) {
       throw new Error('画像入力データが不正です');
     }
-    // テキストと同じ接続・認証・推論設定で、ユーザーメッセージの内容だけを切り替える。
-    return [
-      { type: 'text', text: 'この画像に含まれるテキストを読み取り、日本語に翻訳してください。翻訳結果のみを出力してください。テキストが見当たらない場合は「翻訳対象のテキストが見つかりませんでした。」とだけ出力してください。' },
+    return imageConversationMessages(messages, text => [
+      { type: 'text', text },
       { type: 'image_url', image_url: { url: imageInput.dataUrl } }
-    ];
+    ]);
+  }
+
+  async function translateImage(imageInput, settings, requestOptions = {}) {
+    return translate('', settings, { ...requestOptions, messages: imageMessages(imageInput, requestOptions.messages) });
+  }
+
+  async function translateImageStream(imageInput, settings, handlers, requestOptions = {}) {
+    return translateStream('', settings, handlers, { ...requestOptions, messages: imageMessages(imageInput, requestOptions.messages) });
   }
 
   async function translateBatchStructured(texts, settings, requestOptions = {}) {

@@ -1,3 +1,4 @@
+import { loadConversationImage } from './conversation-images.js';
 import { loadSelectionConversation, buildConversationRequest, saveSelectionAnswer, discardSelectionConversation } from './selection-conversation.js';
 import { buildSummaryRequest, handleSelectionSummary } from './selection-summary.js';
 import { getErrorLogLevel } from '../shared/errors.js';
@@ -5,6 +6,7 @@ import { loadSettings } from './settings.js';
 import {
   translateText,
   translateTextStream,
+  translateImageStream,
   getProviderCapabilities
 } from './api.js';
 import { getProviderDefinition } from './api/registry.js';
@@ -66,6 +68,7 @@ async function startStreamingTranslation(message, sender, sendResponse, { summar
   try {
     const conversation = isConversation
       ? await loadSelectionConversation(tabId, frameId, message.conversationId) : null;
+    const imageInput = conversation?.kind === 'image' ? await loadConversationImage(conversation.id) : null;
     const conversationRequest = conversation ? buildConversationRequest(conversation, text) : null;
     const savedSettings = conversationRequest?.settings || await loadSettings();
     const summaryRequest = summary ? buildSummaryRequest(message) : null;
@@ -97,8 +100,9 @@ async function startStreamingTranslation(message, sender, sendResponse, { summar
 
     try {
       await emitter.start(message?.meta);
-      const finalText = await translateTextStream(
-        summaryRequest ? summaryRequest.input : (conversationRequest?.input || text),
+      const generate = imageInput ? translateImageStream : translateTextStream;
+      const finalText = await generate(
+        imageInput || (summaryRequest ? summaryRequest.input : (conversationRequest?.input || text)),
         settings,
         {
           onStatus: phase => emitter.status(phase),

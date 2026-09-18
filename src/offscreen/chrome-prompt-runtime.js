@@ -1,3 +1,4 @@
+import { imageConversationMessages } from '../shared/image-translation.js';
 import { createReadyNanoSession, nanoAvailability, nanoError, nanoInputOptions } from '../shared/chrome-prompt.js';
 import {
   STRUCTURED_BATCH_SCHEMA,
@@ -41,7 +42,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (action === 'translateImage' || action === 'translateImageStream') {
-      return await handleTranslateImage(payload?.imageInput, payload?.settings || {}, signal, streamRequestId);
+      return await handleTranslateImage(payload?.imageInput, payload?.settings || {}, signal, streamRequestId, payload?.messages);
     }
 
     if (action === 'translateBatchStructured' || action === 'translateBatchStructuredStream') {
@@ -205,7 +206,7 @@ async function handleTranslate(text, settings, signal, requestId, messages) {
   });
 }
 
-async function handleTranslateImage(imageInput, settings, signal, requestId) {
+async function handleTranslateImage(imageInput, settings, signal, requestId, messages) {
   assertLanguageModelAvailable();
   const imageData = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(imageInput?.dataUrl || '');
   if (!imageData) {
@@ -221,13 +222,10 @@ async function handleTranslateImage(imageInput, settings, signal, requestId) {
   }
   const image = new Blob([bytes], { type: imageData[1] });
   return await withSession(settings, signal, async (session) => {
-    const result = await promptSession(session, [{
-      role: 'user',
-      content: [
-        { type: 'text', value: 'この画像に含まれるテキストを読み取り、日本語に翻訳してください。翻訳結果のみを出力してください。テキストが見当たらない場合は「翻訳対象のテキストが見つかりませんでした。」とだけ出力してください。' },
-        { type: 'image', value: image }
-      ]
-    }], { signal }, requestId);
+    const input = imageConversationMessages(messages, value => [
+      { type: 'text', value }, { type: 'image', value: image }
+    ]);
+    const result = await promptSession(session, input, { signal }, requestId);
     const text = (result || '').trim();
     if (!text) throw new Error('Gemini Nano から画像翻訳結果を取得できませんでした');
     return text;

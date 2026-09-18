@@ -40,3 +40,5 @@ bun -e 'Bun.serve({hostname:"127.0.0.1",port:18763,fetch:request=>new Response(B
 `/test/browser/selection-conversation.html` は、選択翻訳後の追加指示、複数ターン、途中表示、失敗時の回答と入力の復元、閉じた後の遅延応答を確認します。成功時のタイトルは `PASS 選択翻訳の会話テスト` です。APIの回答は模擬しています。
 
 `/test/browser/connection-presets.html` は、名前付き接続の追加・重複名の拒否・切り替え・保存後の復元・削除・接続種別の保持・遅延したモデル一覧応答の無視を確認します。成功時のタイトルは `PASS 接続プリセットテスト` です。Chromeの保存APIとモデル一覧取得は模擬しています。
+
+`/test/browser/conversation-images.html` は、実際のIndexedDBを使って元画像の復元、8MB相当の画像の保存、会話の切り替え・終了・タブ終了時の削除を確認します。`/test/browser/selection-conversation.html?kind=image` では画像翻訳ポップアップの追加指示・再試行・IME対応・閉じた後の応答を確認します。実モデルの画像認識品質は検証しません。
