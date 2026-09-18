@@ -184,7 +184,7 @@ export async function getChromePromptAvailability(settings = {}) {
 }
 
 export async function translateWithChromePromptRuntime(text, settings, requestOptions = {}) {
-  return callChromePromptRuntime('translate', { text, settings }, requestOptions);
+  return callChromePromptRuntime('translate', { text, settings, messages: requestOptions.messages }, requestOptions);
 }
 
 export async function translateBatchStructuredWithChromePromptRuntime(texts, settings, requestOptions = {}) {

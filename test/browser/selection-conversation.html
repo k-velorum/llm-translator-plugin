@@ -1,0 +1,67 @@
+<!doctype html><meta charset="utf-8"><title>選択翻訳の会話テスト</title>
+<body style="font:16px sans-serif;padding:24px"><p>翻訳への追加指示と会話履歴を確認します。</p><output id="results"></output>
+<script src="/src/content/ui.js"></script>
+<script src="/src/content/streaming.js"></script>
+<script src="/src/content/selection.js"></script>
+<script>
+const messages = [];
+window.safeSendMessage = () => {};
+window.LLMT.messaging = { sendBackgroundMessage: async (action, payload) => {
+  messages.push({action, ...payload});
+  return {ok:true,data:{accepted:true}};
+}};
+const check = (condition, label) => {
+  if (!condition) throw new Error(label);
+  document.querySelector('#results').append(document.createTextNode('PASS: ' + label + '\n'));
+};
+const tick = () => new Promise(resolve => requestAnimationFrame(resolve));
+(async () => {
+  const first = prepareSelectionTranslationStream({conversationId:'test-conversation'});
+  let popup = document.querySelector('[role=dialog]');
+  const input = popup.querySelector('textarea');
+  const submit = popup.querySelector('[type=submit]');
+  check(input.disabled, '初回翻訳中は追加送信不可');
+  completeStreamSession(first, '这是中文回答。'); await tick();
+  check(!input.disabled && submit.disabled, '初回完了で入力でき、空入力は送信不可');
+  const send = text => {
+    input.value = text; input.dispatchEvent(new Event('input')); popup.querySelector('form').requestSubmit();
+    return messages.at(-1).requestId;
+  };
+  input.value = '日本語に翻訳し直してください';
+  input.dispatchEvent(new Event('input'));
+  const enter = options => {
+    const event = new KeyboardEvent('keydown', {key:'Enter', bubbles:true, cancelable:true, ...options});
+    input.dispatchEvent(event);
+    return event;
+  };
+  input.dispatchEvent(new CompositionEvent('compositionstart'));
+  check(!enter().defaultPrevented && messages.length === 0, '変換中のEnterを奪わず送信しない');
+  input.dispatchEvent(new CompositionEvent('compositionend'));
+  check(!enter({isComposing:true}).defaultPrevented && messages.length === 0, 'IME確定イベントを送信しない');
+  check(!enter({keyCode:229}).defaultPrevented && messages.length === 0, 'compositionend後のIME確定Enterも送信しない');
+  check(!enter({shiftKey:true}).defaultPrevented && messages.length === 0, 'Shift+Enterは改行として残す');
+  check(!enter({repeat:true}).defaultPrevented && messages.length === 0, 'Enter長押しでは送信しない');
+  check(enter().defaultPrevented && messages.length === 1, '確定後に別途押したEnterで送信する');
+  let id = messages.at(-1).requestId;
+  check(messages.at(-1).conversationId === 'test-conversation', '初回の会話IDを送信');
+  check(input.disabled && submit.disabled, '送信中の二重送信を防止');
+  appendStreamSessionDelta(id, '日本語の途中'); await new Promise(resolve => setTimeout(resolve,70));
+  check(popup.__contentEl.textContent === '日本語の途中', '回答を途中から表示');
+  failStreamSession(id, {message:'通信失敗'}); await tick();
+  check(popup.__contentEl.textContent === '这是中文回答。' && input.value.includes('日本語'), '失敗時に前の回答と指示を保持');
+  check(popup.querySelectorAll('details').length === 0, '失敗したターンを履歴に追加しない');
+  id = send(input.value); completeStreamSession(id, 'これは日本語の回答です。'); await tick();
+  check(input.value === '' && popup.querySelectorAll('details').length === 1, '再送成功で履歴を追加し入力をクリア');
+  id = send('もっと自然に'); completeStreamSession(id, '自然な日本語の回答です。'); await tick();
+  check(popup.querySelectorAll('details').length === 2 && popup.__renderedText === '自然な日本語の回答です。', '複数ターンと最新回答のコピー対象を保持');
+  id = send('短く'); removePopup(); completeStreamSession(id, '遅延回答'); await tick();
+  check(!document.querySelector('[role=dialog]'), '閉じた後の応答で再表示しない');
+  check(messages.at(-1).action === 'closeSelectionConversation', '閉じると会話を破棄');
+  const preview = prepareSelectionTranslationStream({conversationId:'preview'});
+  completeStreamSession(preview, 'これは日本語に翻訳した文章です。追加の指示で表現を調整できます。'); await tick();
+  popup = document.querySelector('[role=dialog]');
+  const rect = popup.getBoundingClientRect();
+  check(rect.left >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight, '画面内に収まる');
+  document.title = 'PASS 選択翻訳の会話テスト';
+})().catch(error => {document.title = 'FAIL'; document.querySelector('#results').textContent += error.stack;});
+</script>

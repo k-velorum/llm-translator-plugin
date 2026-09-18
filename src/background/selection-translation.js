@@ -1,3 +1,4 @@
+import { createSelectionConversation, saveSelectionAnswer } from './selection-conversation.js';
 import { loadSettings } from './settings.js';
 import {
   translateText,
@@ -13,8 +14,8 @@ import {
 import { log } from '../shared/logger.js';
 import { cancelSelectionReplacement, translateSelectionReplacement } from './selection-replacement.js';
 
-async function sendToContentScript(tabId, translatedText, frameId) {
-  await sendMessageToFrame(tabId, frameId, { action: 'showTranslation', translatedText });
+async function sendToContentScript(tabId, translatedText, frameId, conversationId) {
+  await sendMessageToFrame(tabId, frameId, { action: 'showTranslation', translatedText, conversationId });
 }
 
 async function injectFallbackPopup(tabId, translatedText) {
@@ -215,15 +216,21 @@ export async function translateAndNotify(tabId, text, frameId = 0, source = 'sel
   const settings = await loadSettings();
   if (settings.selectionTranslationMode === 'replace' &&
     await translateSelectionReplacement(tabId, text, frameId, settings, source)) return;
+  const conversation = await createSelectionConversation(tabId, frameId, text, settings);
   let translatedText;
   const streamed = await streamToPopup({
-    tabId, frameId, kind: 'selection',
-    run: (handlers, options) => translateTextStream(text, settings, handlers, options)
+    tabId, frameId, kind: 'selection', conversationId: conversation.id,
+    run: async (handlers, options) => {
+      const answer = await translateTextStream(text, settings, handlers, options);
+      if (!options.signal.aborted) await saveSelectionAnswer(tabId, frameId, conversation, answer);
+      return answer;
+    }
   });
   if (streamed.displayed) return;
   try {
     if (streamed.error) throw streamed.error;
     translatedText = await translateText(text, settings);
+    await saveSelectionAnswer(tabId, frameId, conversation, translatedText);
   } catch (error) {
     await appendLog({ level: 'error', type: 'translate', event: 'selection_failed',
       ...getProviderMeta(settings), tabId, message: error?.message || String(error) });
@@ -231,7 +238,7 @@ export async function translateAndNotify(tabId, text, frameId = 0, source = 'sel
   }
 
   try {
-    await sendToContentScript(tabId, translatedText, frameId);
+    await sendToContentScript(tabId, translatedText, frameId, conversation.id);
     return;
   } catch (sendMessageError) {
     log.warn('selectionTranslation', 'コンテンツスクリプトへの送信に失敗', sendMessageError);

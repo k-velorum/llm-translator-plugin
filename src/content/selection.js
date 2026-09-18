@@ -257,6 +257,7 @@ function createSelectionPopup({
     applyStyles(translationPopup, styles.popupError);
   }
 
+  translationPopup.__anchorRect = rect;
   translationPopup.__contentEl = content;
   translationPopup.__titleEl = title;
   translationPopup.__copyBtn = copyBtn;
@@ -278,7 +279,7 @@ function createSelectionPopup({
   return translationPopup;
 }
 
-function prepareSelectionTranslationStream({ kind = 'selection', anchorRect = null, notice = '' } = {}) {
+function prepareSelectionTranslationStream({ kind = 'selection', anchorRect = null, notice = '', conversationId = '' } = {}) {
   const requestId = createTranslationRequestId(kind);
   const session = registerStreamSession(requestId, {
     kind,
@@ -295,6 +296,7 @@ function prepareSelectionTranslationStream({ kind = 'selection', anchorRect = nu
     return '';
   }
 
+  if (conversationId) attachSelectionConversation(popup, conversationId, false);
   return session.requestId;
 }
 
@@ -316,6 +318,7 @@ function updateSelectionStreamPopup(requestId, text, { isError = false, isComple
   const copyBtn = translationPopup.__copyBtn;
   if (!content || !title || !copyBtn) return;
 
+  translationPopup.__setConversationReady?.(isCompleted && !isError);
   title.textContent = isError ? '翻訳エラー' : (isCompleted ? '翻訳結果' : '処理中');
   translationPopup.__renderedText = text;
   // textContent 代入で loading 中のスピナーごと消えるため、flex レイアウトも通常表示へ戻す
@@ -342,6 +345,12 @@ function removePopup({ suppressCancel = false } = {}) {
     cancelTranslationStream(requestId);
     cancelLocalStreamSession(requestId);
   }
+  if (translationPopup.dataset.conversationId) {
+    window.LLMT.messaging.sendBackgroundMessage('closeSelectionConversation', {
+      conversationId: translationPopup.dataset.conversationId
+    });
+  }
+  translationPopup.__resizeObserver?.disconnect();
   document.body.removeChild(translationPopup);
   translationPopup = null;
   document.removeEventListener('click', closePopupOnClickOutside);
@@ -396,14 +405,108 @@ function showLoadingPopup(anchorRect = null) {
   document.addEventListener('click', closePopupOnClickOutside);
 }
 
-function showTranslationPopup(translatedText, anchorRect = null, notice = '') {
-  createSelectionPopup({
+function showTranslationPopup(translatedText, anchorRect = null, notice = '', conversationId = '') {
+  const popup = createSelectionPopup({
     titleText: ErrorUtils.isTranslationError(translatedText) ? '翻訳エラー' : '翻訳結果',
     bodyText: translatedText,
     isError: ErrorUtils.isTranslationError(translatedText),
     anchorRect,
     notice
   });
+  if (conversationId && !ErrorUtils.isTranslationError(translatedText)) {
+    attachSelectionConversation(popup, conversationId, true);
+  }
+}
+
+function attachSelectionConversation(popup, conversationId, ready) {
+  popup.dataset.conversationId = conversationId;
+  popup.__resizeObserver = new ResizeObserver(() => positionPopupInViewport(popup, popup.__anchorRect));
+  popup.__resizeObserver.observe(popup);
+  const form = document.createElement('form');
+  applyStyles(form, { padding: '0 16px 14px', display: 'grid', gap: '8px' });
+  const input = document.createElement('textarea');
+  input.rows = 2;
+  input.placeholder = '例：日本語に翻訳し直してください';
+  input.setAttribute('aria-label', '翻訳への追加指示');
+  applyStyles(input, { width: '100%', boxSizing: 'border-box', resize: 'vertical',
+    minHeight: '60px', padding: '8px', font: 'inherit', color: '#1b2431',
+    backgroundColor: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px' });
+  const submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.textContent = '送信';
+  applyStyles(submit, styles.copyBtn);
+  const status = document.createElement('div');
+  status.setAttribute('role', 'status');
+  applyStyles(status, { fontSize: '12px', whiteSpace: 'pre-wrap', color: '#627188' });
+  const history = document.createElement('div');
+  applyStyles(history, { padding: '0 16px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' });
+  popup.insertBefore(history, popup.__contentEl);
+  form.append(input, submit, status);
+  popup.appendChild(form);
+  let busy = false;
+  function update() {
+    input.disabled = busy || !ready;
+    submit.disabled = busy || !ready || !input.value.trim();
+    submit.textContent = busy ? '回答中…' : '送信';
+  }
+  popup.__setConversationReady = value => { ready = value; update(); };
+  input.addEventListener('input', update);
+  let composing = false;
+  input.addEventListener('compositionstart', () => { composing = true; });
+  input.addEventListener('compositionend', () => { composing = false; });
+  input.title = 'Enterで送信、Shift+Enterで改行';
+  input.addEventListener('keydown', event => {
+    // 確定時に isComposing が false になる環境でも、IME由来の229は送信しない。
+    if (composing || event.isComposing || event.keyCode === 229) return;
+    if (event.key !== 'Enter' || event.shiftKey || event.repeat) return;
+    event.preventDefault();
+    form.requestSubmit();
+  });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (busy || !ready || !input.value.trim() || translationPopup !== popup) return;
+    const instruction = input.value.trim();
+    const previous = popup.__renderedText;
+    busy = true;
+    update();
+    popup.__copyBtn.disabled = true;
+    popup.setAttribute('aria-busy', 'true');
+    status.textContent = '回答中…';
+    const result = await window.LLMT.streaming.requestSelectionConversation({
+      text: instruction, conversationId, popup,
+      render: value => {
+        if (translationPopup !== popup) return;
+        popup.__contentEl.textContent = value;
+      }
+    });
+    if (translationPopup !== popup) return;
+    busy = false;
+    popup.setAttribute('aria-busy', 'false');
+    if (result.ok && result.data.answer) {
+      const turn = document.createElement('details');
+      const label = document.createElement('summary');
+      label.textContent = instruction;
+      const answer = document.createElement('div');
+      answer.textContent = `前の回答：\n${previous}\n\n追加指示：\n${instruction}`;
+      turn.append(label, answer);
+      history.appendChild(turn);
+      popup.__renderedText = result.data.answer;
+      popup.__contentEl.textContent = result.data.answer;
+      popup.__titleEl.textContent = '翻訳の会話';
+      popup.setAttribute('aria-label', '翻訳の会話');
+      input.value = '';
+      status.textContent = '';
+    } else {
+      popup.__contentEl.textContent = previous;
+      status.textContent = result.error?.message || '回答を取得できませんでした。もう一度送信してください。';
+    }
+    popup.__copyBtn.disabled = false;
+    update();
+    input.focus();
+    positionPopupInViewport(popup, popup.__anchorRect);
+  });
+  update();
+  positionPopupInViewport(popup, popup.__anchorRect);
 }
 
 function showSelectionSummary(text) {

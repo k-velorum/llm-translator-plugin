@@ -1,3 +1,4 @@
+import { loadSelectionConversation, buildConversationRequest, saveSelectionAnswer, discardSelectionConversation } from './selection-conversation.js';
 import { buildSummaryRequest, handleSelectionSummary } from './selection-summary.js';
 import { getErrorLogLevel } from '../shared/errors.js';
 import { loadSettings } from './settings.js';
@@ -38,10 +39,10 @@ async function cleanupActiveStream(requestId, { notifyCancelled = false } = {}) 
   }
 }
 
-async function startStreamingTranslation(message, sender, sendResponse, { summary = false } = {}) {
+async function startStreamingTranslation(message, sender, sendResponse, { summary = false, conversation: isConversation = false } = {}) {
   const requestId = typeof message?.requestId === 'string' ? message.requestId.trim() : '';
   const text = typeof message?.text === 'string' ? message.text : '';
-  const kind = summary ? 'summary' : (typeof message?.kind === 'string' ? message.kind : 'generic');
+  const kind = isConversation ? 'conversation' : summary ? 'summary' : (typeof message?.kind === 'string' ? message.kind : 'generic');
   const tabId = sender?.tab?.id;
   const frameId = Number.isInteger(sender?.frameId) ? sender.frameId : 0;
 
@@ -63,7 +64,10 @@ async function startStreamingTranslation(message, sender, sendResponse, { summar
   }
 
   try {
-    const savedSettings = await loadSettings();
+    const conversation = isConversation
+      ? await loadSelectionConversation(tabId, frameId, message.conversationId) : null;
+    const conversationRequest = conversation ? buildConversationRequest(conversation, text) : null;
+    const savedSettings = conversationRequest?.settings || await loadSettings();
     const summaryRequest = summary ? buildSummaryRequest(message) : null;
     const settings = summaryRequest
       ? { ...savedSettings, translationSystemPrompt: summaryRequest.systemPrompt }
@@ -94,7 +98,7 @@ async function startStreamingTranslation(message, sender, sendResponse, { summar
     try {
       await emitter.start(message?.meta);
       const finalText = await translateTextStream(
-        summaryRequest ? summaryRequest.input : text,
+        summaryRequest ? summaryRequest.input : (conversationRequest?.input || text),
         settings,
         {
           onStatus: phase => emitter.status(phase),
@@ -104,10 +108,14 @@ async function startStreamingTranslation(message, sender, sendResponse, { summar
         },
         {
           signal: abortController.signal,
+          ...(conversationRequest ? { messages: conversationRequest.messages } : {}),
           timeoutMs: STREAM_TIMEOUT_MS
         }
       );
       if (summary && !finalText?.trim()) throw new Error('要約が空でした。もう一度お試しください。');
+      if (conversation && !abortController.signal.aborted) {
+        await saveSelectionAnswer(tabId, frameId, conversation, finalText, text);
+      }
       await emitter.complete(summary ? finalText.trim() : finalText);
     } catch (error) {
       if (error?.name !== 'AbortError') {
@@ -247,6 +255,15 @@ const ACTION_HANDLERS = {
     try { sendResponse({ capabilities: getProviderCapabilities(await loadSettings()) }); }
     catch (error) { sendResponse({ error: normalizeError(error) }); }
   },
+  async closeSelectionConversation(message, sender, sendResponse) {
+    try {
+      await discardSelectionConversation(sender?.tab?.id, sender?.frameId ?? 0, message.conversationId);
+      sendResponse({ success: true });
+    } catch (error) {
+      sendResponse({ error: normalizeError(error) });
+    }
+  },
+  continueSelectionConversation: (message, sender, sendResponse) => startStreamingTranslation(message, sender, sendResponse, { conversation: true }),
   summarizeSelection: handleSelectionSummary,
   startSummaryStream: (message, sender, sendResponse) => startStreamingTranslation(message, sender, sendResponse, { summary: true }),
   startTranslationStream: (message, sender, sendResponse) => startStreamingTranslation(message, sender, sendResponse),

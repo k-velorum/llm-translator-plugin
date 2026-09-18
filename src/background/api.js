@@ -33,6 +33,8 @@ ${error.stack ? '\nスタックトレース:\n' + error.stack : ''}
 `;
 }
 
+// requestOptions.messages は user/assistant の会話履歴（今回の入力を含む）。
+// system 指示は settings から各 provider が一度だけ付ける。未指定なら text を単発入力として扱う。
 // テキスト翻訳関数
 export async function translateText(text, settings, requestOptions = {}) {
   if (requestOptions.onDelta) {

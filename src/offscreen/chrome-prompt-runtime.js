@@ -37,7 +37,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     const streamRequestId = action.endsWith('Stream') ? message.requestId : null;
     if (action === 'translate' || action === 'translateStream') {
-      return await handleTranslate(payload?.text || '', payload?.settings || {}, signal, streamRequestId);
+      return await handleTranslate(payload?.text || '', payload?.settings || {}, signal, streamRequestId, payload?.messages);
     }
 
     if (action === 'translateImage' || action === 'translateImageStream') {
@@ -195,12 +195,12 @@ async function sendDelta(requestId, deltaText, signal) {
   if (!response?.accepted) throw new Error('翻訳結果の受信先が閉じられました');
 }
 
-async function handleTranslate(text, settings, signal, requestId) {
+async function handleTranslate(text, settings, signal, requestId, messages) {
   const input = typeof text === 'string' ? text.trim() : '';
   if (!input) return '';
 
   return await withSession(settings, signal, async (session) => {
-    const result = await promptSession(session, input, { signal }, requestId);
+    const result = await promptSession(session, messages || input, { signal }, requestId);
     return (result || '').trim();
   });
 }

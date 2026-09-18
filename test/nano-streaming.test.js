@@ -1,3 +1,4 @@
+import { createSessionStorage } from './helpers/session-storage.js';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,7 +31,7 @@ beforeEach(async () => {
     }
   };
   vi.stubGlobal('chrome', { runtime, offscreen: { createDocument: vi.fn() },
-    storage: { sync: { get: (defaults, callback) => callback({ ...defaults, ...settings }) } },
+    storage: { session: createSessionStorage(), sync: { get: (defaults, callback) => callback({ ...defaults, ...settings }) } },
     tabs: { sendMessage: vi.fn(async (_tabId, message) => {
       let result;
       view.LLMT.runtime.runtimeMessageHandlers[message.action]?.(message, sender, value => { result = value; });
@@ -104,6 +105,28 @@ describe('Nano: offscreenから各表示経路までのストリーム', () => {
     expect(sessions[0].destroy).toHaveBeenCalledOnce();
     expect(fetch).not.toHaveBeenCalled();
     if (kind === 'image') expect(sessions[0].promptStreaming.mock.calls[0][0][0].content[1].value).toBeInstanceOf(Blob);
+  });
+
+  it('会話継続では初回のsystem指示を維持し、原文・回答・追加指示を各ロールで渡す', async () => {
+    const running = api.translateTextStream('原文', settings);
+    const controller = await startGeneration();
+    controller.enqueue('初回回答'); controller.close();
+    await running;
+    const initialPrompts = globalThis.LanguageModel.create.mock.calls[0][0].initialPrompts;
+    const messages = [
+      { role: 'user', content: '原文' }, { role: 'assistant', content: '初回回答' },
+      { role: 'user', content: '日本語にして' }
+    ];
+    const followup = api.translateTextStream('日本語にして', settings, {}, { messages });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(controllers).toHaveLength(2);
+    expect(globalThis.LanguageModel.create.mock.calls[1][0].initialPrompts).toEqual(initialPrompts);
+    expect(sessions[1].promptStreaming.mock.calls[0][0]).toEqual(messages);
+    controllers[1].enqueue('日本語の回答'); controllers[1].close();
+    expect(await followup).toBe('日本語の回答');
+    const nonStreaming = await api.translateText('日本語にして', settings, { messages });
+    expect(nonStreaming).toBe('一括結果');
+    expect(sessions[2].prompt.mock.calls[0][0]).toEqual(messages);
   });
 
   it.each(['initial', 'shorter', 'longer'])('要約 %s も途中表示する', async adjustment => {

@@ -1,3 +1,4 @@
+import { discardSelectionConversationsForTab } from './selection-conversation.js';
 import { initializeDefaultSettings } from './settings.js';
 import {
   discardPageTranslationSessionsForTab,
@@ -181,6 +182,9 @@ async function handleCommand(command) {
 }
 
 function handleTabRemoved(tabId) {
+  discardSelectionConversationsForTab(tabId).catch(error => {
+    log.warn('eventListeners', '終了タブの選択翻訳の会話破棄に失敗しました', error);
+  });
   discardPageTranslationSessionsForTab(tabId).catch((error) => {
     log.warn('eventListeners', '終了タブのページ翻訳セッション破棄に失敗しました', error);
   });

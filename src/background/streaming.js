@@ -12,9 +12,9 @@ export function cancelPopupStream(requestId) {
 }
 
 // 選択翻訳と画像翻訳は同じ表示・中断のライフサイクルを使う。
-export async function streamToPopup({ tabId, frameId, kind, anchorRect, notice, run }) {
+export async function streamToPopup({ tabId, frameId, kind, anchorRect, notice, conversationId, run }) {
   const prepared = await sendMessageToFrame(tabId, frameId, {
-    action: 'prepareSelectionTranslationStream', kind, anchorRect, notice
+    action: 'prepareSelectionTranslationStream', kind, anchorRect, notice, conversationId
   }).catch(() => null);
   const requestId = prepared?.requestId;
   if (!requestId) return { displayed: false };

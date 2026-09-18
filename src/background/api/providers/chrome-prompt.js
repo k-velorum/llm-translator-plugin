@@ -20,7 +20,7 @@ function stream(action, payload, settings, handlers, requestOptions) {
 
 export default {
   translate,
-  translateStream: (text, settings, handlers, options) => stream('translateStream', { text }, settings, handlers, options),
+  translateStream: (text, settings, handlers, options) => stream('translateStream', { text, messages: options?.messages }, settings, handlers, options),
   translateImageStream: (imageInput, settings, handlers, options) => stream('translateImageStream', { imageInput }, settings, handlers, options),
   translateBatchStructuredStream: (texts, settings, handlers, options) => stream('translateBatchStructuredStream', { texts }, settings, handlers, options),
   translateImage: (imageInput, settings, requestOptions = {}) =>

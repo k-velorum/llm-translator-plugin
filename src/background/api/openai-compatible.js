@@ -62,7 +62,7 @@ export function createOpenAICompatibleProvider({
     const cfg = getConfig(settings);
     const messages = [
       { role: 'system', content: getSystemPrompt(settings) },
-      { role: 'user', content: text }
+      ...(requestOptions.messages || [{ role: 'user', content: text }])
     ];
 
     const data = await makeApiRequest(
@@ -90,7 +90,7 @@ export function createOpenAICompatibleProvider({
     const cfg = getConfig(settings);
     const messages = [
       { role: 'system', content: getSystemPrompt(settings) },
-      { role: 'user', content: text }
+      ...(requestOptions.messages || [{ role: 'user', content: text }])
     ];
 
     return makeStreamingApiRequest(

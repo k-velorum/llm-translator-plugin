@@ -204,6 +204,33 @@ async function requestSelectionSummary({ text, currentSummary, adjustment, popup
   return { ok: false, error: response.error || response.data?.error || { message: '要約を開始できませんでした。' } };
 }
 
+async function requestSelectionConversation({ text, conversationId, popup, render }) {
+  const requestId = createTranslationRequestId('conversation');
+  popup.dataset.requestId = requestId;
+  const session = registerStreamSession(requestId, {
+    kind: 'conversation', state: 'running',
+    render: (value, state) => {
+      if (!state.isError) render(value);
+    }
+  });
+  // 開始応答より先に完了・エラー・キャンセルが届いても未処理のrejectを残さない。
+  const completed = session.promise.then(
+    answer => ({ ok: true, data: { answer } }),
+    error => ({ ok: false, error: { message: error.message } })
+  );
+  const payload = { text, conversationId };
+  const response = await window.LLMT.messaging.sendBackgroundMessage('continueSelectionConversation', { ...payload, requestId });
+  if (!popup.isConnected) {
+    if (response.ok && response.data.accepted) cancelTranslationStream(requestId);
+    cancelLocalStreamSession(requestId);
+    return { ok: false, error: { message: 'cancelled' } };
+  }
+  if (response.ok && response.data.accepted) return completed;
+  cancelLocalStreamSession(requestId);
+  popup.dataset.requestId = '';
+  return { ok: false, error: response.error || response.data?.error || { message: '回答を取得できませんでした。' } };
+}
+
 window.LLMT = window.LLMT || {};
 window.LLMT.streaming = {
   streamViewSessions,
@@ -219,7 +246,8 @@ window.LLMT.streaming = {
   failStreamSession,
   cancelLocalStreamSession,
   startEmbeddedTranslationStream,
-  requestSelectionSummary
+  requestSelectionSummary,
+  requestSelectionConversation
 };
 Object.assign(window, window.LLMT.streaming);
 })();

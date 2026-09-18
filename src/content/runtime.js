@@ -20,7 +20,7 @@ const runtimeMessageHandlers = {
   },
 
   showTranslation(message) {
-    window.showTranslationPopup(message.translatedText, message?.anchorRect || null, message.notice || '');
+    window.showTranslationPopup(message.translatedText, message?.anchorRect || null, message.notice || '', message.conversationId || '');
     return false;
   },
 

@@ -1,3 +1,4 @@
+import { createSessionStorage } from './helpers/session-storage.js';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -45,6 +46,7 @@ function setupView() {
   const render = vi.fn();
   const sender = { tab: { id: 1 }, frameId: 0 };
   const chrome = {
+    storage: { session: createSessionStorage() },
     runtime: { onMessage: { addListener: vi.fn() } },
     tabs: { sendMessage: vi.fn(async (_tab, message) => {
       let response;

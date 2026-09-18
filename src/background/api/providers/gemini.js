@@ -41,13 +41,11 @@ async function translate(text, settings, requestOptions = {}) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: `${getSystemPrompt(settings)}\n\n${text}` }
-            ]
-          }
-        ],
+        systemInstruction: { parts: [{ text: getSystemPrompt(settings) }] },
+        contents: (requestOptions.messages || [{ role: 'user', content: text }]).map(message => ({
+          role: message.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: message.content }]
+        })),
         generationConfig: { temperature: 0.2 }
       }),
       timeoutMs: requestOptions.timeoutMs ?? TRANSLATION_TIMEOUT_MS,
