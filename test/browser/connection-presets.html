@@ -16,7 +16,7 @@ window.chrome = {runtime:{sendMessage:(message, callback) => {resolveModels = ca
 }}};
 const check = (condition,label) => {if(!condition)throw new Error(label);document.querySelector('#results').textContent += 'PASS: '+label+'\n';};
 const boot = settings => {renderProviderSections(document.querySelector('#provider-sections'));const elements=getProviderElementRefs();return {elements,form:createConnectionForm(elements,settings)};};
-const controls = () => {const root=document.querySelector('.preset-controls');return {root,name:root.querySelector('input'),add:root.querySelectorAll('button')[0],remove:root.querySelectorAll('button')[1]};};
+const controls = () => {const root=document.querySelector('.preset-controls');return {root,name:root.querySelector('input'),add:root.querySelectorAll('button')[0],remove:document.querySelector('[aria-label="選択中のプリセットを削除"]'),toggle:document.querySelector('[aria-label="現在の設定からプリセットを追加"]')};};
 (async()=>{
  let {elements,form}=boot({apiProvider:'openai',openaiPreset:'lmstudio',openaiConnections:{lmstudio:{
   baseUrl:'http://192.0.2.1:1234/v1',model:'original-model',apiKey:'dummy-key',reasoning:'off',streaming:false
@@ -24,11 +24,15 @@ const controls = () => {const root=document.querySelector('.preset-controls');re
  let changes=0;
  elements.openaiPresetSelect.addEventListener('input',()=>changes++);
  check(controls().remove.disabled,'組み込みプリセットは削除不可');
- controls().add.click();check(changes===0 && controls().root.textContent.includes('1〜80'),'空の名前を拒否');
+ check(controls().root.hidden,'名前入力は通常表示しない');
+ controls().toggle.click();check(!controls().root.hidden && document.activeElement===controls().name,'追加アイコンで名前入力を開く');
+ controls().add.click();check(changes===0 && document.querySelector('.preset-status').textContent.includes('1〜80'),'空の名前を拒否');
  controls().name.value=' 自宅サーバー ';controls().add.click();
  const first=form.collect().openaiPreset;
  check(first.startsWith('saved:') && form.active().name==='自宅サーバー' && changes===1,'独自名で追加して未保存変更を通知');
  check(form.active().preset.reasoning==='lmstudio' && form.active().reasoning==='off' && !form.active().streaming,'接続種別・推論・ストリームを維持');
+ check(controls().root.hidden,'追加後は名前入力を閉じる');
+ controls().toggle.click();
  controls().name.value='自宅サーバー';controls().add.click();check(changes===1,'同名の追加を拒否');
  const pending=form.refreshModels();
  controls().name.value='外出先サーバー';controls().add.click();const second=form.collect().openaiPreset;

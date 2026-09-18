@@ -64,7 +64,15 @@
       cursor: pointer;
       transition: background-color .15s, border-color .15s;
     }
-    .preset-controls { margin-top: 10px; }
+    .connection-selectors label { min-height: 26px; display: flex; align-items: center; }
+    .preset-heading { display: flex; align-items: center; gap: 4px; margin-bottom: 7px; }
+    .preset-heading label { margin: 0 auto 0 0; }
+    .preset-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 26px; min-height: 26px; padding: 4px; border-radius: 5px; background: transparent; color: var(--text-muted); }
+    .preset-icon-button:hover { background: #e5edf7; color: var(--primary); }
+    .preset-icon-button svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .preset-controls { margin-bottom: 12px; padding: 12px; border-radius: 8px; background: var(--bg); }
+    .preset-controls[hidden], .preset-status:empty { display: none; }
+    .preset-status:not(:empty) { margin-bottom: 12px; }
     .preset-actions { display: flex; gap: 8px; margin-top: 8px; }
     .preset-actions button { flex: 1; padding: 8px; }
     button:hover { background: var(--primary-hover); }
