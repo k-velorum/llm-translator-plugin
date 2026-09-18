@@ -8,3 +8,7 @@ coverage/
 # Local secrets / Claude Code settings
 settings.json
 .claude/
+
+# Codex / Playwright CLI local artifacts
+.codex/
+.playwright-cli/
