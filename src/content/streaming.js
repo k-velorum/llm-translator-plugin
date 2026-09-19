@@ -188,14 +188,20 @@ async function requestSelectionSummary({ text, currentSummary, adjustment, popup
     summary => ({ ok: true, data: { summary } }),
     error => ({ ok: false, error: { message: error.message } })
   );
-  const payload = { text, currentSummary, adjustment };
+  // 割り当て済みの会話IDを渡し、既存の要約会話を引き継ぐ。
+  const payload = { text, currentSummary, adjustment, ...(popup.dataset.conversationId ? { conversationId: popup.dataset.conversationId } : {}) };
   const response = await window.LLMT.messaging.sendBackgroundMessage('startSummaryStream', { ...payload, requestId });
   if (!popup.isConnected) {
     if (response.ok && response.data.accepted) cancelTranslationStream(requestId);
     cancelLocalStreamSession(requestId);
     return { ok: false, error: { message: 'cancelled' } };
   }
-  if (response.ok && response.data.accepted) return completed;
+  if (response.ok && response.data.accepted) {
+    const conversationId = typeof response.data.conversationId === 'string' ? response.data.conversationId : '';
+    // 追加指示フォームは会話IDが割り当てられた場合のみ表示する。
+    if (conversationId) window.LLMT?.selection?.attachSelectionConversation?.(popup, conversationId, false, { kind: 'summary' });
+    return completed;
+  }
   cancelLocalStreamSession(requestId);
   popup.dataset.requestId = '';
   if (response.ok && response.data.reason === 'unsupported') {

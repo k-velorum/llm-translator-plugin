@@ -1,6 +1,6 @@
 import { loadConversationImage } from './conversation-images.js';
-import { loadSelectionConversation, buildConversationRequest, saveSelectionAnswer, discardSelectionConversation } from './selection-conversation.js';
-import { buildSummaryRequest, handleSelectionSummary } from './selection-summary.js';
+import { createSelectionConversation, loadSelectionConversation, buildConversationRequest, saveSelectionAnswer, discardSelectionConversation } from './selection-conversation.js';
+import { buildSummaryRequest, handleSelectionSummary, SUMMARY_CONVERSATION_SYSTEM_PROMPT } from './selection-summary.js';
 import { getErrorLogLevel } from '../shared/errors.js';
 import { loadSettings } from './settings.js';
 import {
@@ -66,15 +66,24 @@ async function startStreamingTranslation(message, sender, sendResponse, { summar
   }
 
   try {
-    const conversation = isConversation
+    // 要約ストリームは同一フレームの既存要約会話を引き継ぎ、調整と追加指示を同一履歴で継続する。
+    let conversation = isConversation || (summary && typeof message?.conversationId === 'string')
       ? await loadSelectionConversation(tabId, frameId, message.conversationId) : null;
     const imageInput = conversation?.kind === 'image' ? await loadConversationImage(conversation.id) : null;
-    const conversationRequest = conversation ? buildConversationRequest(conversation, text) : null;
-    const savedSettings = conversationRequest?.settings || await loadSettings();
+    // 要約ストリームは会話履歴を渡さず、原文と現在の要約のJSON入力で調整する。
+    const conversationRequest = isConversation ? buildConversationRequest(conversation, text) : null;
+    const savedSettings = conversationRequest?.settings || conversation?.settings || await loadSettings();
+    // 初回要約のみ会話を作成し、以降は同一会話を更新する。
+    if (summary && !conversation) {
+      conversation = await createSelectionConversation(tabId, frameId, text, savedSettings, null, 'summary');
+    }
     const summaryRequest = summary ? buildSummaryRequest(message) : null;
+    // 要約会話の追加指示は翻訳方針ではなく要約用のsystem指示で生成する。
     const settings = summaryRequest
       ? { ...savedSettings, translationSystemPrompt: summaryRequest.systemPrompt }
-      : savedSettings;
+      : conversation?.kind === 'summary'
+        ? { ...savedSettings, translationSystemPrompt: SUMMARY_CONVERSATION_SYSTEM_PROMPT }
+        : savedSettings;
     let streamSendFailed = false;
     const abortController = new AbortController();
     const emitter = createStreamEventEmitter({
@@ -96,7 +105,8 @@ async function startStreamingTranslation(message, sender, sendResponse, { summar
       kind
     });
 
-    sendResponse({ accepted: true, requestId });
+    const summaryConversationId = summary ? conversation?.id : undefined;
+    sendResponse({ accepted: true, requestId, ...(summaryConversationId ? { conversationId: summaryConversationId } : {}) });
 
     try {
       await emitter.start(message?.meta);
@@ -117,8 +127,9 @@ async function startStreamingTranslation(message, sender, sendResponse, { summar
         }
       );
       if (summary && !finalText?.trim()) throw new Error('要約が空でした。もう一度お試しください。');
+      // 初回要約は原文が既に履歴にあるため指示として追記しない。
       if (conversation && !abortController.signal.aborted) {
-        await saveSelectionAnswer(tabId, frameId, conversation, finalText, text);
+        await saveSelectionAnswer(tabId, frameId, conversation, finalText, isConversation ? text : undefined);
       }
       await emitter.complete(summary ? finalText.trim() : finalText);
     } catch (error) {

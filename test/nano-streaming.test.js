@@ -178,6 +178,37 @@ describe('Nano: offscreenから各表示経路までのストリーム', () => {
     expect(await running).toEqual({ ok: true, data: { summary: '要点と根拠' } });
   });
 
+  it('要約の追加指示は初回要約を含む履歴と要約用のsystem指示で継続する', async () => {
+    const popup = { dataset: {}, isConnected: true };
+    let conversationId;
+    const originalSend = view.LLMT.messaging.sendBackgroundMessage;
+    view.LLMT.messaging.sendBackgroundMessage = async (action, payload) => {
+      const result = await originalSend(action, payload);
+      if (action === 'startSummaryStream') conversationId = result.data.conversationId;
+      return result;
+    };
+    const running = view.requestSelectionSummary({ text: '原文', currentSummary: '', adjustment: 'initial', popup, render });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(conversationId).toBeTruthy();
+    const controller = await startGeneration();
+    controller.enqueue('要点');
+    await vi.advanceTimersByTimeAsync(100);
+    controller.close();
+    expect(await running).toEqual({ ok: true, data: { summary: '要点' } });
+
+    const followup = view.requestSelectionConversation({ text: 'もっと詳しく', conversationId, popup, render });
+    await vi.advanceTimersByTimeAsync(0);
+    const input = sessions[1].promptStreaming.mock.calls[0][0];
+    expect(input).toEqual([
+      { role: 'user', content: '原文' }, { role: 'assistant', content: '要点' }, { role: 'user', content: 'もっと詳しく' }
+    ]);
+    const system = globalThis.LanguageModel.create.mock.calls[1][0].initialPrompts;
+    expect(system[0].content).toContain('日本語で要約');
+    controllers[1].enqueue('詳しい要点'); controllers[1].close();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await followup).toEqual({ ok: true, data: { answer: '詳しい要点' } });
+  });
+
   it('ページ翻訳は途中の訳文をプレビューし、完了したJSONだけを返す', async () => {
     const { translateChunk } = await import('../src/background/page-translation/translator.js');
     const preview = vi.fn();

@@ -3,6 +3,9 @@ import { translateText } from './api.js';
 import { normalizeError } from '../shared/errors.js';
 import { TRANSLATION_TIMEOUT_MS } from '../shared/constants.js';
 
+// 追加指示ターンでは調整ボタンの定型文ではなく、会話履歴に基づく要約指示を使う。
+export const SUMMARY_CONVERSATION_SYSTEM_PROMPT = 'あなたは文章を日本語で要約するアシスタントです。ユーザーの追加指示に従って原文を要約してください。原文にない事実や推測は追加しないでください。要約本文だけを出力してください。';
+
 export function buildSummaryRequest({ text, currentSummary = '', adjustment = 'initial' }) {
   if (typeof text !== 'string' || !text.trim()) throw new Error('要約する文章がありません');
   if (!['initial', 'shorter', 'longer'].includes(adjustment)) throw new Error('要約の調整方法が不正です');

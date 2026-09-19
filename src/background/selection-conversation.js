@@ -3,10 +3,11 @@ const keyFor = (tabId, frameId) => `selectionConversation:${tabId}:${frameId}`;
 
 // service worker の休止後も継続できるよう、各フレームの最新会話だけをセッションに保持する。
 // 接続設定（認証情報を含む）は content script へ渡さない。
-export async function createSelectionConversation(tabId, frameId, text, settings, imageInput) {
+// kind は表示単位（選択・画像・要約）を区別し、同一フレームでは最新会話だけ保持する。
+export async function createSelectionConversation(tabId, frameId, text, settings, imageInput = null, kind = 'selection') {
   const key = keyFor(tabId, frameId);
   const previous = (await chrome.storage.session.get(key))[key];
-  const conversation = { id: crypto.randomUUID(), settings, messages: [{ role: 'user', content: text }], kind: imageInput ? 'image' : 'selection' };
+  const conversation = { id: crypto.randomUUID(), settings, messages: [{ role: 'user', content: text }], kind: imageInput ? 'image' : kind };
   if (imageInput) await saveConversationImage(conversation.id, imageInput);
   try { await chrome.storage.session.set({ [key]: conversation }); }
   catch (error) {

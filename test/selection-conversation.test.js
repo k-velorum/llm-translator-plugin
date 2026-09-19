@@ -4,6 +4,7 @@ import { createSelectionConversation, loadSelectionConversation, saveSelectionAn
   buildConversationRequest, discardSelectionConversation, discardSelectionConversationsForTab
 } from '../src/background/selection-conversation.js';
 import { handleBackgroundMessage } from '../src/background/message-handlers.js';
+import { SUMMARY_CONVERSATION_SYSTEM_PROMPT } from '../src/background/selection-summary.js';
 import { translateTextStream } from '../src/background/api.js';
 vi.mock('../src/background/api.js', () => ({ translateTextStream: vi.fn(), translateText: vi.fn(), getProviderCapabilities: vi.fn() }));
 vi.mock('../src/background/logging.js', () => ({ appendLog: vi.fn(), getProviderMeta: () => ({}) }));
@@ -11,7 +12,8 @@ vi.mock('../src/background/logging.js', () => ({ appendLog: vi.fn(), getProvider
 const settings = { apiProvider: 'openai', translationSystemPrompt: '日本語に翻訳してください。', model: 'original-model' };
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.stubGlobal('chrome', { storage: { session: createSessionStorage() }, tabs: { sendMessage: vi.fn(async () => ({})) } });
+  // loadSettings は callback形式のsync.getを使うため、既定値のみで応答する。
+  vi.stubGlobal('chrome', { storage: { session: createSessionStorage(), sync: { get: (_defaults, callback) => callback({}), set: () => {} } }, tabs: { sendMessage: vi.fn(async () => ({})) } });
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -67,5 +69,47 @@ describe('選択翻訳の会話', () => {
     expect((await loadSelectionConversation(1, 3, initial.id)).messages).toHaveLength(4);
     expect(translateTextStream.mock.calls[2][0]).toBe('日本語にして');
     expect(translateTextStream.mock.calls[2][3].messages).toHaveLength(3);
+  });
+});
+
+describe('要約の会話', () => {
+  it('初回要約で会話を作成し、追加指示を履歴と要約用のsystem指示で継続する', async () => {
+    const respond = vi.fn();
+    translateTextStream.mockResolvedValueOnce('要約1');
+    handleBackgroundMessage({ action: 'startSummaryStream', requestId: 's1', text: '原文', currentSummary: '', adjustment: 'initial' }, { tab: { id: 1 }, frameId: 3 }, respond);
+    await vi.waitFor(() => expect(respond).toHaveBeenCalledWith(expect.objectContaining({ accepted: true, conversationId: expect.any(String) })));
+    const conversationId = respond.mock.calls[0][0].conversationId;
+    await vi.waitFor(() => expect(globalThis.chrome.tabs.sendMessage).toHaveBeenCalledWith(1, expect.objectContaining({ action: 'translationStreamComplete', requestId: 's1' }), { frameId: 3 }));
+    const initial = await loadSelectionConversation(1, 3, conversationId);
+    expect(initial.kind).toBe('summary');
+    expect(initial.messages).toEqual([{ role: 'user', content: '原文' }, { role: 'assistant', content: '要約1' }]);
+
+    translateTextStream.mockResolvedValueOnce('要約2');
+    handleBackgroundMessage({ action: 'continueSelectionConversation', requestId: 's2', conversationId, text: 'もっと詳しく' }, { tab: { id: 1 }, frameId: 3 }, () => {});
+    await vi.waitFor(() => expect(globalThis.chrome.tabs.sendMessage).toHaveBeenCalledWith(1, expect.objectContaining({ action: 'translationStreamComplete', requestId: 's2' }), { frameId: 3 }));
+    const after = await loadSelectionConversation(1, 3, conversationId);
+    expect(after.messages).toEqual([
+      { role: 'user', content: '原文' }, { role: 'assistant', content: '要約1' },
+      { role: 'user', content: 'もっと詳しく' }, { role: 'assistant', content: '要約2' }
+    ]);
+    expect(translateTextStream.mock.calls[1][1].translationSystemPrompt).toBe(SUMMARY_CONVERSATION_SYSTEM_PROMPT);
+  });
+
+  it('調整再実行は同一会話を更新し、会話履歴を渡さずJSON入力で生成する', async () => {
+    const respond = vi.fn();
+    translateTextStream.mockResolvedValueOnce('要約1');
+    handleBackgroundMessage({ action: 'startSummaryStream', requestId: 's1', text: '原文', currentSummary: '', adjustment: 'initial' }, { tab: { id: 1 }, frameId: 3 }, respond);
+    await vi.waitFor(() => expect(respond).toHaveBeenCalledWith(expect.objectContaining({ accepted: true, conversationId: expect.any(String) })));
+    const conversationId = respond.mock.calls[0][0].conversationId;
+    await vi.waitFor(() => expect(globalThis.chrome.tabs.sendMessage).toHaveBeenCalledWith(1, expect.objectContaining({ action: 'translationStreamComplete', requestId: 's1' }), { frameId: 3 }));
+
+    translateTextStream.mockResolvedValueOnce('短い要約');
+    handleBackgroundMessage({ action: 'startSummaryStream', requestId: 's2', text: '原文', currentSummary: '要約1', adjustment: 'shorter', conversationId }, { tab: { id: 1 }, frameId: 3 }, () => {});
+    await vi.waitFor(() => expect(globalThis.chrome.tabs.sendMessage).toHaveBeenCalledWith(1, expect.objectContaining({ action: 'translationStreamComplete', requestId: 's2' }), { frameId: 3 }));
+    const after = await loadSelectionConversation(1, 3, conversationId);
+    expect(after.messages).toEqual([
+      { role: 'user', content: '原文' }, { role: 'assistant', content: '要約1' }, { role: 'assistant', content: '短い要約' }
+    ]);
+    expect(translateTextStream.mock.calls[1][3].messages).toBeUndefined();
   });
 });

@@ -418,16 +418,25 @@ function showTranslationPopup(translatedText, anchorRect = null, notice = '', co
   }
 }
 
-function attachSelectionConversation(popup, conversationId, ready) {
+// kind は要約ポップアップでも同じ追加指示フォームを流用できる。
+function attachSelectionConversation(popup, conversationId, ready, { kind = 'selection' } = {}) {
+  if (popup.dataset.conversationId === conversationId && popup.__setConversationReady) {
+    popup.__setConversationReady(ready);
+    return;
+  }
   popup.dataset.conversationId = conversationId;
+  // 調整の再実行でフォームを重複させず、会話IDと有効性を更新する。
+  const existingForm = popup.querySelector('form');
+  if (existingForm) existingForm.remove();
+  popup.__resizeObserver?.disconnect();
   popup.__resizeObserver = new ResizeObserver(() => positionPopupInViewport(popup, popup.__anchorRect));
   popup.__resizeObserver.observe(popup);
   const form = document.createElement('form');
   applyStyles(form, { padding: '0 16px 14px', display: 'grid', gap: '8px' });
   const input = document.createElement('textarea');
   input.rows = 2;
-  input.placeholder = '例：日本語に翻訳し直してください';
-  input.setAttribute('aria-label', '翻訳への追加指示');
+  input.placeholder = kind === 'summary' ? '例：もっと詳しく説明してください' : '例：日本語に翻訳し直してください';
+  input.setAttribute('aria-label', kind === 'summary' ? '要約への追加指示' : '翻訳への追加指示');
   applyStyles(input, { width: '100%', boxSizing: 'border-box', resize: 'vertical',
     minHeight: '60px', padding: '8px', font: 'inherit', color: '#1b2431',
     backgroundColor: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px' });
@@ -445,9 +454,12 @@ function attachSelectionConversation(popup, conversationId, ready) {
   popup.appendChild(form);
   let busy = false;
   function update() {
-    input.disabled = busy || !ready;
-    submit.disabled = busy || !ready || !input.value.trim();
+    // 要約調整ボタンの実行中は二重ストリームを避けるため相互に無効化する。
+    popup.__conversationBusy = busy;
+    input.disabled = busy || !ready || popup.__summaryBusy;
+    submit.disabled = busy || !ready || !input.value.trim() || popup.__summaryBusy;
     submit.textContent = busy ? '回答中…' : '送信';
+    popup.__updateSummaryButtons?.();
   }
   popup.__setConversationReady = value => { ready = value; update(); };
   input.addEventListener('input', update);
@@ -464,7 +476,7 @@ function attachSelectionConversation(popup, conversationId, ready) {
   });
   form.addEventListener('submit', async event => {
     event.preventDefault();
-    if (busy || !ready || !input.value.trim() || translationPopup !== popup) return;
+    if (busy || popup.__summaryBusy || !ready || !input.value.trim() || translationPopup !== popup) return;
     const instruction = input.value.trim();
     const previous = popup.__renderedText;
     busy = true;
@@ -490,10 +502,11 @@ function attachSelectionConversation(popup, conversationId, ready) {
       answer.textContent = `前の回答：\n${previous}\n\n追加指示：\n${instruction}`;
       turn.append(label, answer);
       history.appendChild(turn);
+      const conversationTitle = kind === 'summary' ? '要約の会話' : '翻訳の会話';
       popup.__renderedText = result.data.answer;
       popup.__contentEl.textContent = result.data.answer;
-      popup.__titleEl.textContent = '翻訳の会話';
-      popup.setAttribute('aria-label', '翻訳の会話');
+      popup.__titleEl.textContent = conversationTitle;
+      popup.setAttribute('aria-label', conversationTitle);
       input.value = '';
       status.textContent = '';
     } else {
@@ -513,11 +526,11 @@ function showSelectionSummary(text) {
   if (typeof text !== 'string' || !text.trim()) return;
   const anchorRect = resolvePopupAnchorRect(null);
   const popup = createSelectionPopup({ titleText: '処理中', bodyText: '処理中…', loading: true, anchorRect });
+  popup.__renderedText = '';
   const content = popup.__contentEl;
   const actions = popup.lastElementChild;
   applyStyles(actions, { flexWrap: 'wrap', gap: '8px', position: 'sticky', bottom: '0', backgroundColor: '#fff' });
   content.setAttribute('aria-live', 'polite');
-  let currentSummary = '';
   let busy = false;
   let lastAdjustment = 'initial';
   const buttons = [];
@@ -542,17 +555,23 @@ function showSelectionSummary(text) {
   retry.hidden = true;
 
   function updateButtons() {
+    const currentSummary = popup.__renderedText;
     buttons.forEach(button => {
-      button.disabled = busy || (button !== retry && !currentSummary);
+      button.disabled = busy || popup.__conversationBusy || (button !== retry && !currentSummary);
       button.style.opacity = button.disabled ? '0.5' : '1';
     });
-    popup.__copyBtn.disabled = busy || !currentSummary;
+    popup.__copyBtn.disabled = busy || popup.__conversationBusy || !currentSummary;
     popup.__copyBtn.style.opacity = popup.__copyBtn.disabled ? '0.5' : '1';
   }
+  popup.__updateSummaryButtons = updateButtons;
 
   async function run(adjustment) {
-    if (busy || translationPopup !== popup) return;
+    if (busy || popup.__conversationBusy || translationPopup !== popup) return;
+    // 追加指示の回答も含め、最後に確定した本文を調整と失敗時の復元に使う。
+    const currentSummary = popup.__renderedText || '';
     busy = true;
+    popup.__summaryBusy = true;
+    popup.__setConversationReady?.(false);
     lastAdjustment = adjustment;
     retry.hidden = true;
     popup.__titleEl.textContent = '処理中';
@@ -572,12 +591,12 @@ function showSelectionSummary(text) {
     // 閉じた画面や別の選択結果を、遅れて届いた応答で上書きしない。
     if (translationPopup !== popup) return;
     busy = false;
+    popup.__summaryBusy = false;
     popup.setAttribute('aria-busy', 'false');
     applyStyles(content, { display: '', alignItems: '', gap: '' });
     if (result.ok && result.data.summary) {
-      currentSummary = result.data.summary;
-      popup.__renderedText = currentSummary;
-      content.textContent = currentSummary;
+      popup.__renderedText = result.data.summary;
+      content.textContent = result.data.summary;
       status.textContent = '';
       popup.__titleEl.textContent = '要約結果';
     } else {
@@ -587,6 +606,8 @@ function showSelectionSummary(text) {
       retry.hidden = false;
     }
     popup.setAttribute('aria-label', popup.__titleEl.textContent);
+    // 開始応答と完了イベントの順序によらず、busy解除後に入力を有効化する。
+    popup.__setConversationReady?.(Boolean(popup.__renderedText));
     updateButtons();
     positionPopupInViewport(popup, anchorRect);
   }
@@ -612,6 +633,7 @@ window.LLMT.selection = {
   prepareSelectionTranslationStream,
   showLoadingPopup,
   showTranslationPopup,
+  attachSelectionConversation,
   resolveImageAnchorRect,
   removePopup
 };
