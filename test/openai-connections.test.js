@@ -50,17 +50,20 @@ describe('ベースURL', () => {
 });
 
 describe('OpenAI互換の共通経路', () => {
-  it('任意パスのURLで翻訳し、選択中のキー・モデル・推論だけを送る', async () => {
+  it.each([['low', 'low'], ['off', 'none'], ['default', undefined]])('任意パスのURLで翻訳し、選択中のキー・モデル・推論 %s だけを送る', async (reasoning, effort) => {
     const fetch = vi.fn(async () => mockResponse('訳文'));
     vi.stubGlobal('fetch', fetch);
     const settings = connectionSettings('custom', { baseUrl: 'https://example.test/gateway/v4/',
-      apiKey: 'custom-key', model: 'manual/model', reasoning: 'low' });
+      apiKey: 'custom-key', model: 'manual/model', reasoning });
     settings.openrouterApiKey = 'other-secret';
     await expect(translateText('hello', settings)).resolves.toBe('訳文');
     const [url, request] = fetch.mock.calls[0];
     expect(url).toBe('https://example.test/gateway/v4/chat/completions');
     expect(request).toMatchObject({ headers: { Authorization: 'Bearer custom-key' }, redirect: 'error' });
-    expect(JSON.parse(request.body)).toMatchObject({ model: 'manual/model', reasoning_effort: 'low' });
+    const body = JSON.parse(request.body);
+    expect(body.model).toBe('manual/model');
+    if (effort === undefined) expect(body).not.toHaveProperty('reasoning_effort');
+    else expect(body.reasoning_effort).toBe(effort);
     expect(JSON.stringify(request)).not.toContain('other-secret');
   });
   it('カスタム接続はキーなしでも動作する', async () => {
